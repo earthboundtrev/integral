@@ -283,7 +283,7 @@ def analyze_cross_category(
                 title="Nothing logged today",
                 message="Pick one category and log rating + Save — 20 seconds protects your streak.",
                 suggested_actions=[
-                    "Start with Burnout Prevention or Body & Presence if energy is low.",
+                    "Start with Burnout Prevention, What You Have Eaten, or Body & Presence if energy is low.",
                 ],
                 priority=5,
             )
@@ -292,11 +292,15 @@ def analyze_cross_category(
     # Burnout cluster
     burnout = "Burnout Prevention & Energy Management"
     body = "Body & Presence"
+    body_days = sum(1 for d in last_7 if body in entries.get(d, {})) if body in categories else 0
+    body_ratings = _ratings_for_category(entries, body, last_7) if body in categories else []
     if burnout in categories and body in categories:
         energy_trend = _metric_trend(entries, body, "Energy level", last_7)
         stress_trend = _metric_trend(entries, burnout, "Stress level (lower = better)", last_7)
         morning_trend = _metric_trend(entries, burnout, "Morning energy", last_7)
-        if energy_trend == "declining" or (stress_trend == "declining" and morning_trend == "declining"):
+        if energy_trend == "declining" or (
+            stress_trend == "improving" and morning_trend == "declining"
+        ):
             insights.append(
                 Insight(
                     severity="action",
@@ -315,8 +319,6 @@ def analyze_cross_category(
             for session in sessions
             if _parse_date(session.get("date", "")) and (today - _parse_date(session["date"])).days <= 14
         ]
-        body_days = sum(1 for d in last_7 if body in entries.get(d, {}))
-        body_ratings = _ratings_for_category(entries, body, last_7)
         if body_days >= 3 and body_ratings and sum(body_ratings) / len(body_ratings) < 5 and not recent_fitness:
             insights.append(
                 Insight(
@@ -362,6 +364,190 @@ def analyze_cross_category(
                             priority=32,
                         )
                     )
+
+    food = "What You Have Eaten"
+    emotional = "Emotional Wellbeing"
+    art = "Art You Have Consumed"
+    content = "Content You Have Consumed"
+    reading = "General Reading"
+    creative = "Creative/Mental Work"
+    money = "Money/Freedom"
+    career = "Career & Vocation"
+    learning = "Learning & Intellectual Growth"
+    relationships = "Relationships & Social Connection"
+    cultural = "Cultural Life & Heritage"
+    home = "Home & Environment"
+    community = "Community & Service"
+    spiritual = "Spiritual Development"
+    if food in categories and body in categories:
+        food_days = sum(1 for d in last_7 if food in entries.get(d, {}))
+        if body_days >= 3 and body_ratings and sum(body_ratings) / len(body_ratings) < 5.5 and food_days == 0:
+            insights.append(
+                Insight(
+                    severity="watch",
+                    category=food,
+                    title="Body struggling — food not logged",
+                    message="Body ratings are soft this week and eating hasn't been logged — fuel and recovery may be connected.",
+                    suggested_actions=get_actions(food, "neglected")
+                    + ["Note sleep and one meal that helped or hurt energy."],
+                    priority=20,
+                )
+            )
+
+    if emotional in categories and art in categories:
+        mood_ratings = _ratings_for_category(entries, emotional, last_7)
+        art_days = sum(1 for d in last_7 if art in entries.get(d, {}))
+        if mood_ratings and sum(mood_ratings) / len(mood_ratings) < 5 and art_days == 0:
+            insights.append(
+                Insight(
+                    severity="watch",
+                    category=art,
+                    title="Mood low — little art logged",
+                    message="Emotional ratings are down and no art logged this week — input isn't a fix, but honest logging helps you see the gap.",
+                    suggested_actions=get_actions(art, "neglected")
+                    + get_actions(emotional, "low_rating")[:1],
+                    priority=22,
+                )
+            )
+
+    if content in categories:
+        content_days = sum(1 for d in last_7 if content in entries.get(d, {}))
+        attention = _metric_trend(entries, content, "Quality of attention", last_7)
+        if content_days >= 4 and attention == "declining":
+            insights.append(
+                Insight(
+                    severity="watch",
+                    category=content,
+                    title="Lots of content, slipping attention",
+                    message="You're logging content often but attention quality is trending down — worth noting what format drags you.",
+                    suggested_actions=get_actions(content, "declining"),
+                    priority=24,
+                )
+            )
+
+    if reading in categories and content in categories:
+        reading_days = sum(1 for d in last_7 if reading in entries.get(d, {}))
+        content_days = sum(1 for d in last_7 if content in entries.get(d, {}))
+        if content_days >= 5 and reading_days == 0:
+            insights.append(
+                Insight(
+                    severity="watch",
+                    category=reading,
+                    title="Feeds up, books quiet",
+                    message="Short-form content is logged most days this week but no book reading — fine if intentional; worth noticing.",
+                    suggested_actions=get_actions(reading, "declining"),
+                    priority=26,
+                )
+            )
+
+    if creative in categories and reading in categories:
+        creative_ratings = _ratings_for_category(entries, creative, last_7)
+        reading_days = sum(1 for d in last_7 if reading in entries.get(d, {}))
+        if creative_ratings and sum(creative_ratings) / len(creative_ratings) < 5 and reading_days == 0:
+            insights.append(
+                Insight(
+                    severity="watch",
+                    category=reading,
+                    title="Creative work low — no reading logged",
+                    message="Output feels stuck and no long-form reading this week — input and craft often travel together.",
+                    suggested_actions=get_actions(reading, "neglected")[:2],
+                    priority=28,
+                )
+            )
+
+    if money in categories and career in categories:
+        money_trend = _metric_trend(entries, money, "Financial clarity rating", last_7)
+        if money_trend == "declining":
+            career_ratings = _ratings_for_category(entries, career, last_7)
+            if career_ratings and sum(career_ratings) / len(career_ratings) < 5.5:
+                insights.append(
+                    Insight(
+                        severity="watch",
+                        category=money,
+                        title="Money and work both under strain",
+                        message="Financial clarity is trending down and career satisfaction is soft — often connected; log one small action in each.",
+                        suggested_actions=get_actions(money, "declining")[:1]
+                        + get_actions(career, "low_rating")[:1],
+                        priority=19,
+                    )
+                )
+
+    if emotional in categories and relationships in categories:
+        mood_ratings = _ratings_for_category(entries, emotional, last_7)
+        loneliness_trend = _metric_trend(entries, relationships, "Loneliness (lower = better)", last_7)
+        if mood_ratings and sum(mood_ratings) / len(mood_ratings) < 5 and loneliness_trend == "improving":
+            insights.append(
+                Insight(
+                    severity="watch",
+                    category=relationships,
+                    title="Mood down — loneliness creeping up",
+                    message="Emotional ratings are low and loneliness metrics are trending worse — connection may need attention.",
+                    suggested_actions=get_actions(relationships, "neglected")
+                    + get_actions(emotional, "low_rating")[:1],
+                    priority=21,
+                )
+            )
+
+    if cultural in categories and art in categories:
+        cultural_days = sum(1 for d in last_7 if cultural in entries.get(d, {}))
+        art_days = sum(1 for d in last_7 if art in entries.get(d, {}))
+        if art_days >= 4 and cultural_days == 0:
+            insights.append(
+                Insight(
+                    severity="info",
+                    category=cultural,
+                    title="Consuming culture, not practicing it",
+                    message="Art is logged often but active cultural life isn't — passive intake vs language, tradition, or heritage.",
+                    suggested_actions=get_actions(cultural, "neglected")[:2],
+                    priority=30,
+                )
+            )
+
+    if home in categories and burnout in categories:
+        stress_trend = _metric_trend(entries, burnout, "Stress level (lower = better)", last_7)
+        home_ratings = _ratings_for_category(entries, home, last_7)
+        if stress_trend == "improving" and home_ratings and sum(home_ratings) / len(home_ratings) < 5:
+            insights.append(
+                Insight(
+                    severity="watch",
+                    category=home,
+                    title="Stress up — environment suffering",
+                    message="Burnout stress is rising and home/environment ratings are low — clutter and recovery often travel together.",
+                    suggested_actions=get_actions(home, "declining")[:2]
+                    + get_actions(burnout, "declining")[:1],
+                    priority=23,
+                )
+            )
+
+    if learning in categories and creative in categories:
+        learning_days = sum(1 for d in last_7 if learning in entries.get(d, {}))
+        creative_ratings = _ratings_for_category(entries, creative, last_7)
+        if creative_ratings and sum(creative_ratings) / len(creative_ratings) < 5.5 and learning_days == 0:
+            insights.append(
+                Insight(
+                    severity="watch",
+                    category=learning,
+                    title="Output stuck — little learning logged",
+                    message="Creative work is soft and no deliberate learning this week — skills and input feed output.",
+                    suggested_actions=get_actions(learning, "neglected")[:2],
+                    priority=27,
+                )
+            )
+
+    if spiritual in categories and community in categories:
+        spiritual_days = sum(1 for d in last_7 if spiritual in entries.get(d, {}))
+        community_days = sum(1 for d in last_7 if community in entries.get(d, {}))
+        if spiritual_days >= 3 and community_days == 0:
+            insights.append(
+                Insight(
+                    severity="info",
+                    category=community,
+                    title="Inner practice strong — outer service quiet",
+                    message="Spiritual practice is consistent but service/community isn't logged — balance inner and outer if that matters to you.",
+                    suggested_actions=get_actions(community, "neglected")[:2],
+                    priority=31,
+                )
+            )
 
     return insights
 

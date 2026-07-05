@@ -9,6 +9,7 @@ Oppo research for positioning **Integral** in the personal development / life tr
 Users who want to:
 
 - Log progress across **multiple life areas** (not just mood or habits)
+- Track **inputs** as well as outputs — food, art, reading, and content — alongside the rest of life
 - Stay consistent on **low-energy days** (rating + save in under a minute)
 - See **patterns and maintenance gaps** without hiring a coach
 - Keep data **local and private** (no account, no cloud lock-in)
@@ -80,6 +81,21 @@ Users who want to:
 
 ---
 
+### 6. Input & consumption (food, art, reading, content)
+
+Dedicated apps usually own **one vertical** (films, books, calories, read-later). Integral splits **four input areas** and ties them to body, burnout, mood, and creative work.
+
+**Full breakdown:** [INPUT_AND_CONSUMPTION_COMPARISON.md](INPUT_AND_CONSUMPTION_COMPARISON.md)
+
+| Vertical | Example competitors | Integral difference |
+|----------|---------------------|---------------------|
+| Food (non-calorie) | Ate, MyFitnessPal, Noom | Nourishment + energy beside sleep/burnout; no food DB |
+| Art (incl. novels) | Letterboxd, Last.fm, StoryGraph | All media in one daily check-in; not a public catalog |
+| General reading | Goodreads, Bookly, Readwise | Progress + retention; fiction novels under Art |
+| Short-form content | Pocket, Matter, RescueTime | Self-reported attention/value; includes doomscrolling |
+
+---
+
 ## Feature comparison matrix (simplified)
 
 | Capability | Integral | Benji | Daylio | LifeWheel | Mini Diarium |
@@ -103,7 +119,7 @@ Users who want to:
 
 ## Where Integral wins
 
-1. **Integral life model** — Not just mood, habits, or a one-time wheel quiz. Eight intentional domains with editable checklists and metrics.
+1. **Integral life model** — Eighteen intentional domains spanning financial, physical, mental, emotional, spiritual, relational, cultural, and environmental development — plus food, art, reading, and content input. See [HOLISTIC_DEVELOPMENT_MODEL.md](HOLISTIC_DEVELOPMENT_MODEL.md).
 2. **Burnout-aware UX** — Rating + Save is enough; everything else is optional.
 3. **Maintenance intelligence** — Declining trends, neglected areas, burnout signals, category playbooks — not just charts.
 4. **Contribution grid** — At-a-glance consistency like GitHub; click any day to explore.

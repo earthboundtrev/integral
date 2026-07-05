@@ -76,7 +76,7 @@ For now the square icon works as a placeholder on the Releases page via the atta
 **Tend every area of your life. One honest day at a time.**
 
 ### What's included
-- Daily logging across 8 life areas (rating, checklist, metrics, notes)
+- Daily logging across 18 life areas — holistic development plus food, art, reading, and content
 - GitHub-style activity grid + day explorer
 - Intelligent guidance (trends, maintenance gaps, burnout signals)
 - Fitness Hub: Convict Conditioning, Tibetan Rites, Explosive Calisthenics

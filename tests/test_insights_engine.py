@@ -9,7 +9,10 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from insights.engine import analyze_all, analyze_category, top_insights  # noqa: E402
+from insights.engine import analyze_all, analyze_category, analyze_cross_category, top_insights  # noqa: E402
+from insights.playbooks import PLAYBOOKS  # noqa: E402
+from personal_dev_tracker import PersonalDevelopmentTracker  # noqa: E402
+from unittest.mock import MagicMock  # noqa: E402
 
 
 DEFAULT_CATEGORIES = {
@@ -67,6 +70,65 @@ class TestInsights(unittest.TestCase):
         top = top_insights(insights, limit=2)
         self.assertTrue(top)
         self.assertIn(top[0].severity, ("action", "watch"))
+
+    def test_default_categories_include_consumption_areas(self) -> None:
+        tracker = MagicMock()
+        defaults = PersonalDevelopmentTracker.get_default_categories(tracker)
+        self.assertGreaterEqual(len(defaults), 18)
+        for name in (
+            "Career & Vocation",
+            "Learning & Intellectual Growth",
+            "Relationships & Social Connection",
+            "Cultural Life & Heritage",
+            "Home & Environment",
+            "Community & Service",
+            "What You Have Eaten",
+            "Art You Have Consumed",
+            "Content You Have Consumed",
+            "General Reading",
+        ):
+            self.assertIn(name, defaults)
+            self.assertIn(name, PLAYBOOKS)
+
+    def test_merge_appends_new_checklist_items(self) -> None:
+        tracker = MagicMock()
+        defaults = PersonalDevelopmentTracker.get_default_categories(tracker)
+        tracker.get_default_categories.return_value = defaults
+        stored = {
+            "Body & Presence": {
+                "checklist": ["Completed movement/exercise"],
+                "metrics": defaults["Body & Presence"]["metrics"],
+            }
+        }
+        merged = PersonalDevelopmentTracker.merge_categories_with_defaults(tracker, stored)
+        body_checklist = merged["Body & Presence"]["checklist"]
+        self.assertIn("Completed movement/exercise", body_checklist)
+        self.assertIn("Prioritized sleep or recovery", body_checklist)
+        self.assertGreater(len(body_checklist), 1)
+
+    def test_merge_adds_new_default_categories(self) -> None:
+        tracker = MagicMock()
+        defaults = PersonalDevelopmentTracker.get_default_categories(tracker)
+        tracker.get_default_categories.return_value = defaults
+        stored = {"Body & Presence": defaults["Body & Presence"]}
+        merged = PersonalDevelopmentTracker.merge_categories_with_defaults(tracker, stored)
+        self.assertIn("What You Have Eaten", merged)
+        self.assertEqual(len(merged), len(defaults))
+
+    def test_cross_category_food_when_body_low(self) -> None:
+        tracker = MagicMock()
+        categories = {
+            "Body & Presence": DEFAULT_CATEGORIES["Body & Presence"],
+            "What You Have Eaten": PersonalDevelopmentTracker.get_default_categories(tracker)["What You Have Eaten"],
+        }
+        entries = {}
+        for day in range(1, 8):
+            entries[f"2026-07-{day:02d}"] = {
+                "Body & Presence": {"rating": 4, "checklist": {}, "metrics": {}, "notes": ""},
+            }
+        insights = analyze_cross_category(entries, categories, date(2026, 7, 7))
+        titles = [item.title for item in insights]
+        self.assertIn("Body struggling — food not logged", titles)
 
 
 if __name__ == "__main__":

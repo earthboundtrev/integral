@@ -345,14 +345,18 @@ def show_onboarding(tracker: PersonalDevelopmentTracker, on_done: Callable[[], N
     body.pack(fill=tk.BOTH, expand=True, padx=20, pady=8)
     body.insert(
         tk.END,
-        "Integral is local-first — your data stays on this machine.\n\n"
-        "Daily logging (low friction):\n"
-        "  • Pick a life area → set a 1–10 rating → Save. That's enough on hard days.\n"
+        "Integral is free, open-source software — your data stays on this machine.\n\n"
+        "Integral tracks development across the whole person — financial, physical, mental, "
+        "emotional, spiritual, relational, cultural, and what you take in (food, art, books, content).\n\n"
+        "Daily logging (keep it light):\n"
+        "  • Pick any life area → 1–10 rating → Save. That's enough on hard days.\n"
+        "  • You don't need every category every day — log what matters today.\n"
         "  • Add checklist ticks, metrics, and notes when you have energy.\n\n"
-        "Overview tab shows a GitHub-style activity grid — click any day to explore.\n\n"
-        "Fitness Hub tracks Convict Conditioning, Tibetan Rites, and Explosive Calisthenics "
-        "with official progression tables and smart coaching.\n\n"
-        "Use Weekly Summary and Guidance for trends; Export and Backup under the footer when you want copies.\n",
+        "Overview shows a year-at-a-glance grid — click any day to explore.\n\n"
+        "Fitness Hub includes reference tables from popular training books (CC, Tibetan Rites, "
+        "Overcoming Gravity, and more). Integral is not sponsored by those authors — "
+        "if you love a program, buy the book.\n\n"
+        "Use Weekly Summary and Guidance for trends; Export and Backup in the footer when you want copies.\n",
     )
     body.config(state=tk.DISABLED)
 

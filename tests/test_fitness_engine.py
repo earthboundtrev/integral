@@ -115,5 +115,27 @@ class TestMigration(unittest.TestCase):
         self.assertIn("program_state", migrated)
 
 
+class TestProgramLibrary(unittest.TestCase):
+    def test_reference_programs_loaded(self) -> None:
+        programs = load_program_definitions()
+        expected = {
+            "convict-conditioning",
+            "convict-conditioning-2",
+            "explosive-calisthenics",
+            "overcoming-gravity",
+            "strong-medicine",
+            "super-joints",
+            "tibetan-rites",
+        }
+        self.assertTrue(expected.issubset(set(programs.keys())))
+        cc2 = programs["convict-conditioning-2"]
+        self.assertEqual(cc2["program_type"], "reference")
+        self.assertGreaterEqual(len(cc2["movements"]), 9)
+        og = programs["overcoming-gravity"]
+        self.assertIn("charts", og)
+        sj = programs["super-joints"]
+        self.assertGreaterEqual(len(sj["movements"]), 28)
+
+
 if __name__ == "__main__":
     unittest.main()

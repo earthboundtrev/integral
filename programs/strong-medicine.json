@@ -1,0 +1,91 @@
+{
+  "id": "strong-medicine",
+  "name": "Strong Medicine",
+  "author": "Chris Hardy & Marty Gallagher",
+  "source": "Strong Medicine: How to Conquer Chronic Disease and Achieve Your Full Genetic Potential (2015)",
+  "program_type": "reference",
+  "description": "Resistance foundation (squat, sumo deadlift, bench, overhead press, row, anti-sit-up core) plus Burst Cardio HIIT. Foreword by Paul Wade. Pause-at-bottom grind technique; make light weights heavy.",
+  "progression_model": "step_ladder",
+  "notation": "Master technique before load — 3×6–10 typical working sets when programming",
+  "reference_sections": [
+    {
+      "id": "sm-burst-cardio",
+      "name": "Burst Cardio (HIIT)",
+      "summary": "Alternate 90–95% HRmax bursts with recovery to ~70% HRmax. Sessions 10–20 min. Use HR monitor; switch modality if you cannot hit 90% HRmax."
+    },
+    {
+      "id": "sm-weekly-template",
+      "name": "Sample Weekly Template",
+      "summary": "Mon: Squat superset + walk. Tue: Burst cardio. Wed: Bench superset Row. Thu: rest/walk. Fri: Sumo deadlift. Sat/Sun: burst cardio or rest. See Battle Plan III for 12-week wave."
+    }
+  ],
+  "movements": [
+    {
+      "id": "sm-squat",
+      "name": "King Squat Progressions",
+      "master_step": "Barbell Back Squat (grind)",
+      "steps": [
+        { "step": 1, "name": "Assisted Squat — Shortened Rep Stroke", "beginner": "1x10", "intermediate": "3x10", "progression": "parallel depth" },
+        { "step": 2, "name": "Assisted Squat — Doorway/Pole", "beginner": "1x10", "intermediate": "3x10", "progression": "ultra-deep" },
+        { "step": 3, "name": "Assisted Squat — Towel/Rope", "beginner": "1x10", "intermediate": "3x10", "progression": "minimal assist" },
+        { "step": 4, "name": "Bodyweight Squat (pause at bottom)", "beginner": "1x10", "intermediate": "3x10", "progression": "3x10 perfect" },
+        { "step": 5, "name": "Goblet Squat", "beginner": "3x6", "intermediate": "3x8", "progression": "3x10 grind" },
+        { "step": 6, "name": "Front Squat (dual KB/DB at shoulders)", "beginner": "3x6", "intermediate": "3x8", "progression": "3x10 grind" },
+        { "step": 7, "name": "Barbell Back Squat", "beginner": "3x6", "intermediate": "3x8", "progression": "3x10 grind", "master": true }
+      ]
+    },
+    {
+      "id": "sm-deadlift",
+      "name": "Sumo Deadlift (Healthlift)",
+      "master_step": "Barbell Sumo Deadlift",
+      "steps": [
+        { "step": 1, "name": "Sumo Deadlift — technique (empty bar / light)", "beginner": "3x8", "intermediate": "3x10", "progression": "silent touch-down" },
+        { "step": 2, "name": "Single Kettlebell Sumo Deadlift", "beginner": "3x6", "intermediate": "3x8", "progression": "3x10 grind" },
+        { "step": 3, "name": "Double Kettlebell Sumo Deadlift", "beginner": "3x6", "intermediate": "3x8", "progression": "3x10 grind" },
+        { "step": 4, "name": "Barbell Sumo Deadlift", "beginner": "3x6", "intermediate": "3x8", "progression": "3x10 grind", "master": true }
+      ]
+    },
+    {
+      "id": "sm-bench-press",
+      "name": "Dumbbell Bench Press",
+      "master_step": "Explosive Dumbbell Bench (touch-and-go)",
+      "steps": [
+        { "step": 1, "name": "Pause-Relax-Grind Dumbbell Bench", "beginner": "3x6", "intermediate": "3x8", "progression": "3x10 grind" },
+        { "step": 2, "name": "Beyond Pause-Relax-Grind (deeper pause)", "beginner": "3x6", "intermediate": "3x8", "progression": "3x10" },
+        { "step": 3, "name": "Explosive Touch-and-Go Dumbbell Bench", "beginner": "3x6", "intermediate": "3x8", "progression": "3x10", "master": true }
+      ]
+    },
+    {
+      "id": "sm-overhead-press",
+      "name": "Overhead Dumbbell Press",
+      "master_step": "Double Arm Overhead Press (max tension)",
+      "steps": [
+        { "step": 1, "name": "Seated Dumbbell Press (learn path)", "beginner": "3x6", "intermediate": "3x8", "progression": "3x10" },
+        { "step": 2, "name": "Standing Dumbbell Press", "beginner": "3x6", "intermediate": "3x8", "progression": "3x10" },
+        { "step": 3, "name": "Standing Double Press (explosive up, slow down)", "beginner": "3x6", "intermediate": "3x8", "progression": "3x10", "master": true }
+      ]
+    },
+    {
+      "id": "sm-row",
+      "name": "Statue Row Progressions",
+      "master_step": "Plank Row",
+      "steps": [
+        { "step": 1, "name": "Single-Arm Supported Row", "beginner": "3x8", "intermediate": "3x10", "progression": "3x12" },
+        { "step": 2, "name": "Single-Arm Row (no bench support)", "beginner": "3x8", "intermediate": "3x10", "progression": "3x12" },
+        { "step": 3, "name": "Frozen Statue Row (double DB)", "beginner": "3x6", "intermediate": "3x8", "progression": "3x10" },
+        { "step": 4, "name": "Plank Row", "beginner": "3x6", "intermediate": "3x8", "progression": "3x10", "master": true }
+      ]
+    },
+    {
+      "id": "sm-ab-training",
+      "name": "Abdominal Training (no sit-ups)",
+      "master_step": "Plank Row (anti-rotation)",
+      "steps": [
+        { "step": 1, "name": "Basic Plank (forearms)", "beginner": "30s", "intermediate": "45s", "progression": "60s" },
+        { "step": 2, "name": "High Plank (hands)", "beginner": "30s", "intermediate": "45s", "progression": "60s" },
+        { "step": 3, "name": "One-Hand Plank", "beginner": "15s", "intermediate": "30s", "progression": "45s" },
+        { "step": 4, "name": "Plank Row", "beginner": "3x6", "intermediate": "3x8", "progression": "3x10", "master": true }
+      ]
+    }
+  ]
+}

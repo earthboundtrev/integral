@@ -1,0 +1,1802 @@
+{
+  "id": "overcoming-gravity",
+  "name": "Overcoming Gravity",
+  "author": "Steven Low",
+  "source": "Overcoming Gravity, 2nd Edition (2017) — official progression charts",
+  "program_type": "reference",
+  "description": "Gymnastics-style bodyweight progressions across handstand, pulling, pushing, and misc charts. Levels map to FIG tiers (Beginner / Intermediate A-B / Advanced / Elite). Use Program detail for full ladder.",
+  "progression_model": "step_ladder",
+  "notation": "Levels 1–16 per chart column; advance using Methods of Progression (Ch. 10)",
+  "charts": [
+    {
+      "id": "handstand",
+      "name": "Handstand Chart",
+      "emphasis": "Anterior delts, traps, triceps, body control"
+    },
+    {
+      "id": "pulling",
+      "name": "Pulling Chart",
+      "emphasis": "Posterior chain, scapular muscles, biceps"
+    },
+    {
+      "id": "pushing",
+      "name": "Pushing Chart",
+      "emphasis": "Chest, anterior delts, triceps, planche"
+    },
+    {
+      "id": "misc",
+      "name": "Miscellaneous Chart",
+      "emphasis": "Muscle-ups, flags, core, legs"
+    }
+  ],
+  "movements": [
+    {
+      "id": "og-hs-handstands",
+      "name": "Handstands",
+      "chart": "handstand",
+      "master_step": "One-Arm Handstand",
+      "steps": [
+        {
+          "step": 1,
+          "name": "Wall Handstand",
+          "beginner": "FIG Beg — L1",
+          "intermediate": "FIG Int — L1",
+          "progression": "FIG Adv — L1",
+          "og_level": 1
+        },
+        {
+          "step": 2,
+          "name": "Wall Handstand",
+          "beginner": "FIG Beg — L2",
+          "intermediate": "FIG Int — L2",
+          "progression": "FIG Adv — L2",
+          "og_level": 2
+        },
+        {
+          "step": 3,
+          "name": "Wall Handstand",
+          "beginner": "FIG Beg — L3",
+          "intermediate": "FIG Int — L3",
+          "progression": "FIG Adv — L3",
+          "og_level": 3
+        },
+        {
+          "step": 4,
+          "name": "Free Handstand",
+          "beginner": "FIG Beg — L4",
+          "intermediate": "FIG Int — L4",
+          "progression": "FIG Adv — L4",
+          "og_level": 4
+        },
+        {
+          "step": 5,
+          "name": "Free Handstand / Shoulder Stand",
+          "beginner": "FIG Beg — L5",
+          "intermediate": "FIG Int — L5",
+          "progression": "FIG Adv — L5",
+          "og_level": 5
+        },
+        {
+          "step": 6,
+          "name": "Ring Strap Handstand",
+          "beginner": "FIG Beg — L6",
+          "intermediate": "FIG Int — L6",
+          "progression": "FIG Adv — L6",
+          "og_level": 6
+        },
+        {
+          "step": 7,
+          "name": "Progressions to One-Arm Handstand",
+          "beginner": "FIG Beg — L7",
+          "intermediate": "FIG Int — L7",
+          "progression": "FIG Adv — L7",
+          "og_level": 7
+        },
+        {
+          "step": 8,
+          "name": "Ring Strap Handstand (int)",
+          "beginner": "FIG Beg — L8",
+          "intermediate": "FIG Int — L8",
+          "progression": "FIG Adv — L8",
+          "og_level": 8
+        },
+        {
+          "step": 9,
+          "name": "Ring Free Handstand",
+          "beginner": "FIG Beg — L9",
+          "intermediate": "FIG Int — L9",
+          "progression": "FIG Adv — L9",
+          "og_level": 9
+        },
+        {
+          "step": 10,
+          "name": "One-Arm Handstand",
+          "beginner": "FIG Beg — L10",
+          "intermediate": "FIG Int — L10",
+          "progression": "FIG Adv — L10",
+          "og_level": 10
+        },
+        {
+          "step": 11,
+          "name": "One-Arm Handstand",
+          "beginner": "FIG Beg — L11",
+          "intermediate": "FIG Int — L11",
+          "progression": "FIG Adv — L11",
+          "og_level": 11
+        },
+        {
+          "step": 12,
+          "name": "One-Arm Handstand",
+          "beginner": "FIG Beg — L12",
+          "intermediate": "FIG Int — L12",
+          "progression": "FIG Adv — L12",
+          "og_level": 12
+        },
+        {
+          "step": 13,
+          "name": "One-Arm Handstand",
+          "beginner": "FIG Beg — L13",
+          "intermediate": "FIG Int — L13",
+          "progression": "FIG Adv — L13",
+          "og_level": 13
+        },
+        {
+          "step": 14,
+          "name": "One-Arm Handstand",
+          "beginner": "FIG Beg — L14",
+          "intermediate": "FIG Int — L14",
+          "progression": "FIG Adv — L14",
+          "og_level": 14
+        },
+        {
+          "step": 15,
+          "name": "One-Arm Handstand",
+          "beginner": "FIG Beg — L15",
+          "intermediate": "FIG Int — L15",
+          "progression": "FIG Adv — L15",
+          "og_level": 15
+        },
+        {
+          "step": 16,
+          "name": "One-Arm Handstand",
+          "beginner": "FIG Beg — L16",
+          "intermediate": "FIG Int — L16",
+          "progression": "FIG Adv — L16",
+          "og_level": 16
+        }
+      ]
+    },
+    {
+      "id": "og-hs-hspu",
+      "name": "Handstand Pushups",
+      "chart": "handstand",
+      "master_step": "1.15x BW HSPU variants",
+      "steps": [
+        {
+          "step": 1,
+          "name": "Pike Headstand Pushup (HeSPU)",
+          "beginner": "FIG Beg — L1",
+          "intermediate": "FIG Int — L1",
+          "progression": "FIG Adv — L1",
+          "og_level": 1
+        },
+        {
+          "step": 2,
+          "name": "Box HeSPU",
+          "beginner": "FIG Beg — L2",
+          "intermediate": "FIG Int — L2",
+          "progression": "FIG Adv — L2",
+          "og_level": 2
+        },
+        {
+          "step": 3,
+          "name": "Wall HeSPU Eccentric",
+          "beginner": "FIG Beg — L3",
+          "intermediate": "FIG Int — L3",
+          "progression": "FIG Adv — L3",
+          "og_level": 3
+        },
+        {
+          "step": 4,
+          "name": "Wall Handstand Pushup",
+          "beginner": "FIG Beg — L4",
+          "intermediate": "FIG Int — L4",
+          "progression": "FIG Adv — L4",
+          "og_level": 4
+        },
+        {
+          "step": 5,
+          "name": "Wall HSPU",
+          "beginner": "FIG Beg — L5",
+          "intermediate": "FIG Int — L5",
+          "progression": "FIG Adv — L5",
+          "og_level": 5
+        },
+        {
+          "step": 6,
+          "name": "Free HeSPU",
+          "beginner": "FIG Beg — L6",
+          "intermediate": "FIG Int — L6",
+          "progression": "FIG Adv — L6",
+          "og_level": 6
+        },
+        {
+          "step": 7,
+          "name": "Ring Handstand Free HSPU",
+          "beginner": "FIG Beg — L7",
+          "intermediate": "FIG Int — L7",
+          "progression": "FIG Adv — L7",
+          "og_level": 7
+        },
+        {
+          "step": 8,
+          "name": "Ring Strap HSPU",
+          "beginner": "FIG Beg — L8",
+          "intermediate": "FIG Int — L8",
+          "progression": "FIG Adv — L8",
+          "og_level": 8
+        },
+        {
+          "step": 9,
+          "name": "Ring Free HSPU",
+          "beginner": "FIG Beg — L9",
+          "intermediate": "FIG Int — L9",
+          "progression": "FIG Adv — L9",
+          "og_level": 9
+        },
+        {
+          "step": 10,
+          "name": "1.15x BW HSPU variants",
+          "beginner": "FIG Beg — L10",
+          "intermediate": "FIG Int — L10",
+          "progression": "FIG Adv — L10",
+          "og_level": 10
+        },
+        {
+          "step": 11,
+          "name": "1.15x BW HSPU variants",
+          "beginner": "FIG Beg — L11",
+          "intermediate": "FIG Int — L11",
+          "progression": "FIG Adv — L11",
+          "og_level": 11
+        },
+        {
+          "step": 12,
+          "name": "1.15x BW HSPU variants",
+          "beginner": "FIG Beg — L12",
+          "intermediate": "FIG Int — L12",
+          "progression": "FIG Adv — L12",
+          "og_level": 12
+        },
+        {
+          "step": 13,
+          "name": "1.15x BW HSPU variants",
+          "beginner": "FIG Beg — L13",
+          "intermediate": "FIG Int — L13",
+          "progression": "FIG Adv — L13",
+          "og_level": 13
+        },
+        {
+          "step": 14,
+          "name": "1.15x BW HSPU variants",
+          "beginner": "FIG Beg — L14",
+          "intermediate": "FIG Int — L14",
+          "progression": "FIG Adv — L14",
+          "og_level": 14
+        },
+        {
+          "step": 15,
+          "name": "1.15x BW HSPU variants",
+          "beginner": "FIG Beg — L15",
+          "intermediate": "FIG Int — L15",
+          "progression": "FIG Adv — L15",
+          "og_level": 15
+        },
+        {
+          "step": 16,
+          "name": "1.15x BW HSPU variants",
+          "beginner": "FIG Beg — L16",
+          "intermediate": "FIG Int — L16",
+          "progression": "FIG Adv — L16",
+          "og_level": 16
+        }
+      ]
+    },
+    {
+      "id": "og-hs-press",
+      "name": "Press to Handstand",
+      "chart": "handstand",
+      "master_step": "1.15x BW Parallel Bar Dip to HS",
+      "steps": [
+        {
+          "step": 1,
+          "name": "0.3x BW Bent-Arm Press",
+          "beginner": "FIG Beg — L1",
+          "intermediate": "FIG Int — L1",
+          "progression": "FIG Adv — L1",
+          "og_level": 1
+        },
+        {
+          "step": 2,
+          "name": "0.43x BW Press",
+          "beginner": "FIG Beg — L2",
+          "intermediate": "FIG Int — L2",
+          "progression": "FIG Adv — L2",
+          "og_level": 2
+        },
+        {
+          "step": 3,
+          "name": "0.55x BW Press",
+          "beginner": "FIG Beg — L3",
+          "intermediate": "FIG Int — L3",
+          "progression": "FIG Adv — L3",
+          "og_level": 3
+        },
+        {
+          "step": 4,
+          "name": "0.68x BW Press",
+          "beginner": "FIG Beg — L4",
+          "intermediate": "FIG Int — L4",
+          "progression": "FIG Adv — L4",
+          "og_level": 4
+        },
+        {
+          "step": 5,
+          "name": "Bent-Arm Bent-Body Press",
+          "beginner": "FIG Beg — L5",
+          "intermediate": "FIG Int — L5",
+          "progression": "FIG Adv — L5",
+          "og_level": 5
+        },
+        {
+          "step": 6,
+          "name": "0.8x BW L-Sit Press",
+          "beginner": "FIG Beg — L6",
+          "intermediate": "FIG Int — L6",
+          "progression": "FIG Adv — L6",
+          "og_level": 6
+        },
+        {
+          "step": 7,
+          "name": "0.9x BW Chair Press",
+          "beginner": "FIG Beg — L7",
+          "intermediate": "FIG Int — L7",
+          "progression": "FIG Adv — L7",
+          "og_level": 7
+        },
+        {
+          "step": 8,
+          "name": "1.0x BW Bent-Arm Press",
+          "beginner": "FIG Beg — L8",
+          "intermediate": "FIG Int — L8",
+          "progression": "FIG Adv — L8",
+          "og_level": 8
+        },
+        {
+          "step": 9,
+          "name": "1.08x BW Handstand Elbow Lever Press",
+          "beginner": "FIG Beg — L9",
+          "intermediate": "FIG Int — L9",
+          "progression": "FIG Adv — L9",
+          "og_level": 9
+        },
+        {
+          "step": 10,
+          "name": "1.15x BW Parallel Bar Dip to HS",
+          "beginner": "FIG Beg — L10",
+          "intermediate": "FIG Int — L10",
+          "progression": "FIG Adv — L10",
+          "og_level": 10
+        },
+        {
+          "step": 11,
+          "name": "1.15x BW Parallel Bar Dip to HS",
+          "beginner": "FIG Beg — L11",
+          "intermediate": "FIG Int — L11",
+          "progression": "FIG Adv — L11",
+          "og_level": 11
+        },
+        {
+          "step": 12,
+          "name": "1.15x BW Parallel Bar Dip to HS",
+          "beginner": "FIG Beg — L12",
+          "intermediate": "FIG Int — L12",
+          "progression": "FIG Adv — L12",
+          "og_level": 12
+        },
+        {
+          "step": 13,
+          "name": "1.15x BW Parallel Bar Dip to HS",
+          "beginner": "FIG Beg — L13",
+          "intermediate": "FIG Int — L13",
+          "progression": "FIG Adv — L13",
+          "og_level": 13
+        },
+        {
+          "step": 14,
+          "name": "1.15x BW Parallel Bar Dip to HS",
+          "beginner": "FIG Beg — L14",
+          "intermediate": "FIG Int — L14",
+          "progression": "FIG Adv — L14",
+          "og_level": 14
+        },
+        {
+          "step": 15,
+          "name": "1.15x BW Parallel Bar Dip to HS",
+          "beginner": "FIG Beg — L15",
+          "intermediate": "FIG Int — L15",
+          "progression": "FIG Adv — L15",
+          "og_level": 15
+        },
+        {
+          "step": 16,
+          "name": "1.15x BW Parallel Bar Dip to HS",
+          "beginner": "FIG Beg — L16",
+          "intermediate": "FIG Int — L16",
+          "progression": "FIG Adv — L16",
+          "og_level": 16
+        }
+      ]
+    },
+    {
+      "id": "og-hs-core",
+      "name": "L-Sit / V-Sit / Manna",
+      "chart": "handstand",
+      "master_step": "140° V-Sit",
+      "steps": [
+        {
+          "step": 1,
+          "name": "Tuck L-Sit",
+          "beginner": "FIG Beg — L1",
+          "intermediate": "FIG Int — L1",
+          "progression": "FIG Adv — L1",
+          "og_level": 1
+        },
+        {
+          "step": 2,
+          "name": "One-Leg Bent L-Sit",
+          "beginner": "FIG Beg — L2",
+          "intermediate": "FIG Int — L2",
+          "progression": "FIG Adv — L2",
+          "og_level": 2
+        },
+        {
+          "step": 3,
+          "name": "L-Sit",
+          "beginner": "FIG Beg — L3",
+          "intermediate": "FIG Int — L3",
+          "progression": "FIG Adv — L3",
+          "og_level": 3
+        },
+        {
+          "step": 4,
+          "name": "Straddle L-Sit",
+          "beginner": "FIG Beg — L4",
+          "intermediate": "FIG Int — L4",
+          "progression": "FIG Adv — L4",
+          "og_level": 4
+        },
+        {
+          "step": 5,
+          "name": "RTO L-Sit",
+          "beginner": "FIG Beg — L5",
+          "intermediate": "FIG Int — L5",
+          "progression": "FIG Adv — L5",
+          "og_level": 5
+        },
+        {
+          "step": 6,
+          "name": "45° V-Sit",
+          "beginner": "FIG Beg — L6",
+          "intermediate": "FIG Int — L6",
+          "progression": "FIG Adv — L6",
+          "og_level": 6
+        },
+        {
+          "step": 7,
+          "name": "75° V-Sit",
+          "beginner": "FIG Beg — L7",
+          "intermediate": "FIG Int — L7",
+          "progression": "FIG Adv — L7",
+          "og_level": 7
+        },
+        {
+          "step": 8,
+          "name": "100° V-Sit",
+          "beginner": "FIG Beg — L8",
+          "intermediate": "FIG Int — L8",
+          "progression": "FIG Adv — L8",
+          "og_level": 8
+        },
+        {
+          "step": 9,
+          "name": "120° V-Sit",
+          "beginner": "FIG Beg — L9",
+          "intermediate": "FIG Int — L9",
+          "progression": "FIG Adv — L9",
+          "og_level": 9
+        },
+        {
+          "step": 10,
+          "name": "140° V-Sit",
+          "beginner": "FIG Beg — L10",
+          "intermediate": "FIG Int — L10",
+          "progression": "FIG Adv — L10",
+          "og_level": 10
+        },
+        {
+          "step": 11,
+          "name": "155° V-Sit",
+          "beginner": "FIG Beg — L11",
+          "intermediate": "FIG Int — L11",
+          "progression": "FIG Adv — L11",
+          "og_level": 11
+        },
+        {
+          "step": 12,
+          "name": "170° V-Sit",
+          "beginner": "FIG Beg — L12",
+          "intermediate": "FIG Int — L12",
+          "progression": "FIG Adv — L12",
+          "og_level": 12
+        },
+        {
+          "step": 13,
+          "name": "Manna",
+          "beginner": "FIG Beg — L13",
+          "intermediate": "FIG Int — L13",
+          "progression": "FIG Adv — L13",
+          "og_level": 13
+        },
+        {
+          "step": 14,
+          "name": "Manna",
+          "beginner": "FIG Beg — L14",
+          "intermediate": "FIG Int — L14",
+          "progression": "FIG Adv — L14",
+          "og_level": 14
+        },
+        {
+          "step": 15,
+          "name": "Manna",
+          "beginner": "FIG Beg — L15",
+          "intermediate": "FIG Int — L15",
+          "progression": "FIG Adv — L15",
+          "og_level": 15
+        },
+        {
+          "step": 16,
+          "name": "Manna",
+          "beginner": "FIG Beg — L16",
+          "intermediate": "FIG Int — L16",
+          "progression": "FIG Adv — L16",
+          "og_level": 16
+        }
+      ]
+    },
+    {
+      "id": "og-pull-back-lever",
+      "name": "Back Lever",
+      "chart": "pulling",
+      "master_step": "Bent-Arm Pull-up to Back Lever",
+      "steps": [
+        {
+          "step": 1,
+          "name": "German Hang",
+          "beginner": "FIG Beg — L1",
+          "intermediate": "FIG Int — L1",
+          "progression": "FIG Adv — L1",
+          "og_level": 1
+        },
+        {
+          "step": 2,
+          "name": "Skin the Cat",
+          "beginner": "FIG Beg — L2",
+          "intermediate": "FIG Int — L2",
+          "progression": "FIG Adv — L2",
+          "og_level": 2
+        },
+        {
+          "step": 3,
+          "name": "Tuck Back Lever",
+          "beginner": "FIG Beg — L3",
+          "intermediate": "FIG Int — L3",
+          "progression": "FIG Adv — L3",
+          "og_level": 3
+        },
+        {
+          "step": 4,
+          "name": "Advanced Tuck Back Lever",
+          "beginner": "FIG Beg — L4",
+          "intermediate": "FIG Int — L4",
+          "progression": "FIG Adv — L4",
+          "og_level": 4
+        },
+        {
+          "step": 5,
+          "name": "Straddle Back Lever",
+          "beginner": "FIG Beg — L5",
+          "intermediate": "FIG Int — L5",
+          "progression": "FIG Adv — L5",
+          "og_level": 5
+        },
+        {
+          "step": 6,
+          "name": "Half Lay / One-Leg Back Lever",
+          "beginner": "FIG Beg — L6",
+          "intermediate": "FIG Int — L6",
+          "progression": "FIG Adv — L6",
+          "og_level": 6
+        },
+        {
+          "step": 7,
+          "name": "Full Back Lever",
+          "beginner": "FIG Beg — L7",
+          "intermediate": "FIG Int — L7",
+          "progression": "FIG Adv — L7",
+          "og_level": 7
+        },
+        {
+          "step": 8,
+          "name": "Back Lever Pullout",
+          "beginner": "FIG Beg — L8",
+          "intermediate": "FIG Int — L8",
+          "progression": "FIG Adv — L8",
+          "og_level": 8
+        },
+        {
+          "step": 9,
+          "name": "German Hang Pullout",
+          "beginner": "FIG Beg — L9",
+          "intermediate": "FIG Int — L9",
+          "progression": "FIG Adv — L9",
+          "og_level": 9
+        },
+        {
+          "step": 10,
+          "name": "Bent-Arm Pull-up to Back Lever",
+          "beginner": "FIG Beg — L10",
+          "intermediate": "FIG Int — L10",
+          "progression": "FIG Adv — L10",
+          "og_level": 10
+        },
+        {
+          "step": 11,
+          "name": "Handstand Lower to Back Lever",
+          "beginner": "FIG Beg — L11",
+          "intermediate": "FIG Int — L11",
+          "progression": "FIG Adv — L11",
+          "og_level": 11
+        },
+        {
+          "step": 12,
+          "name": "Handstand Lower to Back Lever",
+          "beginner": "FIG Beg — L12",
+          "intermediate": "FIG Int — L12",
+          "progression": "FIG Adv — L12",
+          "og_level": 12
+        },
+        {
+          "step": 13,
+          "name": "Handstand Lower to Back Lever",
+          "beginner": "FIG Beg — L13",
+          "intermediate": "FIG Int — L13",
+          "progression": "FIG Adv — L13",
+          "og_level": 13
+        },
+        {
+          "step": 14,
+          "name": "Handstand Lower to Back Lever",
+          "beginner": "FIG Beg — L14",
+          "intermediate": "FIG Int — L14",
+          "progression": "FIG Adv — L14",
+          "og_level": 14
+        },
+        {
+          "step": 15,
+          "name": "Handstand Lower to Back Lever",
+          "beginner": "FIG Beg — L15",
+          "intermediate": "FIG Int — L15",
+          "progression": "FIG Adv — L15",
+          "og_level": 15
+        },
+        {
+          "step": 16,
+          "name": "Handstand Lower to Back Lever",
+          "beginner": "FIG Beg — L16",
+          "intermediate": "FIG Int — L16",
+          "progression": "FIG Adv — L16",
+          "og_level": 16
+        }
+      ]
+    },
+    {
+      "id": "og-pull-front-lever",
+      "name": "Front Lever / Rows",
+      "chart": "pulling",
+      "master_step": "Full Front Lever",
+      "steps": [
+        {
+          "step": 1,
+          "name": "Row Eccentric",
+          "beginner": "FIG Beg — L1",
+          "intermediate": "FIG Int — L1",
+          "progression": "FIG Adv — L1",
+          "og_level": 1
+        },
+        {
+          "step": 2,
+          "name": "Jump Pull-ups",
+          "beginner": "FIG Beg — L2",
+          "intermediate": "FIG Int — L2",
+          "progression": "FIG Adv — L2",
+          "og_level": 2
+        },
+        {
+          "step": 3,
+          "name": "Ring Rows",
+          "beginner": "FIG Beg — L3",
+          "intermediate": "FIG Int — L3",
+          "progression": "FIG Adv — L3",
+          "og_level": 3
+        },
+        {
+          "step": 4,
+          "name": "Bar Pull-up Eccentric",
+          "beginner": "FIG Beg — L4",
+          "intermediate": "FIG Int — L4",
+          "progression": "FIG Adv — L4",
+          "og_level": 4
+        },
+        {
+          "step": 5,
+          "name": "Wide Rows",
+          "beginner": "FIG Beg — L5",
+          "intermediate": "FIG Int — L5",
+          "progression": "FIG Adv — L5",
+          "og_level": 5
+        },
+        {
+          "step": 6,
+          "name": "Tuck Front Lever",
+          "beginner": "FIG Beg — L6",
+          "intermediate": "FIG Int — L6",
+          "progression": "FIG Adv — L6",
+          "og_level": 6
+        },
+        {
+          "step": 7,
+          "name": "Advanced Tuck Front Lever",
+          "beginner": "FIG Beg — L7",
+          "intermediate": "FIG Int — L7",
+          "progression": "FIG Adv — L7",
+          "og_level": 7
+        },
+        {
+          "step": 8,
+          "name": "Straddle Front Lever",
+          "beginner": "FIG Beg — L8",
+          "intermediate": "FIG Int — L8",
+          "progression": "FIG Adv — L8",
+          "og_level": 8
+        },
+        {
+          "step": 9,
+          "name": "Half Lay / One-Leg Front Lever",
+          "beginner": "FIG Beg — L9",
+          "intermediate": "FIG Int — L9",
+          "progression": "FIG Adv — L9",
+          "og_level": 9
+        },
+        {
+          "step": 10,
+          "name": "Full Front Lever",
+          "beginner": "FIG Beg — L10",
+          "intermediate": "FIG Int — L10",
+          "progression": "FIG Adv — L10",
+          "og_level": 10
+        },
+        {
+          "step": 11,
+          "name": "Front Lever to Inverted",
+          "beginner": "FIG Beg — L11",
+          "intermediate": "FIG Int — L11",
+          "progression": "FIG Adv — L11",
+          "og_level": 11
+        },
+        {
+          "step": 12,
+          "name": "Circle Front Lever",
+          "beginner": "FIG Beg — L12",
+          "intermediate": "FIG Int — L12",
+          "progression": "FIG Adv — L12",
+          "og_level": 12
+        },
+        {
+          "step": 13,
+          "name": "Circle Front Lever",
+          "beginner": "FIG Beg — L13",
+          "intermediate": "FIG Int — L13",
+          "progression": "FIG Adv — L13",
+          "og_level": 13
+        },
+        {
+          "step": 14,
+          "name": "Circle Front Lever",
+          "beginner": "FIG Beg — L14",
+          "intermediate": "FIG Int — L14",
+          "progression": "FIG Adv — L14",
+          "og_level": 14
+        },
+        {
+          "step": 15,
+          "name": "Circle Front Lever",
+          "beginner": "FIG Beg — L15",
+          "intermediate": "FIG Int — L15",
+          "progression": "FIG Adv — L15",
+          "og_level": 15
+        },
+        {
+          "step": 16,
+          "name": "Circle Front Lever",
+          "beginner": "FIG Beg — L16",
+          "intermediate": "FIG Int — L16",
+          "progression": "FIG Adv — L16",
+          "og_level": 16
+        }
+      ]
+    },
+    {
+      "id": "og-pull-pullups",
+      "name": "Pull-ups / OAC",
+      "chart": "pulling",
+      "master_step": "OAC + 15 lbs",
+      "steps": [
+        {
+          "step": 1,
+          "name": "Assisted Pull-ups",
+          "beginner": "FIG Beg — L1",
+          "intermediate": "FIG Int — L1",
+          "progression": "FIG Adv — L1",
+          "og_level": 1
+        },
+        {
+          "step": 2,
+          "name": "Kip Pull-ups",
+          "beginner": "FIG Beg — L2",
+          "intermediate": "FIG Int — L2",
+          "progression": "FIG Adv — L2",
+          "og_level": 2
+        },
+        {
+          "step": 3,
+          "name": "Bar Pull-ups",
+          "beginner": "FIG Beg — L3",
+          "intermediate": "FIG Int — L3",
+          "progression": "FIG Adv — L3",
+          "og_level": 3
+        },
+        {
+          "step": 4,
+          "name": "Archer Rows / L-Pull-ups",
+          "beginner": "FIG Beg — L4",
+          "intermediate": "FIG Int — L4",
+          "progression": "FIG Adv — L4",
+          "og_level": 4
+        },
+        {
+          "step": 5,
+          "name": "1x Bodyweight Pull-ups",
+          "beginner": "FIG Beg — L5",
+          "intermediate": "FIG Int — L5",
+          "progression": "FIG Adv — L5",
+          "og_level": 5
+        },
+        {
+          "step": 6,
+          "name": "Ring Wide Pull-ups",
+          "beginner": "FIG Beg — L6",
+          "intermediate": "FIG Int — L6",
+          "progression": "FIG Adv — L6",
+          "og_level": 6
+        },
+        {
+          "step": 7,
+          "name": "1.35x BW / Clap Pull-ups",
+          "beginner": "FIG Beg — L7",
+          "intermediate": "FIG Int — L7",
+          "progression": "FIG Adv — L7",
+          "og_level": 7
+        },
+        {
+          "step": 8,
+          "name": "One-Arm Chin Eccentric",
+          "beginner": "FIG Beg — L8",
+          "intermediate": "FIG Int — L8",
+          "progression": "FIG Adv — L8",
+          "og_level": 8
+        },
+        {
+          "step": 9,
+          "name": "One-Arm Chin-up",
+          "beginner": "FIG Beg — L9",
+          "intermediate": "FIG Int — L9",
+          "progression": "FIG Adv — L9",
+          "og_level": 9
+        },
+        {
+          "step": 10,
+          "name": "OAC + 15 lbs",
+          "beginner": "FIG Beg — L10",
+          "intermediate": "FIG Int — L10",
+          "progression": "FIG Adv — L10",
+          "og_level": 10
+        },
+        {
+          "step": 11,
+          "name": "2x Bodyweight Pull-ups",
+          "beginner": "FIG Beg — L11",
+          "intermediate": "FIG Int — L11",
+          "progression": "FIG Adv — L11",
+          "og_level": 11
+        },
+        {
+          "step": 12,
+          "name": "Iron Cross Hold",
+          "beginner": "FIG Beg — L12",
+          "intermediate": "FIG Int — L12",
+          "progression": "FIG Adv — L12",
+          "og_level": 12
+        },
+        {
+          "step": 13,
+          "name": "Iron Cross Hold",
+          "beginner": "FIG Beg — L13",
+          "intermediate": "FIG Int — L13",
+          "progression": "FIG Adv — L13",
+          "og_level": 13
+        },
+        {
+          "step": 14,
+          "name": "Iron Cross Hold",
+          "beginner": "FIG Beg — L14",
+          "intermediate": "FIG Int — L14",
+          "progression": "FIG Adv — L14",
+          "og_level": 14
+        },
+        {
+          "step": 15,
+          "name": "Iron Cross Hold",
+          "beginner": "FIG Beg — L15",
+          "intermediate": "FIG Int — L15",
+          "progression": "FIG Adv — L15",
+          "og_level": 15
+        },
+        {
+          "step": 16,
+          "name": "Iron Cross Hold",
+          "beginner": "FIG Beg — L16",
+          "intermediate": "FIG Int — L16",
+          "progression": "FIG Adv — L16",
+          "og_level": 16
+        }
+      ]
+    },
+    {
+      "id": "og-push-planche",
+      "name": "Planche",
+      "chart": "pushing",
+      "master_step": "Elite",
+      "steps": [
+        {
+          "step": 1,
+          "name": "Frog Stand",
+          "beginner": "FIG Beg — L1",
+          "intermediate": "FIG Int — L1",
+          "progression": "FIG Adv — L1",
+          "og_level": 1
+        },
+        {
+          "step": 2,
+          "name": "Tuck Planche",
+          "beginner": "FIG Beg — L2",
+          "intermediate": "FIG Int — L2",
+          "progression": "FIG Adv — L2",
+          "og_level": 2
+        },
+        {
+          "step": 3,
+          "name": "Advanced Tuck Planche",
+          "beginner": "FIG Beg — L3",
+          "intermediate": "FIG Int — L3",
+          "progression": "FIG Adv — L3",
+          "og_level": 3
+        },
+        {
+          "step": 4,
+          "name": "Straddle Planche",
+          "beginner": "FIG Beg — L4",
+          "intermediate": "FIG Int — L4",
+          "progression": "FIG Adv — L4",
+          "og_level": 4
+        },
+        {
+          "step": 5,
+          "name": "Half Lay / One-Leg Planche",
+          "beginner": "FIG Beg — L5",
+          "intermediate": "FIG Int — L5",
+          "progression": "FIG Adv — L5",
+          "og_level": 5
+        },
+        {
+          "step": 6,
+          "name": "Full Planche",
+          "beginner": "FIG Beg — L6",
+          "intermediate": "FIG Int — L6",
+          "progression": "FIG Adv — L6",
+          "og_level": 6
+        },
+        {
+          "step": 7,
+          "name": "Straight-Arm Straddle Planche to HS",
+          "beginner": "FIG Beg — L7",
+          "intermediate": "FIG Int — L7",
+          "progression": "FIG Adv — L7",
+          "og_level": 7
+        },
+        {
+          "step": 8,
+          "name": "Straight-Arm Planche to HS",
+          "beginner": "FIG Beg — L8",
+          "intermediate": "FIG Int — L8",
+          "progression": "FIG Adv — L8",
+          "og_level": 8
+        },
+        {
+          "step": 9,
+          "name": "Straight-Arm Planche to HS",
+          "beginner": "FIG Beg — L9",
+          "intermediate": "FIG Int — L9",
+          "progression": "FIG Adv — L9",
+          "og_level": 9
+        },
+        {
+          "step": 10,
+          "name": "Straight-Arm Planche to HS",
+          "beginner": "FIG Beg — L10",
+          "intermediate": "FIG Int — L10",
+          "progression": "FIG Adv — L10",
+          "og_level": 10
+        },
+        {
+          "step": 11,
+          "name": "Straight-Arm Planche to HS",
+          "beginner": "FIG Beg — L11",
+          "intermediate": "FIG Int — L11",
+          "progression": "FIG Adv — L11",
+          "og_level": 11
+        },
+        {
+          "step": 12,
+          "name": "Straight-Arm Planche to HS",
+          "beginner": "FIG Beg — L12",
+          "intermediate": "FIG Int — L12",
+          "progression": "FIG Adv — L12",
+          "og_level": 12
+        },
+        {
+          "step": 13,
+          "name": "Straight-Arm Planche to HS",
+          "beginner": "FIG Beg — L13",
+          "intermediate": "FIG Int — L13",
+          "progression": "FIG Adv — L13",
+          "og_level": 13
+        },
+        {
+          "step": 14,
+          "name": "Straight-Arm Planche to HS",
+          "beginner": "FIG Beg — L14",
+          "intermediate": "FIG Int — L14",
+          "progression": "FIG Adv — L14",
+          "og_level": 14
+        },
+        {
+          "step": 15,
+          "name": "Straight-Arm Planche to HS",
+          "beginner": "FIG Beg — L15",
+          "intermediate": "FIG Int — L15",
+          "progression": "FIG Adv — L15",
+          "og_level": 15
+        },
+        {
+          "step": 16,
+          "name": "Straight-Arm Planche to HS",
+          "beginner": "FIG Beg — L16",
+          "intermediate": "FIG Int — L16",
+          "progression": "FIG Adv — L16",
+          "og_level": 16
+        }
+      ]
+    },
+    {
+      "id": "og-push-pushups",
+      "name": "Pushups / Planche Pushups",
+      "chart": "pushing",
+      "master_step": "Wall Maltese Pushups",
+      "steps": [
+        {
+          "step": 1,
+          "name": "Regular Pushups",
+          "beginner": "FIG Beg — L1",
+          "intermediate": "FIG Int — L1",
+          "progression": "FIG Adv — L1",
+          "og_level": 1
+        },
+        {
+          "step": 2,
+          "name": "Diamond Pushups",
+          "beginner": "FIG Beg — L2",
+          "intermediate": "FIG Int — L2",
+          "progression": "FIG Adv — L2",
+          "og_level": 2
+        },
+        {
+          "step": 3,
+          "name": "Ring Wide Pushups",
+          "beginner": "FIG Beg — L3",
+          "intermediate": "FIG Int — L3",
+          "progression": "FIG Adv — L3",
+          "og_level": 3
+        },
+        {
+          "step": 4,
+          "name": "Ring Pushups",
+          "beginner": "FIG Beg — L4",
+          "intermediate": "FIG Int — L4",
+          "progression": "FIG Adv — L4",
+          "og_level": 4
+        },
+        {
+          "step": 5,
+          "name": "RTO Pushups",
+          "beginner": "FIG Beg — L5",
+          "intermediate": "FIG Int — L5",
+          "progression": "FIG Adv — L5",
+          "og_level": 5
+        },
+        {
+          "step": 6,
+          "name": "Tuck Planche Pushups",
+          "beginner": "FIG Beg — L6",
+          "intermediate": "FIG Int — L6",
+          "progression": "FIG Adv — L6",
+          "og_level": 6
+        },
+        {
+          "step": 7,
+          "name": "Advanced Tuck PL Pushups",
+          "beginner": "FIG Beg — L7",
+          "intermediate": "FIG Int — L7",
+          "progression": "FIG Adv — L7",
+          "og_level": 7
+        },
+        {
+          "step": 8,
+          "name": "Straddle Planche Pushups",
+          "beginner": "FIG Beg — L8",
+          "intermediate": "FIG Int — L8",
+          "progression": "FIG Adv — L8",
+          "og_level": 8
+        },
+        {
+          "step": 9,
+          "name": "Wall Pseudo Planche Pushups",
+          "beginner": "FIG Beg — L9",
+          "intermediate": "FIG Int — L9",
+          "progression": "FIG Adv — L9",
+          "og_level": 9
+        },
+        {
+          "step": 10,
+          "name": "Wall Maltese Pushups",
+          "beginner": "FIG Beg — L10",
+          "intermediate": "FIG Int — L10",
+          "progression": "FIG Adv — L10",
+          "og_level": 10
+        },
+        {
+          "step": 11,
+          "name": "Wall Maltese Pushups",
+          "beginner": "FIG Beg — L11",
+          "intermediate": "FIG Int — L11",
+          "progression": "FIG Adv — L11",
+          "og_level": 11
+        },
+        {
+          "step": 12,
+          "name": "Wall Maltese Pushups",
+          "beginner": "FIG Beg — L12",
+          "intermediate": "FIG Int — L12",
+          "progression": "FIG Adv — L12",
+          "og_level": 12
+        },
+        {
+          "step": 13,
+          "name": "Wall Maltese Pushups",
+          "beginner": "FIG Beg — L13",
+          "intermediate": "FIG Int — L13",
+          "progression": "FIG Adv — L13",
+          "og_level": 13
+        },
+        {
+          "step": 14,
+          "name": "Wall Maltese Pushups",
+          "beginner": "FIG Beg — L14",
+          "intermediate": "FIG Int — L14",
+          "progression": "FIG Adv — L14",
+          "og_level": 14
+        },
+        {
+          "step": 15,
+          "name": "Wall Maltese Pushups",
+          "beginner": "FIG Beg — L15",
+          "intermediate": "FIG Int — L15",
+          "progression": "FIG Adv — L15",
+          "og_level": 15
+        },
+        {
+          "step": 16,
+          "name": "Wall Maltese Pushups",
+          "beginner": "FIG Beg — L16",
+          "intermediate": "FIG Int — L16",
+          "progression": "FIG Adv — L16",
+          "og_level": 16
+        }
+      ]
+    },
+    {
+      "id": "og-push-dips",
+      "name": "Dips / One-Arm Pushups",
+      "chart": "pushing",
+      "master_step": "2x BW Dips",
+      "steps": [
+        {
+          "step": 1,
+          "name": "Parallel Bar Jump Dips",
+          "beginner": "FIG Beg — L1",
+          "intermediate": "FIG Int — L1",
+          "progression": "FIG Adv — L1",
+          "og_level": 1
+        },
+        {
+          "step": 2,
+          "name": "Support Hold",
+          "beginner": "FIG Beg — L2",
+          "intermediate": "FIG Int — L2",
+          "progression": "FIG Adv — L2",
+          "og_level": 2
+        },
+        {
+          "step": 3,
+          "name": "PB Dips Eccentric",
+          "beginner": "FIG Beg — L3",
+          "intermediate": "FIG Int — L3",
+          "progression": "FIG Adv — L3",
+          "og_level": 3
+        },
+        {
+          "step": 4,
+          "name": "Ring Dips Eccentric",
+          "beginner": "FIG Beg — L4",
+          "intermediate": "FIG Int — L4",
+          "progression": "FIG Adv — L4",
+          "og_level": 4
+        },
+        {
+          "step": 5,
+          "name": "Parallel Bar Dips",
+          "beginner": "FIG Beg — L5",
+          "intermediate": "FIG Int — L5",
+          "progression": "FIG Adv — L5",
+          "og_level": 5
+        },
+        {
+          "step": 6,
+          "name": "Elevated One-Arm Pushup",
+          "beginner": "FIG Beg — L6",
+          "intermediate": "FIG Int — L6",
+          "progression": "FIG Adv — L6",
+          "og_level": 6
+        },
+        {
+          "step": 7,
+          "name": "Straight-Body One-Arm Pushup",
+          "beginner": "FIG Beg — L7",
+          "intermediate": "FIG Int — L7",
+          "progression": "FIG Adv — L7",
+          "og_level": 7
+        },
+        {
+          "step": 8,
+          "name": "Ring Straight-Body OA Pushup",
+          "beginner": "FIG Beg — L8",
+          "intermediate": "FIG Int — L8",
+          "progression": "FIG Adv — L8",
+          "og_level": 8
+        },
+        {
+          "step": 9,
+          "name": "RTO 90° Dips",
+          "beginner": "FIG Beg — L9",
+          "intermediate": "FIG Int — L9",
+          "progression": "FIG Adv — L9",
+          "og_level": 9
+        },
+        {
+          "step": 10,
+          "name": "2x BW Dips",
+          "beginner": "FIG Beg — L10",
+          "intermediate": "FIG Int — L10",
+          "progression": "FIG Adv — L10",
+          "og_level": 10
+        },
+        {
+          "step": 11,
+          "name": "2x BW Dips",
+          "beginner": "FIG Beg — L11",
+          "intermediate": "FIG Int — L11",
+          "progression": "FIG Adv — L11",
+          "og_level": 11
+        },
+        {
+          "step": 12,
+          "name": "2x BW Dips",
+          "beginner": "FIG Beg — L12",
+          "intermediate": "FIG Int — L12",
+          "progression": "FIG Adv — L12",
+          "og_level": 12
+        },
+        {
+          "step": 13,
+          "name": "2x BW Dips",
+          "beginner": "FIG Beg — L13",
+          "intermediate": "FIG Int — L13",
+          "progression": "FIG Adv — L13",
+          "og_level": 13
+        },
+        {
+          "step": 14,
+          "name": "2x BW Dips",
+          "beginner": "FIG Beg — L14",
+          "intermediate": "FIG Int — L14",
+          "progression": "FIG Adv — L14",
+          "og_level": 14
+        },
+        {
+          "step": 15,
+          "name": "2x BW Dips",
+          "beginner": "FIG Beg — L15",
+          "intermediate": "FIG Int — L15",
+          "progression": "FIG Adv — L15",
+          "og_level": 15
+        },
+        {
+          "step": 16,
+          "name": "2x BW Dips",
+          "beginner": "FIG Beg — L16",
+          "intermediate": "FIG Int — L16",
+          "progression": "FIG Adv — L16",
+          "og_level": 16
+        }
+      ]
+    },
+    {
+      "id": "og-misc-muscleup",
+      "name": "Muscle-ups / Flags / Core",
+      "chart": "misc",
+      "master_step": "Front Lever Muscle-up",
+      "steps": [
+        {
+          "step": 1,
+          "name": "25s Plank",
+          "beginner": "FIG Beg — L1",
+          "intermediate": "FIG Int — L1",
+          "progression": "FIG Adv — L1",
+          "og_level": 1
+        },
+        {
+          "step": 2,
+          "name": "Muscle-up Negative",
+          "beginner": "FIG Beg — L2",
+          "intermediate": "FIG Int — L2",
+          "progression": "FIG Adv — L2",
+          "og_level": 2
+        },
+        {
+          "step": 3,
+          "name": "60s Plank",
+          "beginner": "FIG Beg — L3",
+          "intermediate": "FIG Int — L3",
+          "progression": "FIG Adv — L3",
+          "og_level": 3
+        },
+        {
+          "step": 4,
+          "name": "Kipping Muscle-up",
+          "beginner": "FIG Beg — L4",
+          "intermediate": "FIG Int — L4",
+          "progression": "FIG Adv — L4",
+          "og_level": 4
+        },
+        {
+          "step": 5,
+          "name": "Muscle-up",
+          "beginner": "FIG Beg — L5",
+          "intermediate": "FIG Int — L5",
+          "progression": "FIG Adv — L5",
+          "og_level": 5
+        },
+        {
+          "step": 6,
+          "name": "Wide / No False Grip MU",
+          "beginner": "FIG Beg — L6",
+          "intermediate": "FIG Int — L6",
+          "progression": "FIG Adv — L6",
+          "og_level": 6
+        },
+        {
+          "step": 7,
+          "name": "Strict Bar Muscle-up",
+          "beginner": "FIG Beg — L7",
+          "intermediate": "FIG Int — L7",
+          "progression": "FIG Adv — L7",
+          "og_level": 7
+        },
+        {
+          "step": 8,
+          "name": "One-Arm Muscle-up",
+          "beginner": "FIG Beg — L8",
+          "intermediate": "FIG Int — L8",
+          "progression": "FIG Adv — L8",
+          "og_level": 8
+        },
+        {
+          "step": 9,
+          "name": "Ab Wheel",
+          "beginner": "FIG Beg — L9",
+          "intermediate": "FIG Int — L9",
+          "progression": "FIG Adv — L9",
+          "og_level": 9
+        },
+        {
+          "step": 10,
+          "name": "Front Lever Muscle-up",
+          "beginner": "FIG Beg — L10",
+          "intermediate": "FIG Int — L10",
+          "progression": "FIG Adv — L10",
+          "og_level": 10
+        },
+        {
+          "step": 11,
+          "name": "Front Lever Muscle-up",
+          "beginner": "FIG Beg — L11",
+          "intermediate": "FIG Int — L11",
+          "progression": "FIG Adv — L11",
+          "og_level": 11
+        },
+        {
+          "step": 12,
+          "name": "Front Lever Muscle-up",
+          "beginner": "FIG Beg — L12",
+          "intermediate": "FIG Int — L12",
+          "progression": "FIG Adv — L12",
+          "og_level": 12
+        },
+        {
+          "step": 13,
+          "name": "Front Lever Muscle-up",
+          "beginner": "FIG Beg — L13",
+          "intermediate": "FIG Int — L13",
+          "progression": "FIG Adv — L13",
+          "og_level": 13
+        },
+        {
+          "step": 14,
+          "name": "Front Lever Muscle-up",
+          "beginner": "FIG Beg — L14",
+          "intermediate": "FIG Int — L14",
+          "progression": "FIG Adv — L14",
+          "og_level": 14
+        },
+        {
+          "step": 15,
+          "name": "Front Lever Muscle-up",
+          "beginner": "FIG Beg — L15",
+          "intermediate": "FIG Int — L15",
+          "progression": "FIG Adv — L15",
+          "og_level": 15
+        },
+        {
+          "step": 16,
+          "name": "Front Lever Muscle-up",
+          "beginner": "FIG Beg — L16",
+          "intermediate": "FIG Int — L16",
+          "progression": "FIG Adv — L16",
+          "og_level": 16
+        }
+      ]
+    },
+    {
+      "id": "og-misc-elbow-lever",
+      "name": "Elbow Levers / Flags",
+      "chart": "misc",
+      "master_step": "Elite",
+      "steps": [
+        {
+          "step": 1,
+          "name": "Two-Arm Elbow Lever",
+          "beginner": "FIG Beg — L1",
+          "intermediate": "FIG Int — L1",
+          "progression": "FIG Adv — L1",
+          "og_level": 1
+        },
+        {
+          "step": 2,
+          "name": "Tuck Flag (knees)",
+          "beginner": "FIG Beg — L2",
+          "intermediate": "FIG Int — L2",
+          "progression": "FIG Adv — L2",
+          "og_level": 2
+        },
+        {
+          "step": 3,
+          "name": "Advanced Tuck Flag",
+          "beginner": "FIG Beg — L3",
+          "intermediate": "FIG Int — L3",
+          "progression": "FIG Adv — L3",
+          "og_level": 3
+        },
+        {
+          "step": 4,
+          "name": "Straddle Flag",
+          "beginner": "FIG Beg — L4",
+          "intermediate": "FIG Int — L4",
+          "progression": "FIG Adv — L4",
+          "og_level": 4
+        },
+        {
+          "step": 5,
+          "name": "Full Flag",
+          "beginner": "FIG Beg — L5",
+          "intermediate": "FIG Int — L5",
+          "progression": "FIG Adv — L5",
+          "og_level": 5
+        },
+        {
+          "step": 6,
+          "name": "One-Arm Straddle Elbow Lever",
+          "beginner": "FIG Beg — L6",
+          "intermediate": "FIG Int — L6",
+          "progression": "FIG Adv — L6",
+          "og_level": 6
+        },
+        {
+          "step": 7,
+          "name": "One-Arm Straight Elbow Lever",
+          "beginner": "FIG Beg — L7",
+          "intermediate": "FIG Int — L7",
+          "progression": "FIG Adv — L7",
+          "og_level": 7
+        },
+        {
+          "step": 8,
+          "name": "Full Ab Wheel",
+          "beginner": "FIG Beg — L8",
+          "intermediate": "FIG Int — L8",
+          "progression": "FIG Adv — L8",
+          "og_level": 8
+        },
+        {
+          "step": 9,
+          "name": "Full Ab Wheel",
+          "beginner": "FIG Beg — L9",
+          "intermediate": "FIG Int — L9",
+          "progression": "FIG Adv — L9",
+          "og_level": 9
+        },
+        {
+          "step": 10,
+          "name": "Full Ab Wheel",
+          "beginner": "FIG Beg — L10",
+          "intermediate": "FIG Int — L10",
+          "progression": "FIG Adv — L10",
+          "og_level": 10
+        },
+        {
+          "step": 11,
+          "name": "Full Ab Wheel",
+          "beginner": "FIG Beg — L11",
+          "intermediate": "FIG Int — L11",
+          "progression": "FIG Adv — L11",
+          "og_level": 11
+        },
+        {
+          "step": 12,
+          "name": "Full Ab Wheel",
+          "beginner": "FIG Beg — L12",
+          "intermediate": "FIG Int — L12",
+          "progression": "FIG Adv — L12",
+          "og_level": 12
+        },
+        {
+          "step": 13,
+          "name": "Full Ab Wheel",
+          "beginner": "FIG Beg — L13",
+          "intermediate": "FIG Int — L13",
+          "progression": "FIG Adv — L13",
+          "og_level": 13
+        },
+        {
+          "step": 14,
+          "name": "Full Ab Wheel",
+          "beginner": "FIG Beg — L14",
+          "intermediate": "FIG Int — L14",
+          "progression": "FIG Adv — L14",
+          "og_level": 14
+        },
+        {
+          "step": 15,
+          "name": "Full Ab Wheel",
+          "beginner": "FIG Beg — L15",
+          "intermediate": "FIG Int — L15",
+          "progression": "FIG Adv — L15",
+          "og_level": 15
+        },
+        {
+          "step": 16,
+          "name": "Full Ab Wheel",
+          "beginner": "FIG Beg — L16",
+          "intermediate": "FIG Int — L16",
+          "progression": "FIG Adv — L16",
+          "og_level": 16
+        }
+      ]
+    },
+    {
+      "id": "og-misc-legs",
+      "name": "Squats / Pistols / Skills",
+      "chart": "misc",
+      "master_step": "2x BW Pistol",
+      "steps": [
+        {
+          "step": 1,
+          "name": "Parallel Squat",
+          "beginner": "FIG Beg — L1",
+          "intermediate": "FIG Int — L1",
+          "progression": "FIG Adv — L1",
+          "og_level": 1
+        },
+        {
+          "step": 2,
+          "name": "Full Squat",
+          "beginner": "FIG Beg — L2",
+          "intermediate": "FIG Int — L2",
+          "progression": "FIG Adv — L2",
+          "og_level": 2
+        },
+        {
+          "step": 3,
+          "name": "Side-to-Side Squat",
+          "beginner": "FIG Beg — L3",
+          "intermediate": "FIG Int — L3",
+          "progression": "FIG Adv — L3",
+          "og_level": 3
+        },
+        {
+          "step": 4,
+          "name": "Pistol Squat",
+          "beginner": "FIG Beg — L4",
+          "intermediate": "FIG Int — L4",
+          "progression": "FIG Adv — L4",
+          "og_level": 4
+        },
+        {
+          "step": 5,
+          "name": "1.2x BW Pistol",
+          "beginner": "FIG Beg — L5",
+          "intermediate": "FIG Int — L5",
+          "progression": "FIG Adv — L5",
+          "og_level": 5
+        },
+        {
+          "step": 6,
+          "name": "Felge Forward to L-Sit",
+          "beginner": "FIG Beg — L6",
+          "intermediate": "FIG Int — L6",
+          "progression": "FIG Adv — L6",
+          "og_level": 6
+        },
+        {
+          "step": 7,
+          "name": "1.35x BW Pistol",
+          "beginner": "FIG Beg — L7",
+          "intermediate": "FIG Int — L7",
+          "progression": "FIG Adv — L7",
+          "og_level": 7
+        },
+        {
+          "step": 8,
+          "name": "1.5x BW Pistol",
+          "beginner": "FIG Beg — L8",
+          "intermediate": "FIG Int — L8",
+          "progression": "FIG Adv — L8",
+          "og_level": 8
+        },
+        {
+          "step": 9,
+          "name": "1.8x BW Pistol",
+          "beginner": "FIG Beg — L9",
+          "intermediate": "FIG Int — L9",
+          "progression": "FIG Adv — L9",
+          "og_level": 9
+        },
+        {
+          "step": 10,
+          "name": "2x BW Pistol",
+          "beginner": "FIG Beg — L10",
+          "intermediate": "FIG Int — L10",
+          "progression": "FIG Adv — L10",
+          "og_level": 10
+        },
+        {
+          "step": 11,
+          "name": "2x BW Pistol",
+          "beginner": "FIG Beg — L11",
+          "intermediate": "FIG Int — L11",
+          "progression": "FIG Adv — L11",
+          "og_level": 11
+        },
+        {
+          "step": 12,
+          "name": "2x BW Pistol",
+          "beginner": "FIG Beg — L12",
+          "intermediate": "FIG Int — L12",
+          "progression": "FIG Adv — L12",
+          "og_level": 12
+        },
+        {
+          "step": 13,
+          "name": "2x BW Pistol",
+          "beginner": "FIG Beg — L13",
+          "intermediate": "FIG Int — L13",
+          "progression": "FIG Adv — L13",
+          "og_level": 13
+        },
+        {
+          "step": 14,
+          "name": "2x BW Pistol",
+          "beginner": "FIG Beg — L14",
+          "intermediate": "FIG Int — L14",
+          "progression": "FIG Adv — L14",
+          "og_level": 14
+        },
+        {
+          "step": 15,
+          "name": "2x BW Pistol",
+          "beginner": "FIG Beg — L15",
+          "intermediate": "FIG Int — L15",
+          "progression": "FIG Adv — L15",
+          "og_level": 15
+        },
+        {
+          "step": 16,
+          "name": "2x BW Pistol",
+          "beginner": "FIG Beg — L16",
+          "intermediate": "FIG Int — L16",
+          "progression": "FIG Adv — L16",
+          "og_level": 16
+        }
+      ]
+    }
+  ]
+}

@@ -73,26 +73,51 @@ class PersonalDevelopmentTracker:
 
     def get_default_categories(self) -> dict:
         return {
+            # --- Financial & vocational ---
             "Money/Freedom": {
                 "checklist": [
-                    "Tracked daily finances",
+                    "Tracked spending, income, or accounts",
                     "Took action toward financial freedom",
-                    "Reviewed long-term money goals",
+                    "Reviewed budget, debt, or long-term money goals",
+                    "Saved, invested, or moved money intentionally",
+                    "Practiced generosity or aligned spending with values",
                 ],
                 "metrics": [
+                    {"name": "Money actions taken", "type": "number", "unit": "", "default": 0},
                     {"name": "Savings/Income logged", "type": "number", "unit": "$", "default": 0},
+                    {"name": "Financial clarity rating", "type": "rating", "min": 1, "max": 10, "default": 5},
                     {"name": "Freedom mindset rating", "type": "rating", "min": 1, "max": 10, "default": 5},
                 ],
             },
+            "Career & Vocation": {
+                "checklist": [
+                    "Meaningful work or professional effort",
+                    "Skill-building for career or calling",
+                    "Networking, mentoring, or professional relationship",
+                    "Aligned work with values — noted honestly if not",
+                    "Rested or set boundaries around work",
+                ],
+                "metrics": [
+                    {"name": "Focused work hours", "type": "number", "unit": "hrs", "default": 0},
+                    {"name": "Career satisfaction", "type": "rating", "min": 1, "max": 10, "default": 5},
+                    {"name": "Progress toward professional goals", "type": "rating", "min": 1, "max": 10, "default": 5},
+                ],
+            },
+            # --- Physical ---
             "Body & Presence": {
                 "checklist": [
-                    "Completed movement/exercise",
-                    "Practiced mindfulness or presence",
-                    "Ate nourishing food",
+                    "Completed movement or exercise",
+                    "Mobility, stretching, or joint care",
+                    "Practiced mindfulness or embodied presence",
+                    "Prioritized sleep or recovery",
+                    "Hydration and basic physical self-care",
+                    "Addressed pain, injury, or medical need",
                 ],
                 "metrics": [
                     {"name": "Sleep hours last night", "type": "number", "unit": "hrs", "default": 0},
+                    {"name": "Movement / exercise time", "type": "number", "unit": "min", "default": 0},
                     {"name": "Energy level", "type": "rating", "min": 1, "max": 10, "default": 5},
+                    {"name": "Physical comfort (pain-free)", "type": "rating", "min": 1, "max": 10, "default": 5},
                     {"name": "Presence rating", "type": "rating", "min": 1, "max": 10, "default": 5},
                 ],
             },
@@ -100,52 +125,110 @@ class PersonalDevelopmentTracker:
                 "checklist": [
                     "Took intentional breaks",
                     "Respected personal boundaries",
-                    "Did a self-care activity",
+                    "Did a self-care or restoration activity",
+                    "Limited doomscrolling or reactive screen time",
+                    "Time in nature or away from screens",
                 ],
                 "metrics": [
                     {"name": "Morning energy", "type": "rating", "min": 1, "max": 10, "default": 5},
                     {"name": "Stress level (lower = better)", "type": "rating", "min": 1, "max": 10, "default": 5},
+                    {"name": "Recovery / rest quality", "type": "rating", "min": 1, "max": 10, "default": 5},
                 ],
             },
+            # --- Mental & creative ---
             "Creative/Mental Work": {
                 "checklist": [
-                    "Had a focused/deep work session",
-                    "Captured ideas or insights",
-                    "Made progress on creative project",
+                    "Had a focused or deep work session",
+                    "Captured ideas, notes, or insights",
+                    "Made progress on a creative project",
+                    "Shipped, shared, or finished something small",
+                    "Solved a problem or made a decision",
                 ],
                 "metrics": [
                     {"name": "Deep work hours", "type": "number", "unit": "hrs", "default": 0},
-                    {"name": "Focus / Creativity rating", "type": "rating", "min": 1, "max": 10, "default": 5},
+                    {"name": "Focus rating", "type": "rating", "min": 1, "max": 10, "default": 5},
+                    {"name": "Creativity / output rating", "type": "rating", "min": 1, "max": 10, "default": 5},
                 ],
             },
-            "Family/Logistics": {
+            "Learning & Intellectual Growth": {
                 "checklist": [
-                    "Spent quality time with family",
-                    "Handled key logistics/tasks",
-                    "Communicated openly",
+                    "Studied or practiced a skill",
+                    "Language, instrument, or craft practice",
+                    "Course, lecture, or structured lesson",
+                    "Applied something new you learned",
+                    "Curiosity followed — rabbit hole logged honestly",
                 ],
                 "metrics": [
-                    {"name": "Family time", "type": "number", "unit": "hrs", "default": 0},
+                    {"name": "Learning time", "type": "number", "unit": "hrs", "default": 0},
+                    {"name": "Mental clarity", "type": "rating", "min": 1, "max": 10, "default": 5},
+                    {"name": "Growth / stretch rating", "type": "rating", "min": 1, "max": 10, "default": 5},
+                ],
+            },
+            # --- Relational & domestic ---
+            "Family/Logistics": {
+                "checklist": [
+                    "Quality time with family or household",
+                    "Handled key logistics, errands, or admin",
+                    "Communicated openly with household",
+                    "Supported someone who depends on you",
+                    "Household systems maintained (meals, bills, schedule)",
+                ],
+                "metrics": [
+                    {"name": "Family / household time", "type": "number", "unit": "hrs", "default": 0},
+                    {"name": "Connection quality", "type": "rating", "min": 1, "max": 10, "default": 5},
                     {"name": "Logistics completion", "type": "rating", "min": 1, "max": 10, "default": 5},
                 ],
             },
+            "Relationships & Social Connection": {
+                "checklist": [
+                    "Reached out to a friend or loved one",
+                    "Meaningful conversation (not only logistics)",
+                    "Partner / romance / intimacy (if applicable)",
+                    "Social time — in person or intentional call",
+                    "Set or respected a social boundary",
+                ],
+                "metrics": [
+                    {"name": "Social connection time", "type": "number", "unit": "hrs", "default": 0},
+                    {"name": "Belonging / connection rating", "type": "rating", "min": 1, "max": 10, "default": 5},
+                    {"name": "Loneliness (lower = better)", "type": "rating", "min": 1, "max": 10, "default": 5},
+                ],
+            },
+            "Home & Environment": {
+                "checklist": [
+                    "Tidied, organized, or improved living space",
+                    "Time outdoors or in nature",
+                    "Sustainable or intentional consumption choice",
+                    "Made home more comfortable or functional",
+                    "Noticed and logged environment's effect on mood",
+                ],
+                "metrics": [
+                    {"name": "Time in nature", "type": "number", "unit": "hrs", "default": 0},
+                    {"name": "Home / space satisfaction", "type": "rating", "min": 1, "max": 10, "default": 5},
+                    {"name": "Environment supported wellbeing", "type": "rating", "min": 1, "max": 10, "default": 5},
+                ],
+            },
+            # --- Inner life ---
             "Search Practice": {
                 "checklist": [
-                    "Engaged in search/inquiry practice",
+                    "Engaged in search or inquiry practice",
                     "Journaled or reflected on search",
                     "Took a concrete search-related action",
+                    "Sat with a question without forcing an answer",
+                    "Noticed resistance, longing, or direction",
                 ],
                 "metrics": [
                     {"name": "Search effort rating", "type": "rating", "min": 1, "max": 10, "default": 5},
+                    {"name": "Clarity or direction sense", "type": "rating", "min": 1, "max": 10, "default": 5},
                     {"name": "Insights or actions taken", "type": "number", "unit": "", "default": 0},
                 ],
             },
             "Spiritual Development": {
                 "checklist": [
-                    "Daily spiritual practice (meditation, prayer, contemplation, etc.)",
-                    "Read or reflected on spiritual teachings / wisdom",
-                    "Practiced gratitude, surrender, or presence",
-                    "Connected with community, nature, or higher purpose",
+                    "Daily spiritual practice (meditation, prayer, contemplation)",
+                    "Read or reflected on spiritual teachings or wisdom",
+                    "Gratitude, surrender, or sacred presence",
+                    "Community, nature, or higher purpose felt",
+                    "Ritual, ceremony, or tradition honored",
                 ],
                 "metrics": [
                     {"name": "Spiritual practice time", "type": "number", "unit": "min", "default": 0},
@@ -161,10 +244,11 @@ class PersonalDevelopmentTracker:
             },
             "Emotional Wellbeing": {
                 "checklist": [
-                    "Checked in with my current emotions",
+                    "Checked in with current emotions",
                     "Journaled or processed feelings",
-                    "Practiced self-compassion or emotional regulation",
-                    "Expressed emotions in a healthy, constructive way",
+                    "Self-compassion or emotional regulation",
+                    "Expressed emotions constructively",
+                    "Therapy, support, or nervous-system care",
                 ],
                 "metrics": [
                     {"name": "Emotional awareness rating", "type": "rating", "min": 1, "max": 10, "default": 5},
@@ -181,6 +265,94 @@ class PersonalDevelopmentTracker:
                         "unit": "",
                         "default": 0,
                     },
+                ],
+            },
+            "Community & Service": {
+                "checklist": [
+                    "Helped someone without obligation",
+                    "Volunteering, civic, or community participation",
+                    "Donation, mutual aid, or generosity of time",
+                    "Listened well or showed up for community",
+                    "Contributed to something bigger than self",
+                ],
+                "metrics": [
+                    {"name": "Service / giving time", "type": "number", "unit": "hrs", "default": 0},
+                    {"name": "Sense of contribution", "type": "rating", "min": 1, "max": 10, "default": 5},
+                    {"name": "Community belonging", "type": "rating", "min": 1, "max": 10, "default": 5},
+                ],
+            },
+            # --- Cultural (active + consumed) ---
+            "Cultural Life & Heritage": {
+                "checklist": [
+                    "Language or cultural skill practice",
+                    "Festival, ceremony, or tradition participated in",
+                    "Museum, heritage site, or cultural event",
+                    "Explored cuisine, travel, or culture intentionally",
+                    "Connected with ancestry, heritage, or identity",
+                ],
+                "metrics": [
+                    {"name": "Cultural engagement time", "type": "number", "unit": "hrs", "default": 0},
+                    {"name": "Cultural richness / aliveness", "type": "rating", "min": 1, "max": 10, "default": 5},
+                    {"name": "Identity / roots connection", "type": "rating", "min": 1, "max": 10, "default": 5},
+                ],
+            },
+            "What You Have Eaten": {
+                "checklist": [
+                    "Logged what I ate (meals or key snacks)",
+                    "Ate with awareness (not only on autopilot)",
+                    "Choices mostly aligned with how I want to eat",
+                    "Home cooking or intentional food prep",
+                    "Shared a meal with others",
+                ],
+                "metrics": [
+                    {"name": "Meals / snacks logged", "type": "number", "unit": "", "default": 0},
+                    {"name": "Nourishment rating", "type": "rating", "min": 1, "max": 10, "default": 5},
+                    {"name": "Energy after eating", "type": "rating", "min": 1, "max": 10, "default": 5},
+                ],
+            },
+            "Art You Have Consumed": {
+                "checklist": [
+                    "Film, TV, or animation",
+                    "Music (album, concert, deep listen)",
+                    "Novels or literary fiction",
+                    "Visual art, painting, or comics",
+                    "Theatre, dance, or live performance",
+                    "Video games (played with intention)",
+                    "Architecture, design, or craft admired",
+                ],
+                "metrics": [
+                    {"name": "Time with art", "type": "number", "unit": "hrs", "default": 0},
+                    {"name": "How much it moved me", "type": "rating", "min": 1, "max": 10, "default": 5},
+                    {"name": "Would recommend to someone I care about", "type": "rating", "min": 1, "max": 10, "default": 5},
+                ],
+            },
+            "General Reading": {
+                "checklist": [
+                    "Nonfiction book",
+                    "Reference, textbook, or manual",
+                    "Memoir or biography",
+                    "Audiobook (book-length)",
+                    "Made meaningful progress — title in notes",
+                    "Philosophy, history, or ideas read deeply",
+                ],
+                "metrics": [
+                    {"name": "Reading time", "type": "number", "unit": "hrs", "default": 0},
+                    {"name": "Pages or progress", "type": "number", "unit": "", "default": 0},
+                    {"name": "What I retained or applied", "type": "rating", "min": 1, "max": 10, "default": 5},
+                ],
+            },
+            "Content You Have Consumed": {
+                "checklist": [
+                    "Articles, essays, or newsletters",
+                    "Podcasts (episode or clip)",
+                    "Learning videos, documentaries, or courses",
+                    "Social or news (logged honestly — including doomscrolling)",
+                    "Took away something useful or applied one idea",
+                ],
+                "metrics": [
+                    {"name": "Content time", "type": "number", "unit": "hrs", "default": 0},
+                    {"name": "Quality of attention", "type": "rating", "min": 1, "max": 10, "default": 5},
+                    {"name": "Actual value received", "type": "rating", "min": 1, "max": 10, "default": 5},
                 ],
             },
         }
@@ -205,6 +377,26 @@ class PersonalDevelopmentTracker:
             if name not in merged:
                 merged[name] = definition
                 changed = True
+                continue
+
+            cat = merged[name]
+            checklist = list(cat.get("checklist", []))
+            for item in definition.get("checklist", []):
+                if item not in checklist:
+                    checklist.append(item)
+                    changed = True
+            cat["checklist"] = checklist
+
+            existing_metric_names = {
+                metric.get("name")
+                for metric in cat.get("metrics", [])
+                if isinstance(metric, dict) and metric.get("name")
+            }
+            for metric in definition.get("metrics", []):
+                if isinstance(metric, dict) and metric.get("name") not in existing_metric_names:
+                    cat.setdefault("metrics", []).append(metric)
+                    changed = True
+
         if changed:
             self.save_data(categories=merged)
         return merged

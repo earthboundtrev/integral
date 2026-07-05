@@ -1,0 +1,141 @@
+{
+  "id": "convict-conditioning-2",
+  "name": "Convict Conditioning 2",
+  "author": "Paul Wade",
+  "source": "Convict Conditioning 2: Advanced Prison Training Tactics (Dragon Door, 2012)",
+  "program_type": "reference",
+  "description": "CC2 shotgun muscle (grip, flags, neck, calves) and Trifecta joint mobility (bridge hold, L-hold, twist). Supplement to CC1 Big Six.",
+  "progression_model": "step_ladder",
+  "notation": "B/I/P or hold seconds — advance when progression standard met with solid form (see book for hidden steps)",
+  "movements": [
+    {
+      "id": "cc2-hang-progressions",
+      "name": "Hang Progressions (Grip)",
+      "master_step": "One-Arm Towel Hang",
+      "steps": [
+        { "step": 1, "name": "Horizontal Hang", "beginner": "1x10s", "intermediate": "2x20s", "progression": "3x30s" },
+        { "step": 2, "name": "Bar Hang", "beginner": "1x10s", "intermediate": "2x20s", "progression": "3x30s" },
+        { "step": 3, "name": "Uneven Hang", "beginner": "1x10s", "intermediate": "2x20s", "progression": "3x30s" },
+        { "step": 4, "name": "One-Arm Bar Hang", "beginner": "1x10s", "intermediate": "2x20s", "progression": "3x1min" },
+        { "step": 5, "name": "Towel Hang", "beginner": "1x10s", "intermediate": "2x20s", "progression": "3x30s" },
+        { "step": 6, "name": "Twin Towel Hang", "beginner": "1x10s", "intermediate": "2x20s", "progression": "3x30s" },
+        { "step": 7, "name": "Uneven Towel Hang", "beginner": "1x10s", "intermediate": "2x20s", "progression": "3x1min" },
+        { "step": 8, "name": "One-Arm Towel Hang", "beginner": "1x10s", "intermediate": "2x30s", "progression": "5min hold", "master": true }
+      ]
+    },
+    {
+      "id": "cc2-fingertip-pushups",
+      "name": "Fingertip Pushups",
+      "master_step": "One-Arm Fingertip Pushups",
+      "steps": [
+        { "step": 1, "name": "Wall Fingertip Pushups", "beginner": "1x10", "intermediate": "2x25", "progression": "3x50" },
+        { "step": 2, "name": "Incline Fingertip Pushups", "beginner": "1x10", "intermediate": "2x20", "progression": "3x40" },
+        { "step": 3, "name": "Kneeling Fingertip Pushups", "beginner": "1x10", "intermediate": "2x15", "progression": "3x30" },
+        { "step": 4, "name": "Half Fingertip Pushups", "beginner": "1x8", "intermediate": "2x12", "progression": "2x25" },
+        { "step": 5, "name": "Full Fingertip Pushups", "beginner": "1x5", "intermediate": "2x10", "progression": "2x20" },
+        { "step": 6, "name": "Close Fingertip Pushups", "beginner": "1x5", "intermediate": "2x10", "progression": "2x20" },
+        { "step": 7, "name": "Uneven Fingertip Pushups", "beginner": "1x5", "intermediate": "2x10", "progression": "2x20" },
+        { "step": 8, "name": "Half One-Arm Fingertip Pushups", "beginner": "1x5", "intermediate": "2x10", "progression": "2x20" },
+        { "step": 9, "name": "Lever Fingertip Pushups", "beginner": "1x5", "intermediate": "2x10", "progression": "2x20" },
+        { "step": 10, "name": "One-Arm Fingertip Pushups", "beginner": "1x5", "intermediate": "2x10", "progression": "1x50", "master": true }
+      ]
+    },
+    {
+      "id": "cc2-clutch-flag",
+      "name": "Clutch Flag",
+      "master_step": "Clutch Flag",
+      "steps": [
+        { "step": 1, "name": "Clutch Hang", "beginner": "10s", "intermediate": "20s", "progression": "30s" },
+        { "step": 2, "name": "Diagonal Split Clutch", "beginner": "10s", "intermediate": "20s", "progression": "30s" },
+        { "step": 3, "name": "Diagonal Tuck Clutch", "beginner": "10s", "intermediate": "20s", "progression": "30s" },
+        { "step": 4, "name": "Diagonal Clutch", "beginner": "10s", "intermediate": "20s", "progression": "30s" },
+        { "step": 5, "name": "Horizontal Tuck Clutch", "beginner": "10s", "intermediate": "20s", "progression": "30s" },
+        { "step": 6, "name": "Horizontal Split Clutch", "beginner": "10s", "intermediate": "20s", "progression": "30s" },
+        { "step": 7, "name": "Bent Leg Clutch Flag", "beginner": "10s", "intermediate": "20s", "progression": "30s" },
+        { "step": 8, "name": "Clutch Flag", "beginner": "10s", "intermediate": "30s", "progression": "60s", "master": true }
+      ]
+    },
+    {
+      "id": "cc2-press-flag",
+      "name": "Press Flag",
+      "master_step": "Press Flag",
+      "steps": [
+        { "step": 1, "name": "Support Press", "beginner": "10s", "intermediate": "20s", "progression": "30s" },
+        { "step": 2, "name": "Kick Press", "beginner": "10 reps", "intermediate": "15 reps", "progression": "20 reps" },
+        { "step": 3, "name": "Vertical Chamber Press", "beginner": "5s", "intermediate": "10s", "progression": "15s" },
+        { "step": 4, "name": "Vertical Press", "beginner": "5s", "intermediate": "10s", "progression": "15s" },
+        { "step": 5, "name": "Split Press Flag", "beginner": "5s", "intermediate": "10s", "progression": "15s" },
+        { "step": 6, "name": "Bent Leg Press Flag", "beginner": "5s", "intermediate": "10s", "progression": "15s" },
+        { "step": 7, "name": "Half Press Flag", "beginner": "5s", "intermediate": "10s", "progression": "15s" },
+        { "step": 8, "name": "Press Flag", "beginner": "5s", "intermediate": "10s", "progression": "30s", "master": true }
+      ]
+    },
+    {
+      "id": "cc2-neck-bridges",
+      "name": "Bulldog Neck (Bridges)",
+      "master_step": "Wrestler's Bridge",
+      "steps": [
+        { "step": 1, "name": "Preliminary Wrestler's Bridge", "beginner": "10s", "intermediate": "20s", "progression": "30s" },
+        { "step": 2, "name": "Preliminary Front Bridge", "beginner": "10s", "intermediate": "20s", "progression": "30s" },
+        { "step": 3, "name": "Full Wrestler's Bridge", "beginner": "10s", "intermediate": "30s", "progression": "60s" },
+        { "step": 4, "name": "Full Front Bridge", "beginner": "10s", "intermediate": "30s", "progression": "60s" },
+        { "step": 5, "name": "Bridge Walk (Neck)", "beginner": "5 steps", "intermediate": "10 steps", "progression": "20 steps" },
+        { "step": 6, "name": "Wrestler's Bridge (Loaded)", "beginner": "10s", "intermediate": "30s", "progression": "90s", "master": true }
+      ]
+    },
+    {
+      "id": "cc2-calf-training",
+      "name": "Calf Training",
+      "master_step": "Single-Leg Donkey Calf Raise",
+      "steps": [
+        { "step": 1, "name": "Double-Leg Calf Raise", "beginner": "1x15", "intermediate": "2x25", "progression": "3x50" },
+        { "step": 2, "name": "Single-Leg Calf Raise", "beginner": "1x10", "intermediate": "2x20", "progression": "3x30" },
+        { "step": 3, "name": "Stair Calf Raise", "beginner": "1x10", "intermediate": "2x20", "progression": "3x30" },
+        { "step": 4, "name": "Single-Leg Stair Calf Raise", "beginner": "1x8", "intermediate": "2x15", "progression": "2x25" },
+        { "step": 5, "name": "Bent-Knee Calf Raise", "beginner": "1x10", "intermediate": "2x20", "progression": "3x30" },
+        { "step": 6, "name": "Single-Leg Donkey Calf Raise", "beginner": "1x8", "intermediate": "2x15", "progression": "2x25", "master": true }
+      ]
+    },
+    {
+      "id": "cc2-bridge-hold",
+      "name": "Trifecta — Bridge Hold",
+      "master_step": "Stand-to-Stand Bridge Hold",
+      "steps": [
+        { "step": 1, "name": "Short Bridge Hold", "beginner": "20s", "intermediate": "45s", "progression": "90s" },
+        { "step": 2, "name": "Straight Bridge Hold", "beginner": "20s", "intermediate": "45s", "progression": "90s" },
+        { "step": 3, "name": "Angled Bridge Hold", "beginner": "15s", "intermediate": "30s", "progression": "60s" },
+        { "step": 4, "name": "Head Bridge Hold", "beginner": "15s", "intermediate": "30s", "progression": "60s" },
+        { "step": 5, "name": "Half Bridge Hold", "beginner": "10s", "intermediate": "20s", "progression": "45s" },
+        { "step": 6, "name": "Full Bridge Hold", "beginner": "10s", "intermediate": "20s", "progression": "45s" },
+        { "step": 7, "name": "Wall Walk Down Hold", "beginner": "10s", "intermediate": "20s", "progression": "30s" },
+        { "step": 8, "name": "Stand-to-Stand Bridge Hold", "beginner": "5s", "intermediate": "15s", "progression": "30s", "master": true }
+      ]
+    },
+    {
+      "id": "cc2-l-hold",
+      "name": "Trifecta — L-Hold",
+      "master_step": "Full L-Hold",
+      "steps": [
+        { "step": 1, "name": "Chair L-Hold", "beginner": "10s", "intermediate": "20s", "progression": "45s" },
+        { "step": 2, "name": "Bent-Knee L-Hold", "beginner": "10s", "intermediate": "20s", "progression": "45s" },
+        { "step": 3, "name": "Tuck L-Hold (Floor)", "beginner": "10s", "intermediate": "20s", "progression": "45s" },
+        { "step": 4, "name": "One-Leg L-Hold", "beginner": "10s", "intermediate": "20s", "progression": "30s" },
+        { "step": 5, "name": "Straddle L-Hold", "beginner": "10s", "intermediate": "20s", "progression": "30s" },
+        { "step": 6, "name": "Full L-Hold", "beginner": "10s", "intermediate": "20s", "progression": "60s", "master": true }
+      ]
+    },
+    {
+      "id": "cc2-twist",
+      "name": "Trifecta — Twist Progressions",
+      "master_step": "Full Spinal Twist Hold",
+      "steps": [
+        { "step": 1, "name": "Seated Torso Turn", "beginner": "10 reps", "intermediate": "20 reps", "progression": "30 reps" },
+        { "step": 2, "name": "Kneeling Twist", "beginner": "10 reps", "intermediate": "20 reps", "progression": "30 reps" },
+        { "step": 3, "name": "Lunge Twist", "beginner": "10 reps", "intermediate": "20 reps", "progression": "30 reps" },
+        { "step": 4, "name": "Standing Twist Hold", "beginner": "15s", "intermediate": "30s", "progression": "60s" },
+        { "step": 5, "name": "Seated Spinal Rotation", "beginner": "15s", "intermediate": "30s", "progression": "60s" },
+        { "step": 6, "name": "Full Spinal Twist Hold", "beginner": "15s", "intermediate": "30s", "progression": "90s", "master": true }
+      ]
+    }
+  ]
+}

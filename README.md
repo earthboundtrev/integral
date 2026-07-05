@@ -3,14 +3,12 @@
 > **Tend every area of your life. One honest day at a time.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)]()
-[![Python](https://img.shields.io/badge/python-3.10+-blue.svg)]()
 
-A local-first desktop app for tracking and tending every area of your life — money, body, burnout prevention, creative work, family, search practice, spiritual development, and emotional wellbeing.
+Integral is a **free, open-source** desktop app for tracking your whole life — not just workouts or mood, but money, family, burnout, creativity, spirituality, emotions, and what you take in (food, art, books, and everyday content).
 
-Log in seconds on low-energy days. See your year at a glance. Get guidance when maintenance slips.
+Log in seconds on hard days. See your year at a glance. Get gentle guidance when something starts slipping.
 
-**No account. No cloud. Your data stays on your machine.**
+**No account. No cloud. Your journal stays on your computer.**
 
 <p align="center">
   <img src="assets/integral-icon-source.png" alt="Integral app icon" width="128" height="128" />
@@ -18,160 +16,101 @@ Log in seconds on low-energy days. See your year at a glance. Get guidance when 
 
 ---
 
-## Why Integral exists
+## Open source — and why the fitness programs are here
 
-Most apps in this space pick one lane:
+Integral is released under the [MIT License](LICENSE). Anyone can read the code, run it, change it, and share it. That openness is exactly why this app can include **reference progression tables** for well-known bodyweight and mobility programs — built for personal use inside your own journal, not sold as a replacement for the books.
 
-- **Mood trackers** (Daylio) — fast, but narrow
-- **Life OS platforms** (Benji, HALO) — powerful, but overwhelming and cloud-tied
-- **Wheel-of-life apps** (LifeWheel) — great snapshot, weak on daily narrative and coaching
-- **Journals** (Mini Diarium, Journaler) — private writing, no structured life-area intelligence
-- **Fitness loggers** (CC Tracker, Strong) — programs without the rest of your life
+**I am not sponsored by, affiliated with, or endorsed by** the authors or publishers of those programs. Integral does not speak for them. If a table or step name differs from your copy of the book, **trust the book**.
 
-Integral combines what actually helps long-arc personal development:
+If these programs have helped you and you want to support the people who wrote them, buy their work. That is the best way to say thank you:
 
-| Layer | What it does |
-|-------|----------------|
-| **Daily log** | Rating (1–10) + optional checklist, metrics, and notes per category |
-| **At-a-glance** | GitHub-style activity grid — see your year in squares, click any day to explore |
-| **Intelligence** | Trends, neglected areas, burnout warnings, and category-specific guidance |
-| **Fitness** | Official Convict Conditioning, Tibetan Rites, and Explosive Calisthenics progression tables |
-| **Privacy** | Local JSON storage; open source; Windows `.exe` |
+| Program in Integral | Book (Amazon) |
+|---------------------|---------------|
+| Convict Conditioning (Big Six) | [Convict Conditioning](https://www.amazon.com/Convict-Conditioning-Paul-Wade/dp/0938045768) — Paul Wade |
+| Convict Conditioning 2 | [Convict Conditioning 2](https://www.amazon.com/Convict-Conditioning-Advanced-Prison-Training/dp/1938898007) — Paul Wade |
+| Explosive Calisthenics | [Explosive Calisthenics](https://www.amazon.com/Explosive-Calisthenics-Paul-Wade/dp/1938898074) — Paul Wade |
+| Five Tibetan Rites | [The Eye of Revelation](https://www.amazon.com/Ancient-Secret-Fountain-Youth/dp/0919948013) — Peter Kelder |
+| Overcoming Gravity | [Overcoming Gravity (2nd ed.)](https://www.amazon.com/Overcoming-Gravity-systematic-gymnastics-strength/dp/1452865756) — Steven Low |
+| Strong Medicine | [Strong Medicine](https://www.amazon.com/Strong-Medicine-Conquer-Chronic-Achieve/dp/1938898244) — Chris Hardy & Marty Gallagher |
+| Super Joints | [Super Joints](https://www.amazon.com/Super-Joints-Russian-Longevity-Pain-Free/dp/0938045369) — Pavel Tsatsouline |
 
-See [docs/COMPETITIVE_LANDSCAPE.md](docs/COMPETITIVE_LANDSCAPE.md) for competitive research.
+*(Amazon links are standard referral-free product URLs for convenience; Integral earns nothing from them.)*
 
 ---
 
-## Life areas (default categories)
+## What you can track
 
-- Money/Freedom
-- Body & Presence
-- Burnout Prevention & Energy Management
-- Creative/Mental Work
-- Family/Logistics
-- Search Practice
-- Spiritual Development
-- Emotional Wellbeing
+Integral is built around **life areas** — buckets you check in on each day (or whenever you have energy). On a rough day, a **1–10 rating and Save** is enough. When you have more time, add checklist ticks, quick numbers, and notes.
 
-All categories are editable in-app (checklists and metrics).
+### Default life areas
+
+Integral ships with **18 editable life areas** across financial, physical, mental, emotional, spiritual, relational, cultural, and environmental development — plus what you take in (food, art, books, content).
+
+See **[docs/HOLISTIC_DEVELOPMENT_MODEL.md](docs/HOLISTIC_DEVELOPMENT_MODEL.md)** for the full domain map and how areas connect.
+
+**Consumption detail & competitors:** [docs/INPUT_AND_CONSUMPTION_COMPARISON.md](docs/INPUT_AND_CONSUMPTION_COMPARISON.md)
+
+You can rename areas, edit checklists, and add your own categories in the app.
+
+### How the pieces fit together
+
+| What you see | What it does for you |
+|--------------|----------------------|
+| **Overview** | Year-at-a-glance grid, today's snapshot, quarterly priorities, short guidance |
+| **Categories** | Daily check-in per life area |
+| **Day explorer** | Click any day on the grid to review or fill in the past |
+| **Guidance** | Plain-language nudges when an area is neglected, trending down, or stuck |
+| **Graphs** | Trends and balance over time |
+| **Weekly summary** | A readable recap of your week |
+| **Fitness Hub** | Log sessions against book-based programs; see progress and coaching hints |
+| **Search** | Find old notes across life logs and workouts |
+| **Export & backup** | CSV exports and full journal backups you control |
+
+Guidance connects the dots — for example, low body energy when food hasn't been logged, or mood dipping when no art has been noted. It's pattern-spotting, not medical advice.
 
 ---
 
-## Features
+## Getting started
 
-- **Overview** — contribution calendar, today's stats, guidance highlights, quarterly milestone summary
-- **Categories** — log and explore each life area
-- **Day explorer** — click any grid square to review or backfill a day
-- **Guidance** — coaching from your logs (declining trends, maintenance gaps, plateaus)
-- **Graphs** — rating trends, metrics, heatmaps, life balance radar
-- **Fitness Hub** — multi-program tracking with official B/I/P standards, smart pre-fill, repeat session, advancement evidence
-- **Fitness charts** — step ladders, Tibetan 5-rite lines, EC height trends, volume by program, heatmap, development radar
-- **Quarterly milestones** — track Q1–Q4 priorities and completion
-- **Export** — life, fitness, and milestones to CSV
-- **Backup & restore** — full JSON backup with one-click restore
-- **Encryption at rest** — optional passphrase-protected journal (AES via Fernet)
-- **First-run onboarding** — quick tour of logging and fitness
-- **Weekly summary**, full history, note search (life + fitness), dark mode
-
----
-
-## Download & run
-
-### Windows users (recommended)
+### Windows (easiest)
 
 1. Download **`Integral-windows.zip`** from [Releases](https://github.com/earthboundtrev/integral/releases).
 2. Unzip and double-click **`Integral.exe`**.
 
-Your journal saves to `%APPDATA%\Integral\data.json`. Back up that file to keep your history.
+Your journal is saved on this PC (typically under `%APPDATA%\Integral\`). Use **Backup** inside the app, or copy that file, so you never lose your history. You can optionally lock the journal with a passphrase under **Data & Security**.
 
-### From source (developers)
+### First time in the app
+
+1. Open **Categories** and pick one area — rating + **Save** counts.
+2. Glance at **Overview** to see your activity grid fill in.
+3. If you train with a book program, open **Fitness Hub** and log a session.
+4. Check **Guidance** after a few days; it works better with a little history.
+
+---
+
+## Privacy
+
+- Data is stored locally as JSON on your machine.
+- No Integral account, no telemetry, no required internet connection.
+- Optional encryption if you want the file passphrase-protected.
+- Open source — you can verify what the app does.
+
+---
+
+## For developers
+
+Integral is Python + Tkinter, local-first, with optional `cryptography` for encrypted journals.
 
 ```powershell
+python -m pip install -r requirements.txt
 .\run.ps1
 ```
 
-Development data: `data/data.json` in the project folder.
+Build Windows `.exe`: `.\build.ps1` → `dist\Integral\Integral.exe`
 
----
+Run tests: `python -m unittest discover -s tests -v`
 
-## Build `Integral.exe` (maintainers)
-
-```powershell
-.\build.ps1
-```
-
-→ `dist\Integral\Integral.exe` with app icon embedded.
-
-Single-file build: `.\build-onefile.ps1` → `dist\Integral.exe`
-
-Icon is generated from `assets/integral-icon-source.png` via `scripts/build_icon.py`.
-
----
-
-## Tech stack
-
-- Python 3 + Tkinter
-- Matplotlib
-- JSON on disk
-- PyInstaller + Pillow (build)
-
----
-
-## Project structure
-
-```
-integral/
-├── personal_dev_tracker.py   # Main entry
-├── activity_grid.py          # Contribution calendar
-├── insights/                 # Guidance engine
-├── fitness/                  # Program tracking
-├── programs/                 # Official fitness tables
-├── assets/                   # App icon
-├── docs/                     # Research & launch notes
-└── tests/
-```
-
----
-
-## Tests
-
-```powershell
-python -m unittest discover -s tests -v
-```
-
----
-
-## Roadmap
-
-Formal plan for closing competitive gaps:
-
-| Priority | Gap | Direction |
-|----------|-----|-----------|
-| **Sync** | No cloud / multi-device yet (Benji wins) | Optional encrypted sync — opt-in, local-first default |
-| **AI** | No AI layer yet (Orakemu, Sinqly, nopy) | Optional local/API-key AI on your logs — no Integral servers |
-| **Security** | No encryption at rest (Mini Diarium wins) | Passphrase vault + encrypted journal data |
-| **Polish** | Brand behind funded SaaS | Installer, onboarding, screenshots, release UX |
-
-Full phased roadmap: **[docs/ROADMAP.md](docs/ROADMAP.md)**
-
-Also planned: quarterly milestones, CSV export, macOS/Linux builds.
-
----
-
-## Open source launch
-
-| Item | Value |
-|------|--------|
-| **Name** | Integral |
-| **Tagline** | Tend every area of your life. One honest day at a time. |
-| **License** | [MIT](LICENSE) |
-| **GitHub About** | Copy from [docs/GITHUB_LAUNCH.md](docs/GITHUB_LAUNCH.md) |
-
----
-
-## Contributing
-
-Contributions welcome. Open an issue before large changes. Keep the daily log flow fast and the app local-first.
+Project layout, roadmap, and competitive notes live in [`docs/`](docs/). Contributions welcome — open an issue before large changes.
 
 ---
 
