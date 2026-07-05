@@ -23,8 +23,9 @@ Known gaps vs funded competitors, tracked as intentional future work. Integral s
 - [x] Fitness Hub (CC, Tibetan Rites, Explosive Calisthenics)
 - [x] Windows `.exe` build
 - [x] MIT license, README, app icon
-- [ ] Quarterly milestone tracker
-- [ ] Export to CSV / backup wizard
+- [x] Quarterly milestone tracker
+- [x] Export to CSV / backup wizard
+- [x] First-run onboarding
 
 ---
 
@@ -32,8 +33,8 @@ Known gaps vs funded competitors, tracked as intentional future work. Integral s
 
 **Goal:** Match Mini Diarium’s security story without giving up structured life tracking.
 
-- [ ] Passphrase-protected vault
-- [ ] Encryption at rest for journal data (AES-256-GCM or equivalent)
+- [x] Passphrase-protected vault
+- [x] Encryption at rest for journal data (Fernet + PBKDF2)
 - [ ] Clear security docs (what is encrypted, what never leaves the machine)
 - [ ] Optional key file / recovery flow
 
@@ -44,7 +45,7 @@ Known gaps vs funded competitors, tracked as intentional future work. Integral s
 **Goal:** Benji-level multi-device convenience for users who want it — never required.
 
 - [ ] One-click encrypted backup to user-chosen folder (Dropbox/iCloud/Google Drive via OS sync)
-- [ ] Manual merge / import from backup file
+- [x] Manual merge / import from backup file
 - [ ] Optional end-to-end encrypted sync (design TBD — no vendor lock-in)
 - [ ] Conflict resolution for multi-device edits
 
@@ -72,7 +73,7 @@ Known gaps vs funded competitors, tracked as intentional future work. Integral s
 
 - [x] App icon + exe embedding
 - [ ] Windows installer (MSI/NSIS) with proper name and icon
-- [ ] First-run onboarding (pick categories, explain rating + Save)
+- [x] First-run onboarding (pick categories, explain rating + Save)
 - [ ] Empty states with clear CTAs
 - [ ] Consistent typography and spacing pass
 - [ ] Social preview / release banner for GitHub

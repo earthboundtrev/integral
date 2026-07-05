@@ -11,10 +11,21 @@ from tkinter import messagebox, scrolledtext, simpledialog, ttk
 from activity_grid import ContributionGrid
 from graphs import open_graphs
 from fitness.engine import compute_program_state, load_program_definitions, migrate_data
+from fitness.intelligence import weekly_fitness_summary
 from fitness.ui import open_fitness_hub
 from insights.engine import analyze_all, category_insight, format_guidance_report, format_insight_line, top_insights
+from integral_dialogs import (
+    prompt_vault_unlock,
+    show_backup_dialog,
+    show_export_dialog,
+    show_milestones_dialog,
+    show_onboarding,
+    show_security_dialog,
+)
+from milestones import merge_milestones, milestone_summary
 from paths import APP_NAME, data_file, ensure_data_file, icon_path
 from theme import apply_theme, get_theme, style_canvas, style_listbox, style_text_widget
+from vault import is_encrypted_file, load_data_file, save_data_file
 
 
 DATA_FILE = data_file()
@@ -32,14 +43,24 @@ class PersonalDevelopmentTracker:
         self.entries: dict = {}
         self.settings: dict = {"dark_mode": False}
         self.sessions: list = []
+        self.milestones: list = []
         self.program_state: dict = {}
         self.programs: dict = load_program_definitions()
+        self.data_path = DATA_FILE
+        self.vault_passphrase: str | None = None
         self.theme = get_theme(False)
         self._mousewheel_binding: str | None = None
+
+        if is_encrypted_file(DATA_FILE) and not prompt_vault_unlock(self):
+            messagebox.showerror("Locked", "Cannot open encrypted journal without passphrase.")
+            root.destroy()
+            return
 
         self.load_data()
         self.apply_current_theme()
         self.create_dashboard()
+        if not self.settings.get("onboarding_complete"):
+            show_onboarding(self)
 
     def _apply_window_icon(self) -> None:
         path = icon_path()
@@ -191,38 +212,52 @@ class PersonalDevelopmentTracker:
     def load_data(self) -> None:
         ensure_data_file()
         if os.path.exists(DATA_FILE):
-            with open(DATA_FILE, encoding="utf-8") as file:
-                data = json.load(file)
+            try:
+                data = load_data_file(DATA_FILE, self.vault_passphrase)
+            except PermissionError:
+                if not prompt_vault_unlock(self):
+                    raise
+                data = load_data_file(DATA_FILE, self.vault_passphrase)
             migrated = migrate_data(data, self.programs)
             self.categories = self.merge_categories_with_defaults(migrated.get("categories"))
             self.entries = migrated.get("entries", {})
             self.settings = {**{"dark_mode": False}, **migrated.get("settings", {})}
             self.sessions = migrated.get("sessions", [])
+            self.milestones = merge_milestones(migrated.get("milestones"))
             self.program_state = migrated.get("program_state", {})
         else:
             self.categories = self.get_default_categories()
             self.entries = {}
-            self.settings = {"dark_mode": False}
+            self.settings = {"dark_mode": False, "onboarding_complete": False}
             self.sessions = []
-            self.program_state = compute_program_state(self.programs, self.sessions)
+            self.milestones = merge_milestones(None)
+            self.program_state = compute_program_state(self.programs, self.sessions, self.settings)
             self.save_data()
 
-    def save_data(self, categories: dict | None = None) -> None:
-        if categories is not None:
-            self.categories = categories
-        self.program_state = compute_program_state(self.programs, self.sessions)
-        payload = {
+    def _payload(self) -> dict:
+        self.program_state = compute_program_state(self.programs, self.sessions, self.settings)
+        return {
             "schema_version": 2,
             "categories": self.categories,
             "entries": self.entries,
             "settings": self.settings,
             "sessions": self.sessions,
+            "milestones": self.milestones,
             "program_state": self.program_state,
             "user_levels": {},
         }
+
+    def save_data(self, categories: dict | None = None) -> None:
+        if categories is not None:
+            self.categories = categories
+        payload = self._payload()
         os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
-        with open(DATA_FILE, "w", encoding="utf-8") as file:
-            json.dump(payload, file, indent=2, ensure_ascii=False)
+        save_data_file(
+            DATA_FILE,
+            payload,
+            encrypted=bool(self.settings.get("encryption_enabled")),
+            passphrase=self.vault_passphrase,
+        )
 
     def save_fitness_data(self) -> None:
         self.save_data()
@@ -308,7 +343,11 @@ class PersonalDevelopmentTracker:
         ttk.Button(footer, text="Search Notes", command=self.show_search).pack(side=tk.LEFT, padx=8)
         ttk.Button(footer, text="Graphs & Progress", command=self.show_graphs).pack(side=tk.LEFT, padx=8)
         ttk.Button(footer, text="Fitness Hub", command=self.show_fitness_hub).pack(side=tk.LEFT, padx=8)
+        ttk.Button(footer, text="Milestones", command=self.show_milestones).pack(side=tk.LEFT, padx=8)
+        ttk.Button(footer, text="Export", command=self.show_export).pack(side=tk.LEFT, padx=8)
+        ttk.Button(footer, text="Backup", command=self.show_backup).pack(side=tk.LEFT, padx=8)
         ttk.Button(footer, text="Edit Categories", command=self.show_settings).pack(side=tk.LEFT, padx=8)
+        ttk.Button(footer, text="Data & Security", command=self.show_security).pack(side=tk.LEFT, padx=8)
         mode_label = "Light Mode" if self.settings.get("dark_mode") else "Dark Mode"
         ttk.Button(footer, text=mode_label, command=self.toggle_dark_mode).pack(side=tk.RIGHT)
 
@@ -350,7 +389,8 @@ class PersonalDevelopmentTracker:
         ttk.Label(
             stats,
             text=f"Today: {logged_today}/{len(self.categories)} life areas logged"
-            + (f"  |  {fitness_today} fitness session(s)" if fitness_today else ""),
+            + (f"  |  {fitness_today} fitness session(s)" if fitness_today else "")
+            + f"  |  {milestone_summary(self.milestones)}",
             font=("Helvetica", 11),
         ).pack(anchor="w")
         ttk.Button(stats, text="Explore today", command=lambda: self.show_day_explorer(today_str)).pack(
@@ -805,6 +845,20 @@ class PersonalDevelopmentTracker:
                     text.insert(tk.END, f"{snippet}\n")
             text.insert(tk.END, "\n")
 
+        text.insert(tk.END, weekly_fitness_summary(self.sessions, self.programs, week_dates))
+
+    def show_milestones(self) -> None:
+        show_milestones_dialog(self)
+
+    def show_export(self) -> None:
+        show_export_dialog(self)
+
+    def show_backup(self) -> None:
+        show_backup_dialog(self)
+
+    def show_security(self) -> None:
+        show_security_dialog(self)
+
     def show_search(self) -> None:
         window = tk.Toplevel(self.root)
         window.title("Search Notes")
@@ -826,31 +880,45 @@ class PersonalDevelopmentTracker:
             query = query_var.get().strip().lower()
             results.delete("1.0", tk.END)
             if not query:
-                results.insert(tk.END, "Type to search across notes and completed checklist items.")
-                return
-            if not self.entries:
-                results.insert(tk.END, "No entries yet.")
+                results.insert(tk.END, "Type to search life notes, checklists, and fitness session notes.")
                 return
 
             hits = 0
-            for date in sorted(self.entries.keys(), reverse=True):
-                for cat, data in self.entries[date].items():
-                    haystacks = [
-                        cat.lower(),
-                        str(data.get("notes", "")).lower(),
-                        " ".join(
-                            label.lower()
-                            for label, checked in data.get("checklist", {}).items()
-                            if checked
-                        ),
-                    ]
-                    if any(query in chunk for chunk in haystacks):
-                        hits += 1
-                        results.insert(tk.END, f"\n{date} — {cat}\n")
-                        results.insert(tk.END, f"Rating: {data.get('rating')}/10\n")
-                        if data.get("notes"):
-                            results.insert(tk.END, f"{data['notes']}\n")
-                        results.insert(tk.END, "-" * 40 + "\n")
+            if self.entries:
+                for date in sorted(self.entries.keys(), reverse=True):
+                    for cat, data in self.entries[date].items():
+                        haystacks = [
+                            cat.lower(),
+                            str(data.get("notes", "")).lower(),
+                            " ".join(
+                                label.lower()
+                                for label, checked in data.get("checklist", {}).items()
+                                if checked
+                            ),
+                        ]
+                        if any(query in chunk for chunk in haystacks):
+                            hits += 1
+                            results.insert(tk.END, f"\n{date} — {cat}\n")
+                            results.insert(tk.END, f"Rating: {data.get('rating')}/10\n")
+                            if data.get("notes"):
+                                results.insert(tk.END, f"{data['notes']}\n")
+                            results.insert(tk.END, "-" * 40 + "\n")
+
+            for session in sorted(self.sessions, key=lambda item: item.get("date", ""), reverse=True):
+                program = self.programs.get(session.get("program_id", ""), {})
+                program_name = program.get("name", session.get("program_id", ""))
+                haystacks = [
+                    program_name.lower(),
+                    str(session.get("notes", "")).lower(),
+                ]
+                for log in session.get("movement_logs", []):
+                    haystacks.append(str(log.get("notes", "")).lower())
+                if any(query in chunk for chunk in haystacks):
+                    hits += 1
+                    results.insert(tk.END, f"\n{session.get('date')} — Fitness: {program_name}\n")
+                    if session.get("notes"):
+                        results.insert(tk.END, f"{session['notes']}\n")
+                    results.insert(tk.END, "-" * 40 + "\n")
 
             if hits == 0:
                 results.insert(tk.END, f"No matches for '{query_var.get().strip()}'.")
@@ -868,6 +936,8 @@ class PersonalDevelopmentTracker:
             self.root,
             sessions=self.sessions,
             program_state=self.program_state,
+            programs=self.programs,
+            settings=self.settings,
             theme=self.theme,
             on_save=self.save_fitness_data,
         )
@@ -1063,8 +1133,9 @@ class PersonalDevelopmentTracker:
 
 def main() -> None:
     root = tk.Tk()
-    PersonalDevelopmentTracker(root)
-    root.mainloop()
+    app = PersonalDevelopmentTracker(root)
+    if root.winfo_exists():
+        root.mainloop()
 
 
 if __name__ == "__main__":

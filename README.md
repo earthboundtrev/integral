@@ -59,13 +59,19 @@ All categories are editable in-app (checklists and metrics).
 
 ## Features
 
-- **Overview** — contribution calendar, today's stats, guidance highlights
+- **Overview** — contribution calendar, today's stats, guidance highlights, quarterly milestone summary
 - **Categories** — log and explore each life area
 - **Day explorer** — click any grid square to review or backfill a day
 - **Guidance** — coaching from your logs (declining trends, maintenance gaps, plateaus)
 - **Graphs** — rating trends, metrics, heatmaps, life balance radar
-- **Fitness Hub** — multi-program tracking with official B/I/P standards and advancement detection
-- **Weekly summary**, full history, note search, dark mode
+- **Fitness Hub** — multi-program tracking with official B/I/P standards, smart pre-fill, repeat session, advancement evidence
+- **Fitness charts** — step ladders, Tibetan 5-rite lines, EC height trends, volume by program, heatmap, development radar
+- **Quarterly milestones** — track Q1–Q4 priorities and completion
+- **Export** — life, fitness, and milestones to CSV
+- **Backup & restore** — full JSON backup with one-click restore
+- **Encryption at rest** — optional passphrase-protected journal (AES via Fernet)
+- **First-run onboarding** — quick tour of logging and fitness
+- **Weekly summary**, full history, note search (life + fitness), dark mode
 
 ---
 

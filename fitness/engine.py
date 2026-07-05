@@ -12,6 +12,25 @@ from paths import programs_dir
 
 PROGRAMS_DIR = programs_dir()
 
+try:
+    from fitness.intelligence import (
+        advancement_evidence,
+        cc_sessions_meeting_standard,
+        classify_metric_trend,
+        get_fitness_settings,
+        next_suggested_action,
+        tibetan_consecutive_success_days,
+    )
+except ImportError:
+    from intelligence import (  # type: ignore
+        advancement_evidence,
+        cc_sessions_meeting_standard,
+        classify_metric_trend,
+        get_fitness_settings,
+        next_suggested_action,
+        tibetan_consecutive_success_days,
+    )
+
 SETS_REPS_RE = re.compile(r"^(\d+)x(\d+)$")
 HOLD_RE = re.compile(r"^(\d+)s$")
 
@@ -172,24 +191,31 @@ def evaluate_session_log(log: dict, program: dict) -> dict[str, Any]:
     return result
 
 
-def compute_program_state(programs: dict[str, dict], sessions: list[dict]) -> dict[str, Any]:
+def compute_program_state(
+    programs: dict[str, dict],
+    sessions: list[dict],
+    settings: dict | None = None,
+) -> dict[str, Any]:
     """Derive current step/rep level and trends from session history."""
+    settings = settings or {}
     state: dict[str, Any] = {}
 
     for program_id, program in programs.items():
         program_sessions = [session for session in sessions if session.get("program_id") == program_id]
         if program["progression_model"] == "weekly_rep_ramp":
-            state[program_id] = compute_tibetan_state(program, program_sessions)
+            state[program_id] = compute_tibetan_state(program, program_sessions, settings)
             continue
         if program["progression_model"] == "parc_step":
-            state[program_id] = compute_parc_state(program, program_sessions)
+            state[program_id] = compute_parc_state(program, program_sessions, settings)
             continue
-        state[program_id] = compute_cc_state(program, program_sessions)
+        state[program_id] = compute_cc_state(program, program_sessions, settings)
 
     return state
 
 
-def compute_cc_state(program: dict, sessions: list[dict]) -> dict[str, Any]:
+def compute_cc_state(program: dict, sessions: list[dict], settings: dict | None = None) -> dict[str, Any]:
+    settings = settings or {}
+    fitness_settings = get_fitness_settings(settings)
     by_movement: dict[str, Any] = {}
     for movement in program.get("movements", []):
         key = movement["id"]
@@ -222,19 +248,27 @@ def compute_cc_state(program: dict, sessions: list[dict]) -> dict[str, Any]:
             },
             program,
         )
-        by_movement[key] = {
+        met_sessions = cc_sessions_meeting_standard(at_step, program, key, current_step)
+        ready = len(met_sessions) >= fitness_settings["cc_sessions_for_advance"] and evaluation["ready_to_advance"]
+        item_state = {
             "current_step": current_step,
             "step_name": step_name,
             "sessions_at_step": len(at_step),
+            "sessions_meeting_standard": len(met_sessions),
             "last_date": latest["date"],
-            "trend": classify_trend(at_step),
-            "ready_to_advance": evaluation["ready_to_advance"],
+            "trend": classify_metric_trend(at_step),
+            "ready_to_advance": ready,
             "messages": evaluation["messages"],
+            "evidence": advancement_evidence(program, at_step, settings),
+            "next_action": "",
         }
+        item_state["next_action"] = next_suggested_action(program, item_state, settings)
+        by_movement[key] = item_state
     return by_movement
 
 
-def compute_parc_state(program: dict, sessions: list[dict]) -> dict[str, Any]:
+def compute_parc_state(program: dict, sessions: list[dict], settings: dict | None = None) -> dict[str, Any]:
+    settings = settings or {}
     by_chain: dict[str, Any] = {}
     for chain in program.get("chains", []):
         key = chain["id"]
@@ -265,19 +299,25 @@ def compute_parc_state(program: dict, sessions: list[dict]) -> dict[str, Any]:
             },
             program,
         )
-        by_chain[key] = {
+        item_state = {
             "current_step": current_step,
             "step_name": step_name,
             "sessions_at_step": len(at_step),
             "last_date": latest["date"],
-            "trend": classify_trend(at_step),
+            "trend": classify_metric_trend(at_step),
             "ready_to_advance": evaluation["ready_to_advance"],
             "messages": evaluation["messages"],
+            "evidence": advancement_evidence(program, at_step, settings),
+            "next_action": "",
         }
+        item_state["next_action"] = next_suggested_action(program, item_state, settings)
+        by_chain[key] = item_state
     return by_chain
 
 
-def compute_tibetan_state(program: dict, sessions: list[dict]) -> dict[str, Any]:
+def compute_tibetan_state(program: dict, sessions: list[dict], settings: dict | None = None) -> dict[str, Any]:
+    settings = settings or {}
+    fitness_settings = get_fitness_settings(settings)
     if not sessions:
         return {
             "current_week": 1,
@@ -294,14 +334,29 @@ def compute_tibetan_state(program: dict, sessions: list[dict]) -> dict[str, Any]
             break
     reps = latest.get("reps_per_rite") or {}
     all_met = reps and all(int(reps.get(rite["id"], 0)) >= target for rite in program["movements"])
-    return {
+    streak = tibetan_consecutive_success_days(sessions, program, target)
+    needed = fitness_settings["tibetan_advance_consecutive_days"]
+    ready = streak >= needed and all_met and target < program["rules"]["target_reps_per_rite"]
+    logs = []
+    for session in sessions:
+        for entry in session.get("movement_logs", []):
+            logs.append({**entry, "date": session["date"]})
+    item_state = {
         "current_week": week,
         "target_reps": target,
+        "consecutive_days": streak,
         "last_date": latest["date"],
-        "trend": "stable" if all_met else "building",
-        "ready_to_advance": all_met and target < program["rules"]["target_reps_per_rite"],
-        "messages": [f"Week {week} target: {target} reps per rite"],
+        "trend": classify_metric_trend(logs) if logs else "insufficient_data",
+        "ready_to_advance": ready,
+        "messages": [
+            f"Week {week} target: {target} reps per rite",
+            f"Consecutive success days: {streak}/{needed}",
+        ],
+        "evidence": advancement_evidence(program, logs, settings),
+        "next_action": "",
     }
+    item_state["next_action"] = next_suggested_action(program, item_state, settings)
+    return item_state
 
 
 def classify_trend(logs_at_step: list[dict]) -> str:
@@ -330,17 +385,29 @@ def default_fitness_payload() -> dict[str, Any]:
 def migrate_data(payload: dict[str, Any], programs: dict[str, dict]) -> dict[str, Any]:
     if payload.get("schema_version", 1) >= 2:
         payload.setdefault("sessions", [])
-        payload["program_state"] = compute_program_state(programs, payload["sessions"])
+        payload.setdefault("milestones", [])
+        payload.setdefault("settings", {})
+        payload["settings"].setdefault("fitness", get_fitness_settings(payload["settings"]))
+        payload["settings"].setdefault("onboarding_complete", False)
+        payload["settings"].setdefault("encryption_enabled", False)
+        payload["program_state"] = compute_program_state(
+            programs, payload["sessions"], payload.get("settings", {})
+        )
         return payload
 
     migrated = {
         "schema_version": 2,
         "categories": payload.get("categories", {}),
         "entries": payload.get("entries", {}),
-        "settings": payload.get("settings", {"dark_mode": False}),
+        "settings": {
+            **{"dark_mode": False, "onboarding_complete": False, "encryption_enabled": False},
+            **payload.get("settings", {}),
+        },
         "sessions": payload.get("sessions", []),
+        "milestones": payload.get("milestones", []),
         "program_state": {},
         "user_levels": payload.get("user_levels", {}),
     }
-    migrated["program_state"] = compute_program_state(programs, migrated["sessions"])
+    migrated["settings"]["fitness"] = get_fitness_settings(migrated["settings"])
+    migrated["program_state"] = compute_program_state(programs, migrated["sessions"], migrated["settings"])
     return migrated
