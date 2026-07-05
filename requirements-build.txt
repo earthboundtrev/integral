@@ -1,0 +1,3 @@
+# Build dependencies — only needed to create the .exe (not to run from source).
+pyinstaller>=6.0
+Pillow>=10.0

@@ -1,0 +1,113 @@
+{
+  "id": "convict-conditioning",
+  "name": "Convict Conditioning",
+  "author": "Paul Wade",
+  "source": "Convict Conditioning (Dragon Door, 2010) — CC Reference Table",
+  "progression_model": "step_ladder",
+  "notation": "B = Beginner, I = Intermediate, P = Progression standard (advance when P is met with good form)",
+  "movements": [
+    {
+      "id": "cc-pushups",
+      "name": "Pushups",
+      "master_step": "One-Arm Pushups",
+      "steps": [
+        { "step": 1, "name": "Wall Pushups", "beginner": "1x10", "intermediate": "2x25", "progression": "3x50" },
+        { "step": 2, "name": "Incline Pushups", "beginner": "1x10", "intermediate": "2x20", "progression": "3x40" },
+        { "step": 3, "name": "Kneeling Pushups", "beginner": "1x10", "intermediate": "2x15", "progression": "3x30" },
+        { "step": 4, "name": "1/2 Pushups", "beginner": "1x8", "intermediate": "2x12", "progression": "2x25" },
+        { "step": 5, "name": "Full Pushups", "beginner": "1x5", "intermediate": "2x10", "progression": "2x20" },
+        { "step": 6, "name": "Close Pushups", "beginner": "1x5", "intermediate": "2x10", "progression": "2x20" },
+        { "step": 7, "name": "Uneven Pushups", "beginner": "1x5", "intermediate": "2x10", "progression": "2x20" },
+        { "step": 8, "name": "1/2 One-Arm Pushups", "beginner": "1x5", "intermediate": "2x10", "progression": "2x20" },
+        { "step": 9, "name": "Lever Pushups", "beginner": "1x5", "intermediate": "2x10", "progression": "2x20" },
+        { "step": 10, "name": "One-Arm Pushups", "beginner": "1x5", "intermediate": "2x10", "progression": "1x100", "master": true }
+      ]
+    },
+    {
+      "id": "cc-squats",
+      "name": "Squats",
+      "master_step": "One Leg Squats",
+      "steps": [
+        { "step": 1, "name": "Shoulderstand Squats", "beginner": "1x10", "intermediate": "2x25", "progression": "3x50" },
+        { "step": 2, "name": "Jackknife Squats", "beginner": "1x10", "intermediate": "2x20", "progression": "3x40" },
+        { "step": 3, "name": "Supported Squats", "beginner": "1x10", "intermediate": "2x15", "progression": "3x30" },
+        { "step": 4, "name": "1/2 Squats", "beginner": "1x8", "intermediate": "2x35", "progression": "2x50" },
+        { "step": 5, "name": "Full Squats", "beginner": "1x5", "intermediate": "2x10", "progression": "2x30" },
+        { "step": 6, "name": "Close Squats", "beginner": "1x5", "intermediate": "2x10", "progression": "2x20" },
+        { "step": 7, "name": "Uneven Squats", "beginner": "1x5", "intermediate": "2x10", "progression": "2x20" },
+        { "step": 8, "name": "1/2 One Leg Squats", "beginner": "1x5", "intermediate": "2x10", "progression": "2x20" },
+        { "step": 9, "name": "Assisted One Leg Squats", "beginner": "1x5", "intermediate": "2x10", "progression": "2x20" },
+        { "step": 10, "name": "One Leg Squats", "beginner": "1x5", "intermediate": "2x10", "progression": "2x50", "master": true }
+      ]
+    },
+    {
+      "id": "cc-pullups",
+      "name": "Pullups",
+      "master_step": "One Arm Pullups",
+      "steps": [
+        { "step": 1, "name": "Vertical Pulls", "beginner": "1x10", "intermediate": "2x20", "progression": "3x40" },
+        { "step": 2, "name": "Bent Leg Horizontal Pulls", "beginner": "1x10", "intermediate": "2x20", "progression": "3x30" },
+        { "step": 3, "name": "Horizontal Pulls", "beginner": "1x10", "intermediate": "2x20", "progression": "3x30" },
+        { "step": 4, "name": "Jackknife Pulls", "beginner": "1x10", "intermediate": "2x15", "progression": "3x20" },
+        { "step": 5, "name": "1/2 Pullups", "beginner": "1x8", "intermediate": "2x11", "progression": "2x15" },
+        { "step": 6, "name": "Full Pullups", "beginner": "1x5", "intermediate": "2x8", "progression": "2x10" },
+        { "step": 7, "name": "Close Pullups", "beginner": "1x5", "intermediate": "2x8", "progression": "2x10" },
+        { "step": 8, "name": "Uneven Pullups", "beginner": "1x5", "intermediate": "2x7", "progression": "2x9" },
+        { "step": 9, "name": "Assisted One Arm Pullups", "beginner": "1x3", "intermediate": "2x5", "progression": "2x7" },
+        { "step": 10, "name": "One Arm Pullups", "beginner": "1x1", "intermediate": "2x3", "progression": "2x6", "master": true }
+      ]
+    },
+    {
+      "id": "cc-leg-raises",
+      "name": "Leg Raises",
+      "master_step": "Hanging Straight Leg Raises",
+      "steps": [
+        { "step": 1, "name": "Knee Tucks", "beginner": "1x10", "intermediate": "2x25", "progression": "3x40" },
+        { "step": 2, "name": "Flat Knee Raises", "beginner": "1x10", "intermediate": "2x20", "progression": "3x35" },
+        { "step": 3, "name": "Flat Bent Leg Raises", "beginner": "1x10", "intermediate": "2x15", "progression": "3x30" },
+        { "step": 4, "name": "Flat Frog Raises", "beginner": "1x8", "intermediate": "2x15", "progression": "3x25" },
+        { "step": 5, "name": "Flat Straight Leg Raises", "beginner": "1x5", "intermediate": "2x10", "progression": "2x20" },
+        { "step": 6, "name": "Hanging Knee Raises", "beginner": "1x5", "intermediate": "2x10", "progression": "2x15" },
+        { "step": 7, "name": "Hanging Bent Leg Raises", "beginner": "1x5", "intermediate": "2x10", "progression": "2x15" },
+        { "step": 8, "name": "Hanging Frog Raises", "beginner": "1x5", "intermediate": "2x10", "progression": "2x15" },
+        { "step": 9, "name": "Partial Straight Leg Raises", "beginner": "1x5", "intermediate": "2x10", "progression": "2x15" },
+        { "step": 10, "name": "Hanging Straight Leg Raises", "beginner": "1x5", "intermediate": "2x10", "progression": "2x30", "master": true }
+      ]
+    },
+    {
+      "id": "cc-bridges",
+      "name": "Bridges",
+      "master_step": "Stand-to-Stand Bridges",
+      "steps": [
+        { "step": 1, "name": "Short Bridges", "beginner": "1x10", "intermediate": "2x25", "progression": "3x50" },
+        { "step": 2, "name": "Straight Bridges", "beginner": "1x10", "intermediate": "2x20", "progression": "3x40" },
+        { "step": 3, "name": "Angled Bridges", "beginner": "1x8", "intermediate": "2x15", "progression": "3x30" },
+        { "step": 4, "name": "Head Bridges", "beginner": "1x8", "intermediate": "2x15", "progression": "2x25" },
+        { "step": 5, "name": "1/2 Bridges", "beginner": "1x8", "intermediate": "2x15", "progression": "2x20" },
+        { "step": 6, "name": "Full Bridges", "beginner": "1x6", "intermediate": "2x10", "progression": "2x15" },
+        { "step": 7, "name": "Wall Walk (Down)", "beginner": "1x3", "intermediate": "2x6", "progression": "2x10" },
+        { "step": 8, "name": "Wall Walk (Up)", "beginner": "1x2", "intermediate": "2x4", "progression": "2x8" },
+        { "step": 9, "name": "Closing Bridges", "beginner": "1x1", "intermediate": "2x3", "progression": "2x6" },
+        { "step": 10, "name": "Stand-to-Stand Bridges", "beginner": "1x1", "intermediate": "2x3", "progression": "2x30", "master": true }
+      ]
+    },
+    {
+      "id": "cc-handstand-pushups",
+      "name": "Handstand Pushups",
+      "master_step": "One Arm Handstand Pushups",
+      "metric_type": "hold_or_reps",
+      "steps": [
+        { "step": 1, "name": "Wall Headstands", "beginner": "30s", "intermediate": "60s", "progression": "120s" },
+        { "step": 2, "name": "Crow Stands", "beginner": "10s", "intermediate": "30s", "progression": "60s" },
+        { "step": 3, "name": "Wall Handstands", "beginner": "30s", "intermediate": "60s", "progression": "120s" },
+        { "step": 4, "name": "1/2 Handstand Pushups", "beginner": "1x5", "intermediate": "2x10", "progression": "2x20" },
+        { "step": 5, "name": "Handstand Pushups", "beginner": "1x5", "intermediate": "2x10", "progression": "2x15" },
+        { "step": 6, "name": "Close Handstand Pushups", "beginner": "1x5", "intermediate": "2x9", "progression": "2x12" },
+        { "step": 7, "name": "Uneven Handstand Pushups", "beginner": "1x5", "intermediate": "2x8", "progression": "2x10" },
+        { "step": 8, "name": "1/2 One Arm Handstand Pushups", "beginner": "1x4", "intermediate": "2x6", "progression": "2x8" },
+        { "step": 9, "name": "Lever Handstand Pushups", "beginner": "1x3", "intermediate": "2x4", "progression": "2x6" },
+        { "step": 10, "name": "One Arm Handstand Pushups", "beginner": "1x1", "intermediate": "2x2", "progression": "1x5", "master": true }
+      ]
+    }
+  ]
+}

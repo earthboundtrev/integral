@@ -1,0 +1,35 @@
+{
+  "id": "tibetan-rites",
+  "name": "Five Tibetan Rites",
+  "author": "Peter Kelder / Colonel Bradford",
+  "source": "The Eye of Revelation (Five Tibetan Rites) — Kelder/Bradford protocol via t5t.com",
+  "progression_model": "weekly_rep_ramp",
+  "rules": {
+    "start_reps_per_rite": 3,
+    "weekly_rep_increment": 2,
+    "target_reps_per_rite": 21,
+    "weeks_to_target": 10,
+    "max_reps_recommended": 21,
+    "consistency_days_before_advance": 7,
+    "direction": "clockwise for Rite 1 (Spin)"
+  },
+  "weekly_schedule": [
+    { "week": 1, "reps_per_rite": 3 },
+    { "week": 2, "reps_per_rite": 5 },
+    { "week": 3, "reps_per_rite": 7 },
+    { "week": 4, "reps_per_rite": 9 },
+    { "week": 5, "reps_per_rite": 11 },
+    { "week": 6, "reps_per_rite": 13 },
+    { "week": 7, "reps_per_rite": 15 },
+    { "week": 8, "reps_per_rite": 17 },
+    { "week": 9, "reps_per_rite": 19 },
+    { "week": 10, "reps_per_rite": 21 }
+  ],
+  "movements": [
+    { "id": "rite-1", "name": "Rite 1 — Spin", "order": 1 },
+    { "id": "rite-2", "name": "Rite 2 — Leg Raise", "order": 2 },
+    { "id": "rite-3", "name": "Rite 3 — Camel", "order": 3 },
+    { "id": "rite-4", "name": "Rite 4 — Tabletop", "order": 4 },
+    { "id": "rite-5", "name": "Rite 5 — Up/Down Dog", "order": 5 }
+  ]
+}

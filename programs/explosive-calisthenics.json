@@ -1,0 +1,119 @@
+{
+  "id": "explosive-calisthenics",
+  "name": "Explosive Calisthenics",
+  "author": "Paul Wade",
+  "source": "Explosive Calisthenics (Dragon Door, 2015) — Explosive Six complete progression charts",
+  "progression_model": "parc_step",
+  "notation": "PARC principle: master technical competence at each step before advancing. Power chains use low-rep standards (Rule of Six).",
+  "chains": [
+    {
+      "id": "ec-jumps",
+      "name": "Power Jumps",
+      "master_step": "Suicide Jump",
+      "primary_metric": "reps",
+      "secondary_metric": "height_cm",
+      "steps": [
+        { "step": 1, "name": "Straight Hop", "beginner": "1x10", "intermediate": "2x15", "progression": "3x20" },
+        { "step": 2, "name": "Squat Jump", "beginner": "1x8", "intermediate": "2x12", "progression": "3x15" },
+        { "step": 3, "name": "Vertical Leap", "beginner": "1x6", "intermediate": "2x8", "progression": "3x10", "track_height": true },
+        { "step": 4, "name": "Block Jump", "beginner": "1x5", "intermediate": "2x6", "progression": "3x8" },
+        { "step": 5, "name": "Butt-Kick Jump", "beginner": "1x5", "intermediate": "2x6", "progression": "3x8" },
+        { "step": 6, "name": "Slap Tuck Jump", "beginner": "1x4", "intermediate": "2x5", "progression": "3x6" },
+        { "step": 7, "name": "Tuck Jump", "beginner": "1x4", "intermediate": "2x5", "progression": "3x6" },
+        { "step": 8, "name": "Catch Tuck Jump", "beginner": "1x3", "intermediate": "2x4", "progression": "3x5" },
+        { "step": 9, "name": "Thread Jump", "beginner": "1x3", "intermediate": "2x4", "progression": "3x5" },
+        { "step": 10, "name": "Suicide Jump", "beginner": "1x1", "intermediate": "2x2", "progression": "3x3", "master": true }
+      ]
+    },
+    {
+      "id": "ec-power-pushups",
+      "name": "Power Pushups",
+      "master_step": "The Superman",
+      "primary_metric": "reps",
+      "steps": [
+        { "step": 1, "name": "Incline Pop-up", "beginner": "1x8", "intermediate": "2x10", "progression": "3x12" },
+        { "step": 2, "name": "Kneeling Push-off", "beginner": "1x6", "intermediate": "2x8", "progression": "3x10" },
+        { "step": 3, "name": "Pop-up", "beginner": "1x5", "intermediate": "2x6", "progression": "3x8" },
+        { "step": 4, "name": "Clap Pushup", "beginner": "1x4", "intermediate": "2x5", "progression": "3x6" },
+        { "step": 5, "name": "Chest-Strike Pushup", "beginner": "1x4", "intermediate": "2x5", "progression": "3x6" },
+        { "step": 6, "name": "Hip-Strike Pushup", "beginner": "1x3", "intermediate": "2x4", "progression": "3x5" },
+        { "step": 7, "name": "Convict Pushup", "beginner": "1x3", "intermediate": "2x4", "progression": "3x5" },
+        { "step": 8, "name": "Half-Super", "beginner": "1x2", "intermediate": "2x3", "progression": "3x4" },
+        { "step": 9, "name": "Full Body Pop-up", "beginner": "1x2", "intermediate": "2x3", "progression": "3x4" },
+        { "step": 10, "name": "The Superman", "beginner": "1x1", "intermediate": "2x2", "progression": "3x3", "master": true }
+      ]
+    },
+    {
+      "id": "ec-kip-ups",
+      "name": "Kip-ups",
+      "master_step": "No-Hands Kip-up",
+      "primary_metric": "reps",
+      "steps": [
+        { "step": 1, "name": "Rolling Sit-up", "beginner": "1x8", "intermediate": "2x10", "progression": "3x12" },
+        { "step": 2, "name": "Rolling Squat", "beginner": "1x6", "intermediate": "2x8", "progression": "3x10" },
+        { "step": 3, "name": "Rocking Squat", "beginner": "1x6", "intermediate": "2x8", "progression": "3x10" },
+        { "step": 4, "name": "Bridge Kip", "beginner": "1x5", "intermediate": "2x6", "progression": "3x8" },
+        { "step": 5, "name": "Butt Kip", "beginner": "1x4", "intermediate": "2x5", "progression": "3x6" },
+        { "step": 6, "name": "Half Kip", "beginner": "1x3", "intermediate": "2x4", "progression": "3x5" },
+        { "step": 7, "name": "Kip-up", "beginner": "1x3", "intermediate": "2x4", "progression": "3x5" },
+        { "step": 8, "name": "Straight-Leg Kip-up", "beginner": "1x2", "intermediate": "2x3", "progression": "3x4" },
+        { "step": 9, "name": "Wushu Kip-up", "beginner": "1x2", "intermediate": "2x3", "progression": "3x4" },
+        { "step": 10, "name": "No-Hands Kip-up", "beginner": "1x1", "intermediate": "2x2", "progression": "3x3", "master": true }
+      ]
+    },
+    {
+      "id": "ec-forward-rotations",
+      "name": "Forward Rotations",
+      "master_step": "Front Flip",
+      "primary_metric": "reps",
+      "steps": [
+        { "step": 1, "name": "Shoulder Roll", "beginner": "1x8", "intermediate": "2x10", "progression": "3x12" },
+        { "step": 2, "name": "Press Roll", "beginner": "1x6", "intermediate": "2x8", "progression": "3x10" },
+        { "step": 3, "name": "Dive Roll", "beginner": "1x5", "intermediate": "2x6", "progression": "3x8" },
+        { "step": 4, "name": "Handstand Roll", "beginner": "1x4", "intermediate": "2x5", "progression": "3x6" },
+        { "step": 5, "name": "Back-Drop Handspring", "beginner": "1x3", "intermediate": "2x4", "progression": "3x5" },
+        { "step": 6, "name": "Front Handspring", "beginner": "1x3", "intermediate": "2x4", "progression": "3x5" },
+        { "step": 7, "name": "Flyspring", "beginner": "1x2", "intermediate": "2x3", "progression": "3x4" },
+        { "step": 8, "name": "Back-Drop Flip", "beginner": "1x2", "intermediate": "2x3", "progression": "3x4" },
+        { "step": 9, "name": "Running Front Flip", "beginner": "1x1", "intermediate": "2x2", "progression": "3x3" },
+        { "step": 10, "name": "Front Flip", "beginner": "1x1", "intermediate": "2x2", "progression": "3x3", "master": true }
+      ]
+    },
+    {
+      "id": "ec-backward-rotations",
+      "name": "Backward Rotations",
+      "master_step": "Back Flip",
+      "primary_metric": "reps",
+      "steps": [
+        { "step": 1, "name": "Rear Shoulder Roll", "beginner": "1x8", "intermediate": "2x10", "progression": "3x12" },
+        { "step": 2, "name": "Rear Press Roll", "beginner": "1x6", "intermediate": "2x8", "progression": "3x10" },
+        { "step": 3, "name": "Macaco", "beginner": "1x5", "intermediate": "2x6", "progression": "3x8" },
+        { "step": 4, "name": "Side Macaco", "beginner": "1x4", "intermediate": "2x5", "progression": "3x6" },
+        { "step": 5, "name": "Back Macaco", "beginner": "1x3", "intermediate": "2x4", "progression": "3x5" },
+        { "step": 6, "name": "Monkey Flip", "beginner": "1x3", "intermediate": "2x4", "progression": "3x5" },
+        { "step": 7, "name": "Back Handspring", "beginner": "1x2", "intermediate": "2x3", "progression": "3x4" },
+        { "step": 8, "name": "One-Arm Back Handspring", "beginner": "1x2", "intermediate": "2x3", "progression": "3x4" },
+        { "step": 9, "name": "Four-Point Back Flip", "beginner": "1x1", "intermediate": "2x2", "progression": "3x3" },
+        { "step": 10, "name": "Back Flip", "beginner": "1x1", "intermediate": "2x2", "progression": "3x3", "master": true }
+      ]
+    },
+    {
+      "id": "ec-bar-work",
+      "name": "Explosive Bar Work",
+      "master_step": "The Muscle-up",
+      "primary_metric": "reps",
+      "steps": [
+        { "step": 1, "name": "Swing Kip", "beginner": "1x8", "intermediate": "2x10", "progression": "3x12" },
+        { "step": 2, "name": "Jumping Pullup", "beginner": "1x6", "intermediate": "2x8", "progression": "3x10" },
+        { "step": 3, "name": "Kipping Pullup", "beginner": "1x5", "intermediate": "2x6", "progression": "3x8" },
+        { "step": 4, "name": "Pullup Hop", "beginner": "1x4", "intermediate": "2x5", "progression": "3x6" },
+        { "step": 5, "name": "Clap Pullup", "beginner": "1x3", "intermediate": "2x4", "progression": "3x5" },
+        { "step": 6, "name": "Chest Pullup", "beginner": "1x3", "intermediate": "2x4", "progression": "3x5" },
+        { "step": 7, "name": "Hip Pullup", "beginner": "1x2", "intermediate": "2x3", "progression": "3x4" },
+        { "step": 8, "name": "Jumping Pullover", "beginner": "1x2", "intermediate": "2x3", "progression": "3x4" },
+        { "step": 9, "name": "Bar Pullover", "beginner": "1x2", "intermediate": "2x3", "progression": "3x4" },
+        { "step": 10, "name": "The Muscle-up", "beginner": "1x1", "intermediate": "2x2", "progression": "3x3", "master": true }
+      ]
+    }
+  ]
+}
