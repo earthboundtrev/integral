@@ -1,0 +1,82 @@
+---
+description: Integral module layout and where code belongs
+globs: "**/*.py"
+alwaysApply: false
+---
+
+# Architecture Rules
+
+Canonical overview: `docs/architecture.md`.
+
+## Layout
+
+```
+personal_dev_tracker.py   # App shell — dashboard, dialogs, persistence wiring
+activity_grid.py          # Contribution calendar widget
+graphs.py                 # Life-area matplotlib charts
+fitness_graphs.py         # Program progression charts
+theme.py                  # Theme tokens + ttk styling
+paths.py                  # Dev vs PyInstaller paths (single source of truth)
+insights/                 # Life-area coaching engine
+fitness/                  # Program engine + Fitness Hub UI
+programs/                 # Official progression JSON (bundled, read-only)
+assets/                   # icon.ico, integral-icon-source.png
+tests/                    # unittest
+data/                     # User journal — GITIGNORED
+```
+
+## Placement rules
+
+| Concern | Location |
+|---------|----------|
+| Load/save `data.json`, schema migration | `fitness/engine.py` (`migrate_data`) + tracker `load_data`/`save_data` |
+| Coaching rules & trend detection | `insights/engine.py` |
+| Category-specific suggested actions | `insights/playbooks.py` |
+| CC / Tibetan / EC standards | `programs/*.json` |
+| Advancement / program state | `fitness/engine.py` |
+| Fitness session UI | `fitness/ui.py` |
+| Path resolution (dev vs exe) | `paths.py` only |
+| New chart type (life areas) | `graphs.py` |
+| New chart type (fitness) | `fitness_graphs.py` |
+
+## UI flow
+
+1. **Dashboard** (`create_dashboard`) — Overview + Categories tabs
+2. **Log dialog** (`open_log_dialog`) — per category, per date
+3. **Day explorer** (`show_day_explorer`) — from activity grid click
+4. **Guidance** (`show_guidance`) — full coaching report
+5. **Fitness Hub** (`fitness/ui.py`) — program cards + session log
+
+Keep dialog wiring in the tracker; extract a module when a surface exceeds ~150 lines or is reused.
+
+## Boundaries
+
+- **Never** import matplotlib in `insights/` or `fitness/engine.py` (keep engine pure).
+- **Never** duplicate path logic outside `paths.py`.
+- **Never** store user journal in `programs/` or commit `data/`.
+- **Tkinter** in UI modules only; engines stay testable without a display.
+
+## File size
+
+- Aim **≤400 lines** per module; `personal_dev_tracker.py` is allowed to be larger until split is warranted.
+- Prefer new files over mega-functions.
+
+## Tests mirror domains
+
+| Domain | Tests |
+|--------|-------|
+| Fitness progression | `tests/test_fitness_engine.py` |
+| Insights / guidance | `tests/test_insights_engine.py` |
+| New behavior | `tests/test_{name}.py` |
+
+Run before PR: `python -m unittest discover -s tests -v`
+
+## Evaluation
+
+| When | Action |
+|------|--------|
+| Bug fix / new rule | Unit test that fails before fix |
+| UI-only change | Manual smoke; test logic in engine if extractable |
+| Schema change | Migration test + update `docs/architecture.md` |
+| New program JSON | Test advancement parsing against official standards |
+| Before merge | `py_compile` + full test suite |

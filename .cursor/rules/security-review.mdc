@@ -1,0 +1,50 @@
+---
+description: Security review for encryption, sync, AI, and data handling changes
+alwaysApply: false
+---
+
+# Security Review (Integral)
+
+**Goal:** Integral is a **local-first journal** — protect user life data on disk and in any future optional features.
+
+## When this is mandatory
+
+Before merging PRs that touch:
+
+- **Encryption at rest** (Phase B roadmap)
+- **Cloud sync or backup** (Phase C)
+- **AI integrations** (Phase D — API keys, note content sent externally)
+- **Schema migration** that could corrupt or leak `data.json`
+- **Export/import** of journal files
+- **New network calls** of any kind
+
+Pure UI refactors and rule-based guidance changes: lightweight checklist only.
+
+## Threat checklist (local app)
+
+- **Data at rest:** journal contains sensitive life notes — plan for passphrase + AES-256-GCM (roadmap); never log journal contents to console in production
+- **Path traversal:** user-selected import paths must be validated; no arbitrary file write outside AppData/project data dir
+- **Secrets:** API keys for future AI stay in user settings file or OS keychain — never in repo, commits, or `programs/`
+- **Frozen bundle:** `programs/` is read-only reference; user cannot overwrite bundled JSON via UI
+- **Backup files:** exported backups should warn user about sensitivity; optional encryption for exports
+- **Sync (future):** E2E encryption before any server; opt-in only; local remains source of truth
+- **AI (future):** user-triggered only; disclose what text leaves the machine; support local-only mode (guidance engine without AI)
+
+## Fail closed
+
+- Missing encryption key → do not write plaintext "encrypted" stubs that give false confidence
+- Failed migration → do not overwrite `data.json`; keep backup copy
+- Invalid import → reject file; do not partial-merge corrupt state
+
+## Pre-merge steps
+
+1. Threat-model the diff against checklist above
+2. Run **security-review** subagent on `branch changes` for medium+ risk PRs
+3. Fix or document acceptance for every medium+ finding
+4. Add tests for migration, path validation, and crypto round-trip when applicable
+
+## Reference
+
+- Roadmap phases: `docs/ROADMAP.md` (Security, Sync, AI)
+- Competitor bar: Mini Diarium (encryption), nopy (local AI with user key)
+- Data locations: `paths.py` — `data_file()`, `user_data_dir()`

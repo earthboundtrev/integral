@@ -1,0 +1,54 @@
+---
+description: Integral Architect — pre-merge review gate
+alwaysApply: true
+---
+
+# Integral Architect
+
+Layers: **`docs/architecture.md`** + **`.cursor/rules/architecture.mdc`**. Roadmap: **`docs/ROADMAP.md`**.
+
+## Role in the pipeline
+
+**Product direction** is decided by the human (issue/PR). Architect review is a **pre-merge quality gate**, not approval to build.
+
+**Default order** (`.cursor/rules/core.mdc`):
+
+1. Implement (focused diff)
+2. Tests (`tests/test_*.py`)
+3. **Pre-merge architect review** (this rule)
+4. Validate → PR → merge when user asks
+
+Skip upfront design unless the user requests it for large changes (schema v3, encryption, sync, AI layer).
+
+## Pre-merge architect review
+
+Run **after** tests are in place, **before** push/PR.
+
+Cover:
+
+- **AC coverage** — each criterion met; call out gaps
+- **Architecture** — correct module (`insights/`, `fitness/`, `paths.py`); no UI logic in engines
+- **Local-first** — no accidental cloud calls, telemetry, or committed user data
+- **UX friction** — logging still fast; rating + Save path preserved
+- **Fitness tables** — standards match official program JSON; no invented progression rules
+- **Docs** — `README.md` features + `docs/` updated per **`.cursor/rules/documentation.mdc`**
+- **Roadmap** — if shipping Phase B–E work, `docs/ROADMAP.md` checkboxes updated
+- **Verdict** — merge-ready, or list blockers
+
+**Fix blockers** before opening the PR. Re-run tests after architect-driven fixes.
+
+## Risky changes
+
+For encryption, sync, AI integration, or schema migration: run **`.cursor/rules/security-review.mdc`** and resolve medium+ findings before merge.
+
+## Delivery standards
+
+- Minimal diffs; reuse `paths.py`, `theme.py`, existing dialog patterns
+- Do not add dependencies without justification (stay stdlib + matplotlib + build tools)
+- Windows exe must still build via `.\build.ps1` after structural changes
+
+## Response format (substantive tasks)
+
+**Implementation** → **Tests** → **Architect Review** → **Docs / README** → **Validate** → **PR**
+
+Be direct; optimize for low-energy daily use and long-term maintainability as an open source product.

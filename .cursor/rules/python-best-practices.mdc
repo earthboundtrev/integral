@@ -1,0 +1,71 @@
+---
+description: Integral Python and Tkinter conventions
+globs: "**/*.py"
+alwaysApply: false
+---
+
+# Python Best Practices (Integral)
+
+## Style
+
+- Python 3.10+ — use `from __future__ import annotations` in modules that use modern typing.
+- Match existing code: explicit types on public functions, minimal comments, self-explanatory names.
+- Prefer `pathlib`-style via `paths.py` helpers — not raw `__file__` path joins outside `paths.py`.
+
+## Tkinter / ttk
+
+- Use **`ttk`** widgets for themed controls; `tk.Canvas` only where needed (activity grid).
+- Theme via `theme.py` — `get_theme()`, `apply_theme()`, `style_text_widget()`, `style_canvas()`.
+- Dialogs: `Toplevel` + `transient` + `grab_set` for modal logs.
+- Destroy/recreate dashboard on theme toggle (`create_dashboard`) — follow existing pattern.
+- Window icon: `icon_path()` from `paths.py` in `_apply_window_icon()`.
+
+## Data access
+
+```python
+from paths import data_file, ensure_data_file, programs_dir, bundle_dir, is_frozen
+```
+
+- Dev: `data/data.json` next to source
+- Frozen exe: `%APPDATA%\Integral\data.json`
+- Always `ensure_data_file()` before first read; `os.makedirs` before write
+
+## Persistence
+
+- Single JSON payload — see `docs/architecture.md` schema
+- `migrate_data()` in `fitness/engine.py` for schema bumps
+- Never break existing user files without migration path
+
+## Insights & fitness engines
+
+- Keep **`insights/engine.py`** and **`fitness/engine.py`** free of tkinter imports
+- Pure functions + dataclasses for testability
+- Playbooks in `insights/playbooks.py` — user-facing strings, not logic branches in UI
+
+## Charts
+
+- `matplotlib.use("TkAgg")` at top of `graphs.py` / `fitness_graphs.py` only
+- Pass `theme` dict into chart windows for dark mode consistency
+
+## Testing
+
+```powershell
+python -m unittest discover -s tests -v
+python -m py_compile personal_dev_tracker.py paths.py
+```
+
+- Use `unittest` (stdlib) — no pytest unless project adopts it later
+- Test engines without launching Tk when possible
+
+## Dependencies
+
+- **Runtime:** `matplotlib>=3.8` (see `requirements.txt`)
+- **Build:** `pyinstaller`, `Pillow` (see `requirements-build.txt`)
+- Avoid new pip deps unless the task clearly needs them
+
+## Anti-patterns
+
+- ❌ Blocking network calls in the UI thread
+- ❌ Writing journal data outside `data_file()` path
+- ❌ Hardcoding category names in engines (use keys from loaded categories / playbooks dict)
+- ❌ Giant new features inline in `personal_dev_tracker.py` without extraction plan

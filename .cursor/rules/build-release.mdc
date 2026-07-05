@@ -1,0 +1,42 @@
+---
+description: PyInstaller exe builds, assets, and release safety
+globs: build.ps1,build-onefile.ps1,full-spectrum-development.spec,scripts/**/*,paths.py,requirements-build.txt
+alwaysApply: false
+---
+
+# Build & Release Safety
+
+## Before changing build pipeline
+
+1. Run `python scripts/build_icon.py` — requires `assets/integral-icon-source.png`
+2. Run `.\build.ps1` and confirm `dist\Integral\Integral.exe` launches
+3. Smoke test: Overview grid, log one category, Fitness Hub opens, data writes to AppData when frozen
+
+## PyInstaller rules
+
+- **Entry:** `personal_dev_tracker.py`
+- **Bundle:** `programs/` and `assets/` via spec `datas`
+- **Hidden imports:** all top-level modules (`insights.*`, `fitness.*`, `activity_grid`, `paths`, `graphs`, `fitness_graphs`)
+- **Icon:** `assets/icon.ico` on EXE
+- **Console:** `console=False` (windowed app)
+- **Name:** `Integral` (not legacy FullSpectrumDevelopment)
+
+## paths.py contract
+
+Any new read-only bundled resource → add to spec `datas` and load via `bundle_dir()`.
+
+User-writable data → `data_file()` / `user_data_dir()` only — never beside exe in Program Files as primary store.
+
+## Release checklist
+
+- [ ] `python -m unittest discover -s tests -v` passes
+- [ ] `.\build.ps1` succeeds
+- [ ] Zip `dist\Integral\` for GitHub Release
+- [ ] Release notes mention `%APPDATA%\Integral\data.json` backup path
+- [ ] Do not attach user `data/` to release artifacts
+
+## Do not
+
+- Commit `build/`, `dist/`, or user data (see `.gitignore`)
+- Add runtime pip install to the exe — bundle dependencies at build time
+- Break dev mode (`.\run.ps1`) when adjusting frozen paths

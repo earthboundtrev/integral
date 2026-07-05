@@ -1,0 +1,75 @@
+---
+description: Core Integral project standards — always apply
+alwaysApply: true
+---
+
+# Integral Core Rules
+
+## Project identity
+
+- **Integral** — local-first desktop app for holistic life tracking (ratings, checklists, metrics, notes, guidance, fitness programs).
+- **Tagline:** *Tend every area of your life. One honest day at a time.*
+- **Repo:** https://github.com/earthboundtrev/integral
+- Root **`README.md`** is the public product face (tagline, features, download, roadmap summary). Do not rewrite it casually. Put **new technical docs** under `docs/`.
+
+## Product principles
+
+- **Local-first** — no mandatory cloud account; user data stays on machine (`data/data.json` in dev, `%APPDATA%\Integral\` when frozen).
+- **Low friction** — rating + Save is enough on low-energy days; everything else optional.
+- **Intelligent maintenance** — guidance engine should surface trends and gaps, not just store logs.
+- **Official fitness tables** — program progressions live in `programs/*.json`; do not invent rep standards.
+
+## Scope and quality
+
+- **Minimal diffs** — change only what the task requires; match existing naming and patterns.
+- After Python changes: `python -m py_compile` on touched modules and `python -m unittest discover -s tests -v`.
+- Prefer focused modules over growing `personal_dev_tracker.py` without reason.
+
+## Git workflow (GitHub)
+
+**Before new work**, sync with `main`:
+
+```powershell
+git fetch origin
+git checkout main
+git pull origin main
+git checkout -b feature/short-description
+```
+
+- Implement on a feature branch — never commit directly to `main` unless the user explicitly asks.
+- Use **merge** (not rebase) unless the user requests rebase.
+- PRs should reference issues when applicable (`Closes #N`).
+- **Never** commit `data/`, secrets, or API keys.
+
+### Quality gate (before PR)
+
+1. **Implement** — small, focused diff against acceptance criteria
+2. **Tests** — add/update `tests/test_*.py` for behavior changes
+3. **Review** — self-review or architect pass per `.cursor/rules/integral-architect.mdc`
+4. **Validate** — `python -m unittest discover -s tests -v` + manual smoke of affected UI
+5. **PR** — push branch; open PR to `main` when user asks
+
+For risky changes (encryption, sync, AI, data migration): also follow `.cursor/rules/security-review.mdc`.
+
+## Documentation
+
+- **New technical docs** → `docs/` (not new root `.md` files unless README capability bullet).
+- **Architecture** → `docs/architecture.md`
+- **Roadmap** → `docs/ROADMAP.md` — update when shipping roadmap-tier features
+- **User-facing features** → update root `README.md` **Features** section in the same PR (`.cursor/rules/documentation.mdc`)
+- **Releases** → build with `.\build.ps1`; attach zip to GitHub Releases
+
+## Build & release
+
+- Dev: `.\run.ps1`
+- Exe: `.\build.ps1` → `dist\Integral\Integral.exe`
+- Icon: `scripts/build_icon.py` from `assets/integral-icon-source.png`
+- See `.cursor/rules/build-release.mdc` for PyInstaller constraints
+
+## AI collaboration
+
+- **Architect review:** `.cursor/rules/integral-architect.mdc`
+- **Layer boundaries:** `.cursor/rules/architecture.mdc` + `docs/architecture.md`
+- **Python/Tkinter conventions:** `.cursor/rules/python-best-practices.mdc`
+- **Security (encryption, sync, AI):** `.cursor/rules/security-review.mdc`
+- **Docs policy:** `.cursor/rules/documentation.mdc`

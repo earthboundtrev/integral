@@ -1,0 +1,50 @@
+---
+description: Documentation updates when shipping user-facing Integral features
+alwaysApply: true
+---
+
+# Documentation (mandatory with features)
+
+**Do not ship user-facing features without updating docs in the same branch/PR.**
+
+## Two audiences
+
+| Audience | Where | When to update |
+|----------|-------|----------------|
+| **Users / GitHub visitors** | Root `README.md` | New capabilities, download/install changes, tagline-level positioning |
+| **Developers / agents** | `docs/` | Architecture, roadmap, competitive notes, fitness PRD, launch checklists |
+
+## When this applies
+
+Update docs when the change affects **what users see or do**:
+
+- New tabs, dialogs, charts, or logging flows
+- New life categories (defaults) or fitness programs
+- New build/install paths or data locations
+- Roadmap-tier features (encryption, sync, AI) — even partial/shipped slices
+
+**Skip** for internal refactors, test-only changes, or bug fixes with no user-visible behavior change.
+
+## What to do (same PR as the feature)
+
+1. **README.md** — add a bullet under **Features** when behavior is user-visible
+2. **docs/architecture.md** — if modules, schema, or data flow changed
+3. **docs/ROADMAP.md** — check off items or add phases when shipping roadmap work
+4. **docs/GITHUB_LAUNCH.md** — only if release process changes
+5. **programs/*.json** — document source in JSON `source` field when adding official tables
+
+## README policy
+
+| Do | Don't |
+|----|--------|
+| Update Features, Download, Roadmap summary | Rewrite tagline or license casually |
+| Link to `docs/ROADMAP.md` for detail | Put implementation detail in README |
+| Keep install steps accurate for exe + source | Document every bug fix |
+
+## Agent checklist before calling work done
+
+- [ ] User-visible? → README Features bullet
+- [ ] Schema or module layout changed? → `docs/architecture.md`
+- [ ] Roadmap item shipped? → `docs/ROADMAP.md` checkbox
+- [ ] New program? → `programs/` JSON + fitness tests
+- [ ] No secrets or `data/` in the commit
