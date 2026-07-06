@@ -159,7 +159,7 @@ def open_log_dialog_for_exercise(parent, repo, exercise_id, on_saved=None):
     ttk.Button(btns, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT)
 
 
-def show_fitness_window(root):
+def show_fitness_window(root, on_session_saved=None):
     import tkinter as tk
     from tkinter import messagebox, scrolledtext, ttk
 
@@ -461,9 +461,12 @@ def show_fitness_window(root):
                 duration_minutes=duration_var.get() or None,
                 body_weight_kg=weight_var.get() if weight_var.get() > 0 else None,
             )
-            data = storage.load()
-            data = link_session_to_body_presence(data, session.date)
-            storage.save(data)
+            if on_session_saved:
+                on_session_saved(session.date)
+            else:
+                data = storage.load()
+                data = link_session_to_body_presence(data, session.date)
+                storage.save(data)
             dialog.destroy()
             refresh_list()
             messagebox.showinfo("Saved", f"Workout session logged for {session.date}.")

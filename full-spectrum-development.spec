@@ -14,13 +14,15 @@ matplotlib_hidden = collect_submodules("matplotlib.backends")
 
 a = Analysis(
     ["personal_dev_tracker.py"],
-    pathex=[],
+    pathex=[ROOT],
     binaries=[],
     datas=[
         ("programs", "programs"),
         ("assets", "assets"),
+        (os.path.join(ROOT, "progression", "seed", "v1"), "progression/seed/v1"),
         *matplotlib_datas,
-    ],    hiddenimports=[
+    ],
+    hiddenimports=[
         *matplotlib_hidden,
         "activity_grid",
         "paths",
@@ -31,6 +33,17 @@ a = Analysis(
         "fitness.engine",
         "fitness.ui",
         "fitness.intelligence",
+        "fitness_ui",
+        "fitness_programs",
+        "progression",
+        "progression.db",
+        "progression.engine",
+        "progression.seed_loader",
+        "progression.video_catalog",
+        "progression.sessions",
+        "backup",
+        "ui_scroll",
+        "ui_theme",
         "integral_io",
         "integral_dialogs",
         "vault",

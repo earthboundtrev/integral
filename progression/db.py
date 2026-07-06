@@ -20,7 +20,14 @@ FITNESS_DB_NAME = "fitness.db"
 def get_fitness_db_path(profile_id: str | None = None) -> str:
     if profile_id:
         return os.path.join(profiles.get_profile_dir(profile_id), FITNESS_DB_NAME)
-    return os.path.join(storage.get_data_dir(), FITNESS_DB_NAME)
+    try:
+        from paths import ensure_data_file
+
+        base = os.path.dirname(ensure_data_file())
+        os.makedirs(base, exist_ok=True)
+        return os.path.join(base, FITNESS_DB_NAME)
+    except ImportError:
+        return os.path.join(storage.get_data_dir(), FITNESS_DB_NAME)
 
 
 class FitnessRepository:

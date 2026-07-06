@@ -1,12 +1,14 @@
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot\..
 
-Write-Host "Building PersonalDevelopmentTracker.exe ..."
-python -m PyInstaller build\personal_dev_tracker.spec --noconfirm
+Write-Host "Building Integral.exe ..."
+python -m PyInstaller --noconfirm --clean full-spectrum-development.spec
 
-if (Test-Path "dist\PersonalDevelopmentTracker.exe") {
-    Write-Host "OK: dist\PersonalDevelopmentTracker.exe"
+if (Test-Path "dist\Integral\Integral.exe") {
+    Write-Host "OK: dist\Integral\Integral.exe"
+} elseif (Test-Path "dist\Integral.exe") {
+    Write-Host "OK: dist\Integral.exe"
 } else {
-    Write-Error "Build failed - EXE not found"
+    Write-Error "Build failed - Integral.exe not found"
     exit 1
 }

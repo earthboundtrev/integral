@@ -12,7 +12,7 @@ LEVEL_COLORS_LIGHT = ["#EBEDF0", "#9BE9A8", "#40C463", "#30A14E", "#216E39"]
 LEVEL_COLORS_DARK = ["#161B22", "#0E4429", "#006D32", "#26A641", "#39D353"]
 
 
-def activity_level(count: int, max_categories: int = 8) -> int:
+def activity_level(count: int, max_categories: int = 18) -> int:
     if count <= 0:
         return 0
     if count == 1:

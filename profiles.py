@@ -3,7 +3,9 @@ import os
 import re
 import shutil
 
-APP_DIR_NAME = ".personal_dev_tracker"
+import paths
+
+APP_DIR_NAME = paths.APP_SLUG
 PROFILES_DIR_NAME = "profiles"
 CONFIG_FILE_NAME = "config.json"
 DEFAULT_PROFILE_ID = "default"
@@ -11,7 +13,7 @@ DEFAULT_PROFILE_NAME = "Default"
 
 
 def get_app_dir() -> str:
-    return os.path.join(os.path.expanduser("~"), APP_DIR_NAME)
+    return paths.user_data_dir()
 
 
 def get_profiles_root() -> str:

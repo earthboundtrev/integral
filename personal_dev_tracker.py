@@ -12,7 +12,6 @@ from activity_grid import ContributionGrid
 from graphs import open_graphs
 from fitness.engine import compute_program_state, load_program_definitions, migrate_data
 from fitness.intelligence import weekly_fitness_summary
-from fitness.ui import open_fitness_hub
 from insights.engine import analyze_all, category_insight, format_guidance_report, format_insight_line, top_insights
 from integral_dialogs import (
     prompt_vault_unlock,
@@ -26,6 +25,27 @@ from milestones import merge_milestones, milestone_summary
 from paths import APP_NAME, data_file, ensure_data_file, icon_path
 from theme import apply_theme, get_theme, style_canvas, style_listbox, style_text_widget
 from vault import is_encrypted_file, load_data_file, save_data_file
+
+CATEGORY_SHORT_LABELS = {
+    "Money/Freedom": "Money",
+    "Career & Vocation": "Career",
+    "Body & Presence": "Body",
+    "Burnout Prevention & Energy Management": "Energy",
+    "Creative/Mental Work": "Creative",
+    "Learning & Intellectual Growth": "Learning",
+    "Family/Logistics": "Family",
+    "Relationships & Social Connection": "Relationships",
+    "Home & Environment": "Home",
+    "Search Practice": "Search",
+    "Spiritual Development": "Spiritual",
+    "Emotional Wellbeing": "Emotional",
+    "Community & Service": "Community",
+    "Cultural Life & Heritage": "Culture",
+    "What You Have Eaten": "Food",
+    "Art You Have Consumed": "Art",
+    "General Reading": "Reading",
+    "Content You Have Consumed": "Content",
+}
 
 
 DATA_FILE = data_file()
@@ -479,6 +499,75 @@ class PersonalDevelopmentTracker:
                 break
         return streak
 
+    def today_str(self) -> str:
+        return datetime.now().strftime("%Y-%m-%d")
+
+    def count_today_logged(self) -> tuple[int, int]:
+        logged = len(self.entries.get(self.today_str(), {}))
+        return logged, len(self.categories)
+
+    def first_unlogged_category(self) -> str | None:
+        today_entries = self.entries.get(self.today_str(), {})
+        for cat_name in self.categories:
+            if cat_name not in today_entries:
+                return cat_name
+        return None
+
+    def create_todays_log_bar(self) -> None:
+        logged_count, total = self.count_today_logged()
+        today_entries = self.entries.get(self.today_str(), {})
+
+        log_bar = ttk.LabelFrame(self.root, text="Today's Log", padding=12)
+        log_bar.pack(fill=tk.X, padx=15, pady=(0, 8))
+
+        top = ttk.Frame(log_bar)
+        top.pack(fill=tk.X)
+        ttk.Label(
+            top,
+            text=f"{logged_count} of {total} life areas logged today",
+            font=("Helvetica", 13, "bold"),
+        ).pack(side=tk.LEFT)
+        ttk.Label(
+            top,
+            text="Log as you go, or reflect at end of day — pick any area below.",
+            foreground=self.theme["muted"],
+        ).pack(side=tk.LEFT, padx=12)
+
+        actions = ttk.Frame(top)
+        actions.pack(side=tk.RIGHT)
+        next_cat = self.first_unlogged_category()
+        if next_cat:
+            ttk.Button(
+                actions,
+                text=f"Continue Log → {CATEGORY_SHORT_LABELS.get(next_cat, next_cat)}",
+                command=lambda: self.open_log_dialog(next_cat),
+            ).pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Button(actions, text="Log Fitness Workout", command=self.show_fitness_hub).pack(side=tk.LEFT)
+
+        progress = ttk.Progressbar(
+            log_bar,
+            orient=tk.HORIZONTAL,
+            mode="determinate",
+            maximum=max(total, 1),
+            value=logged_count,
+        )
+        progress.pack(fill=tk.X, pady=(8, 0))
+
+        btn_row = ttk.Frame(log_bar)
+        btn_row.pack(fill=tk.X, pady=(10, 0))
+        for index, cat_name in enumerate(self.categories):
+            short = CATEGORY_SHORT_LABELS.get(cat_name, cat_name)
+            is_logged = cat_name in today_entries
+            rating = today_entries.get(cat_name, {}).get("rating", "")
+            label = f"✓ {short} ({rating}/10)" if is_logged else f"Log {short}"
+            ttk.Button(
+                btn_row,
+                text=label,
+                command=lambda c=cat_name: self.open_log_dialog(c),
+            ).grid(row=index // 4, column=index % 4, padx=4, pady=4, sticky="ew")
+        for col in range(4):
+            btn_row.columnconfigure(col, weight=1)
+
     def create_dashboard(self) -> None:
         if self._mousewheel_binding:
             self.root.unbind_all(self._mousewheel_binding)
@@ -507,6 +596,8 @@ class PersonalDevelopmentTracker:
             style="Accent.TLabel",
             font=("Helvetica", 14, "bold"),
         ).pack(side=tk.RIGHT)
+
+        self.create_todays_log_bar()
 
         self.insights = analyze_all(
             self.entries,
@@ -1124,15 +1215,19 @@ class PersonalDevelopmentTracker:
         open_graphs(self.root, self.entries, self.categories, self.theme)
 
     def show_fitness_hub(self) -> None:
-        open_fitness_hub(
-            self.root,
-            sessions=self.sessions,
-            program_state=self.program_state,
-            programs=self.programs,
-            settings=self.settings,
-            theme=self.theme,
-            on_save=self.save_fitness_data,
-        )
+        import fitness_ui
+
+        def on_session_saved(session_date: str) -> None:
+            day = self.entries.setdefault(session_date, {})
+            body = day.setdefault(
+                "Body & Presence",
+                {"rating": 7, "checklist": {}, "metrics": {}, "notes": ""},
+            )
+            body.setdefault("checklist", {})["Completed movement or exercise"] = True
+            self.save_data()
+            self.create_dashboard()
+
+        fitness_ui.show_fitness_window(self.root, on_session_saved=on_session_saved)
 
     def show_settings(self) -> None:
         editor = tk.Toplevel(self.root)
