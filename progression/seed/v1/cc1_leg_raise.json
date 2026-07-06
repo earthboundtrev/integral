@@ -1,0 +1,78 @@
+{
+  "source_book": "CC1",
+  "family": "leg_raise",
+  "version": "v1",
+  "exercises": [
+    {
+      "key": "cc1_leg_raise_01",
+      "name": "Knee Tucks",
+      "step": 1,
+      "mastery_criteria": { "sets": 3, "reps": 40 }
+    },
+    {
+      "key": "cc1_leg_raise_02",
+      "name": "Flat Knee Raises",
+      "step": 2,
+      "mastery_criteria": { "sets": 3, "reps": 35 }
+    },
+    {
+      "key": "cc1_leg_raise_03",
+      "name": "Flat Bent Leg Raises",
+      "step": 3,
+      "mastery_criteria": { "sets": 3, "reps": 30 }
+    },
+    {
+      "key": "cc1_leg_raise_04",
+      "name": "Flat Frog Raises",
+      "step": 4,
+      "mastery_criteria": { "sets": 3, "reps": 25 }
+    },
+    {
+      "key": "cc1_leg_raise_05",
+      "name": "Flat Straight Leg Raises",
+      "step": 5,
+      "mastery_criteria": { "sets": 2, "reps": 20 }
+    },
+    {
+      "key": "cc1_leg_raise_06",
+      "name": "Hanging Knee Raises",
+      "step": 6,
+      "mastery_criteria": { "sets": 2, "reps": 15 }
+    },
+    {
+      "key": "cc1_leg_raise_07",
+      "name": "Hanging Bent Leg Raises",
+      "step": 7,
+      "mastery_criteria": { "sets": 2, "reps": 15 }
+    },
+    {
+      "key": "cc1_leg_raise_08",
+      "name": "Hanging Frog Raises",
+      "step": 8,
+      "mastery_criteria": { "sets": 2, "reps": 15 }
+    },
+    {
+      "key": "cc1_leg_raise_09",
+      "name": "Partial Straight Leg Raises",
+      "step": 9,
+      "mastery_criteria": { "sets": 2, "reps": 15 }
+    },
+    {
+      "key": "cc1_leg_raise_10",
+      "name": "Hanging Straight Leg Raises",
+      "step": 10,
+      "mastery_criteria": { "sets": 2, "reps": 30 }
+    }
+  ],
+  "edges": [
+    { "from": "cc1_leg_raise_01", "to": "cc1_leg_raise_02", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_leg_raise_02", "to": "cc1_leg_raise_03", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_leg_raise_03", "to": "cc1_leg_raise_04", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_leg_raise_04", "to": "cc1_leg_raise_05", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_leg_raise_05", "to": "cc1_leg_raise_06", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_leg_raise_06", "to": "cc1_leg_raise_07", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_leg_raise_07", "to": "cc1_leg_raise_08", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_leg_raise_08", "to": "cc1_leg_raise_09", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_leg_raise_09", "to": "cc1_leg_raise_10", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } }
+  ]
+}

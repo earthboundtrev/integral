@@ -1,0 +1,78 @@
+{
+  "source_book": "CC1",
+  "family": "bridge",
+  "version": "v1",
+  "exercises": [
+    {
+      "key": "cc1_bridge_01",
+      "name": "Short Bridges",
+      "step": 1,
+      "mastery_criteria": { "sets": 3, "reps": 50 }
+    },
+    {
+      "key": "cc1_bridge_02",
+      "name": "Straight Bridges",
+      "step": 2,
+      "mastery_criteria": { "sets": 3, "reps": 40 }
+    },
+    {
+      "key": "cc1_bridge_03",
+      "name": "Angled Bridges",
+      "step": 3,
+      "mastery_criteria": { "sets": 3, "reps": 30 }
+    },
+    {
+      "key": "cc1_bridge_04",
+      "name": "Head Bridges",
+      "step": 4,
+      "mastery_criteria": { "sets": 2, "reps": 25 }
+    },
+    {
+      "key": "cc1_bridge_05",
+      "name": "Half Bridges",
+      "step": 5,
+      "mastery_criteria": { "sets": 2, "reps": 20 }
+    },
+    {
+      "key": "cc1_bridge_06",
+      "name": "Full Bridges",
+      "step": 6,
+      "mastery_criteria": { "sets": 2, "reps": 15 }
+    },
+    {
+      "key": "cc1_bridge_07",
+      "name": "Wall Walking Bridges (Down)",
+      "step": 7,
+      "mastery_criteria": { "sets": 2, "reps": 10 }
+    },
+    {
+      "key": "cc1_bridge_08",
+      "name": "Wall Walking Bridges (Up)",
+      "step": 8,
+      "mastery_criteria": { "sets": 2, "reps": 8 }
+    },
+    {
+      "key": "cc1_bridge_09",
+      "name": "Closing Bridges",
+      "step": 9,
+      "mastery_criteria": { "sets": 2, "reps": 6 }
+    },
+    {
+      "key": "cc1_bridge_10",
+      "name": "Stand-to-Stand Bridges",
+      "step": 10,
+      "mastery_criteria": { "sets": 2, "reps": 30 }
+    }
+  ],
+  "edges": [
+    { "from": "cc1_bridge_01", "to": "cc1_bridge_02", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_bridge_02", "to": "cc1_bridge_03", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_bridge_03", "to": "cc1_bridge_04", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_bridge_04", "to": "cc1_bridge_05", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_bridge_05", "to": "cc1_bridge_06", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_bridge_06", "to": "cc1_bridge_07", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_bridge_07", "to": "cc1_bridge_08", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_bridge_08", "to": "cc1_bridge_09", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_bridge_09", "to": "cc1_bridge_10", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } }
+  ]
+}

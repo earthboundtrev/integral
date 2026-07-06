@@ -1,0 +1,78 @@
+{
+  "source_book": "CC1",
+  "family": "push",
+  "version": "v1",
+  "exercises": [
+    {
+      "key": "cc1_push_01",
+      "name": "Wall Push-ups",
+      "step": 1,
+      "mastery_criteria": { "sets": 3, "reps": 50 }
+    },
+    {
+      "key": "cc1_push_02",
+      "name": "Incline Push-ups",
+      "step": 2,
+      "mastery_criteria": { "sets": 3, "reps": 40 }
+    },
+    {
+      "key": "cc1_push_03",
+      "name": "Kneeling Push-ups",
+      "step": 3,
+      "mastery_criteria": { "sets": 3, "reps": 30 }
+    },
+    {
+      "key": "cc1_push_04",
+      "name": "Half Push-ups",
+      "step": 4,
+      "mastery_criteria": { "sets": 2, "reps": 25 }
+    },
+    {
+      "key": "cc1_push_05",
+      "name": "Full Push-ups",
+      "step": 5,
+      "mastery_criteria": { "sets": 2, "reps": 20 }
+    },
+    {
+      "key": "cc1_push_06",
+      "name": "Close Push-ups",
+      "step": 6,
+      "mastery_criteria": { "sets": 2, "reps": 20 }
+    },
+    {
+      "key": "cc1_push_07",
+      "name": "Uneven Push-ups",
+      "step": 7,
+      "mastery_criteria": { "sets": 2, "reps": 20 }
+    },
+    {
+      "key": "cc1_push_08",
+      "name": "Half One-Arm Push-ups",
+      "step": 8,
+      "mastery_criteria": { "sets": 2, "reps": 20 }
+    },
+    {
+      "key": "cc1_push_09",
+      "name": "Lever Push-ups",
+      "step": 9,
+      "mastery_criteria": { "sets": 2, "reps": 15 }
+    },
+    {
+      "key": "cc1_push_10",
+      "name": "One-Arm Push-ups",
+      "step": 10,
+      "mastery_criteria": { "sets": 1, "reps": 5 }
+    }
+  ],
+  "edges": [
+    { "from": "cc1_push_01", "to": "cc1_push_02", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_push_02", "to": "cc1_push_03", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_push_03", "to": "cc1_push_04", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_push_04", "to": "cc1_push_05", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_push_05", "to": "cc1_push_06", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_push_06", "to": "cc1_push_07", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_push_07", "to": "cc1_push_08", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_push_08", "to": "cc1_push_09", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_push_09", "to": "cc1_push_10", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } }
+  ]
+}

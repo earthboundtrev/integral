@@ -1,119 +1,96 @@
-# Integral
+# Personal Development Tracker
 
-> **Tend every area of your life. One honest day at a time.**
+**Spec-driven, agent-built, zero human code.**
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+Local-first desktop app for holistic personal development — daily logging across 8 life domains, graphs & summaries, evolving into a graph-based fitness progression platform.
 
-Integral is a **free, open-source** desktop app for tracking your whole life — not just workouts or mood, but money, family, burnout, creativity, spirituality, emotions, and what you take in (food, art, books, and everyday content).
+## How You Build (Without Writing Code)
 
-Log in seconds on hard days. See your year at a glance. Get gentle guidance when something starts slipping.
+1. **PRD** — `docs/PRD.md` defines the whole product
+2. **ADRs** — `docs/CONSTITUTION.md` + `docs/adr/` = decisions agents must not break
+3. **Specs** — `docs/specs/` = one spec per PR, with EARS acceptance criteria
+4. **Agents** — Cursor rules in `.cursor/rules/` = harness (implement, author, review)
+5. **Loop** — `docs/WORKFLOW.md` = intent → spec → implement → verify → done
 
-**No account. No cloud. Your journal stays on your computer.**
+Methodology from [Gauntlet Night School: Specs, ADRs, and Building Loops](https://youtu.be/ayHy7YHddak).
 
-<p align="center">
-  <img src="assets/integral-icon-source.png" alt="Integral app icon" width="128" height="128" />
-</p>
+### Your commands to the agent
 
----
+| You say | Agent uses |
+|---------|------------|
+| "Implement SPEC-005" | `harness-implement` + spec file |
+| "Write spec for workout logging" | `harness-spec-author` |
+| "Verify SPEC-001" | `harness-review` |
+| "Add feature X" | Spec author first, approve, then implement |
 
-## Open source — and why the fitness programs are here
+### Phase 1 (MVP) — implemented
 
-Integral is released under the [MIT License](LICENSE). Anyone can read the code, run it, change it, and share it. That openness is exactly why this app can include **reference progression tables** for well-known bodyweight and mobility programs — built for personal use inside your own journal, not sold as a replacement for the books.
-
-**I am not sponsored by, affiliated with, or endorsed by** the authors or publishers of those programs. Integral does not speak for them. If a table or step name differs from your copy of the book, **trust the book**.
-
-If these programs have helped you and you want to support the people who wrote them, buy their work. That is the best way to say thank you:
-
-| Program in Integral | Book (Amazon) |
-|---------------------|---------------|
-| Convict Conditioning (Big Six) | [Convict Conditioning](https://www.amazon.com/Convict-Conditioning-Paul-Wade/dp/0938045768) — Paul Wade |
-| Convict Conditioning 2 | [Convict Conditioning 2](https://www.amazon.com/Convict-Conditioning-Advanced-Prison-Training/dp/1938898007) — Paul Wade |
-| Explosive Calisthenics | [Explosive Calisthenics](https://www.amazon.com/Explosive-Calisthenics-Paul-Wade/dp/1938898074) — Paul Wade |
-| Five Tibetan Rites | [The Eye of Revelation](https://www.amazon.com/Ancient-Secret-Fountain-Youth/dp/0919948013) — Peter Kelder |
-| Overcoming Gravity | [Overcoming Gravity (2nd ed.)](https://www.amazon.com/Overcoming-Gravity-systematic-gymnastics-strength/dp/1452865756) — Steven Low |
-| Strong Medicine | [Strong Medicine](https://www.amazon.com/Strong-Medicine-Conquer-Chronic-Achieve/dp/1938898244) — Chris Hardy & Marty Gallagher |
-| Super Joints | [Super Joints](https://www.amazon.com/Super-Joints-Russian-Longevity-Pain-Free/dp/0938045369) — Pavel Tsatsouline |
-
-*(Amazon links are standard referral-free product URLs for convenience; Integral earns nothing from them.)*
-
----
-
-## What you can track
-
-Integral is built around **life areas** — buckets you check in on each day (or whenever you have energy). On a rough day, a **1–10 rating and Save** is enough. When you have more time, add checklist ticks, quick numbers, and notes.
-
-### Default life areas
-
-Integral ships with **18 editable life areas** across financial, physical, mental, emotional, spiritual, relational, cultural, and environmental development — plus what you take in (food, art, books, content).
-
-See **[docs/HOLISTIC_DEVELOPMENT_MODEL.md](docs/HOLISTIC_DEVELOPMENT_MODEL.md)** for the full domain map and how areas connect.
-
-**Consumption detail & competitors:** [docs/INPUT_AND_CONSUMPTION_COMPARISON.md](docs/INPUT_AND_CONSUMPTION_COMPARISON.md)
-
-You can rename areas, edit checklists, and add your own categories in the app.
-
-### How the pieces fit together
-
-| What you see | What it does for you |
-|--------------|----------------------|
-| **Overview** | Year-at-a-glance grid, today's snapshot, quarterly priorities, short guidance |
-| **Categories** | Daily check-in per life area |
-| **Day explorer** | Click any day on the grid to review or fill in the past |
-| **Guidance** | Plain-language nudges when an area is neglected, trending down, or stuck |
-| **Graphs** | Trends and balance over time |
-| **Weekly summary** | A readable recap of your week |
-| **Fitness Hub** | Log sessions against book-based programs; see progress and coaching hints |
-| **Search** | Find old notes across life logs and workouts |
-| **Export & backup** | CSV exports and full journal backups you control |
-
-Guidance connects the dots — for example, low body energy when food hasn't been logged, or mood dipping when no art has been noted. It's pattern-spotting, not medical advice.
-
----
-
-## Getting started
-
-### Windows (easiest)
-
-1. Download **`Integral-windows.zip`** from [Releases](https://github.com/earthboundtrev/integral/releases).
-2. Unzip and double-click **`Integral.exe`**.
-
-Your journal is saved on this PC (typically under `%APPDATA%\Integral\`). Use **Backup** inside the app, or copy that file, so you never lose your history. You can optionally lock the journal with a passphrase under **Data & Security**.
-
-### First time in the app
-
-1. Open **Categories** and pick one area — rating + **Save** counts.
-2. Glance at **Overview** to see your activity grid fill in.
-3. If you train with a book program, open **Fitness Hub** and log a session.
-4. Check **Guidance** after a few days; it works better with a little history.
-
----
-
-## Privacy
-
-- Data is stored locally as JSON on your machine.
-- No Integral account, no telemetry, no required internet connection.
-- Optional encryption if you want the file passphrase-protected.
-- Open source — you can verify what the app does.
-
----
-
-## For developers
-
-Integral is Python + Tkinter, local-first, with optional `cryptography` for encrypted journals.
-
-```powershell
-python -m pip install -r requirements.txt
-.\run.ps1
+**From source:**
+```bash
+pip install --user -r requirements.txt
+python tracker.py
 ```
 
-Build Windows `.exe`: `.\build.ps1` → `dist\Integral\Integral.exe`
+**Classic EXE (no Python needed):**
+```powershell
+pip install -r requirements.txt -r requirements-build.txt
+powershell -ExecutionPolicy Bypass -File scripts\build_exe.ps1
+# Double-click: dist\PersonalDevelopmentTracker.exe
+```
 
-Run tests: `python -m unittest discover -s tests -v`
+See [docs/BUILD.md](docs/BUILD.md). User data always lives in `~/.personal_dev_tracker/` — survives EXE updates.
 
-Project layout, roadmap, and competitive notes live in [`docs/`](docs/). Contributions welcome — open an issue before large changes.
+Tests: `python -m pytest tests/ -v` (42 passed)
 
----
+### Phase 2 — started
 
-## License
+`SPEC-201` is **done**: the fitness DAG core now has SQLite-backed exercises, progression edges, user progress, JSON criteria storage, and prerequisite-cycle validation.
 
-[MIT License](LICENSE) — Copyright (c) 2026 Integral contributors.
+`SPEC-202` is **done**: logged performance can now mark exercises mastered and unlock downstream nodes from mastery conditions.
+
+`SPEC-203` is **done**: CC1 push-up progression seed (10 steps) with tests.
+
+`SPEC-208` is **done**: standalone Windows EXE build (PyInstaller). Output: `dist/PersonalDevelopmentTracker.exe`. Data stays in `~/.personal_dev_tracker/`.
+
+`SPEC-204` is **done**: **Fitness Progress** window — log sets/reps, mastery unlocks next step.
+
+`SPEC-205` is **done**: lightweight Skill Tree view, colored by progress status.
+
+**Multi-account:** local profiles via header dropdown (ADR-008). Not cloud login.
+
+## Documentation Map
+
+| Doc | Contents |
+|-----|----------|
+| [docs/PRD.md](docs/PRD.md) | Product requirements, epics, architecture mermaid |
+| [docs/WORKFLOW.md](docs/WORKFLOW.md) | Spec-driven loop, status values, agent factory |
+| [docs/SPEC_TEMPLATE.md](docs/SPEC_TEMPLATE.md) | Template for new feature specs |
+| [docs/CONSTITUTION.md](docs/CONSTITUTION.md) | ADR index |
+| [docs/VISION.md](docs/VISION.md) | Vision narrative |
+| [docs/PERFORMANCE.md](docs/PERFORMANCE.md) | Why Python not C++; performance budget |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Module boundaries, data flow |
+| [docs/DATA_MODEL.md](docs/DATA_MODEL.md) | JSON shapes, fitness entities |
+| [docs/PROGRESSION_MODEL.md](docs/PROGRESSION_MODEL.md) | Exercise DAG deep spec |
+
+## Cursor Rules (Harness)
+
+| Rule | When |
+|------|------|
+| `constitution.mdc` | Always — ADRs, no code without spec |
+| `spec-driven-workflow.mdc` | Always — read spec before code |
+| `harness-implement.mdc` | Python files — implementation agent |
+| `harness-spec-author.mdc` | New features — write specs only |
+| `harness-review.mdc` | After implement — verify AC |
+| `performance-lightweight.mdc` | Python — lazy matplotlib, etc. |
+| `progression-graph.mdc` | Fitness/progression code |
+| `data-storage.mdc` | Data conventions |
+| `ui-tkinter.mdc` | UI patterns |
+
+## Setup (for running agent-built app)
+
+```bash
+pip install matplotlib
+python tracker.py
+```
+
+Data: `~/.personal_dev_tracker/data.json`

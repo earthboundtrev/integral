@@ -1,0 +1,522 @@
+{
+  "version": "v1",
+  "series": {
+    "CC1:push": {
+      "url": "https://direct.dragondoor.com/products/ddv083",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 1: Push)",
+      "title": "Convict Conditioning Push Series"
+    },
+    "CC1:squat": {
+      "url": "https://direct.dragondoor.com/products/ddv084",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 2: Squat)",
+      "title": "Convict Conditioning Squat Series"
+    },
+    "CC1:leg_raise": {
+      "url": "https://www.dragondoor.com/shop-by-department/dvds/dv085/",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 3: Leg Raises)",
+      "title": "Convict Conditioning Leg Raise Series"
+    },
+    "CC1:bridge": {
+      "url": "https://direct.dragondoor.com/products/ddv087",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 4: Bridge)",
+      "title": "Convict Conditioning Bridge Series"
+    },
+    "CC1:pull": {
+      "url": "https://direct.dragondoor.com/products/ddv088",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 5: Pull-up)",
+      "title": "Convict Conditioning Pull-up Series"
+    },
+    "CC1:handstand_pushup": {
+      "url": "https://direct.dragondoor.com/products/ddv083",
+      "source": "Official \u2014 Paul Wade / Dragon Door",
+      "title": "Handstand Push-up progressions"
+    },
+    "CC2:sample": {
+      "url": "https://direct.dragondoor.com/collections/convict-conditioning",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC2)",
+      "title": "Convict Conditioning 2"
+    },
+    "OG:push": {
+      "url": "https://www.youtube.com/watch?v=UoPRqPvF4AQ",
+      "source": "Tom Merrick (Bodyweight Warrior)",
+      "title": "Planche progression"
+    },
+    "OG:pull": {
+      "url": "https://www.youtube.com/watch?v=AGhb8V8M758",
+      "source": "FitnessFAQs",
+      "title": "Front lever progression"
+    },
+    "SS:main": {
+      "url": "https://www.youtube.com/@startingstrength",
+      "source": "Official \u2014 Starting Strength",
+      "title": "Starting Strength channel"
+    },
+    "EC:explosive": {
+      "url": "https://www.youtube.com/watch?v=2n4UqRIJyk4",
+      "source": "Al Kavadlo",
+      "title": "Explosive push-up progressions"
+    },
+    "FTR:rites": {
+      "url": "https://www.youtube.com/watch?v=C9KCzQqcyGY",
+      "source": "Chris Kilham",
+      "title": "Five Tibetans \u2014 full sequence"
+    }
+  },
+  "exercises": {
+    "cc1_bridge_01": {
+      "url": "https://direct.dragondoor.com/products/ddv087",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 4: Bridge)",
+      "title": "Step 1: Short Bridges"
+    },
+    "cc1_bridge_02": {
+      "url": "https://direct.dragondoor.com/products/ddv087",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 4: Bridge)",
+      "title": "Step 2: Straight Bridges"
+    },
+    "cc1_bridge_03": {
+      "url": "https://direct.dragondoor.com/products/ddv087",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 4: Bridge)",
+      "title": "Step 3: Angled Bridges"
+    },
+    "cc1_bridge_04": {
+      "url": "https://direct.dragondoor.com/products/ddv087",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 4: Bridge)",
+      "title": "Step 4: Head Bridges"
+    },
+    "cc1_bridge_05": {
+      "url": "https://direct.dragondoor.com/products/ddv087",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 4: Bridge)",
+      "title": "Step 5: Half Bridges"
+    },
+    "cc1_bridge_06": {
+      "url": "https://direct.dragondoor.com/products/ddv087",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 4: Bridge)",
+      "title": "Step 6: Full Bridges"
+    },
+    "cc1_bridge_07": {
+      "url": "https://direct.dragondoor.com/products/ddv087",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 4: Bridge)",
+      "title": "Step 7: Wall Walking Bridges (Down)"
+    },
+    "cc1_bridge_08": {
+      "url": "https://direct.dragondoor.com/products/ddv087",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 4: Bridge)",
+      "title": "Step 8: Wall Walking Bridges (Up)"
+    },
+    "cc1_bridge_09": {
+      "url": "https://direct.dragondoor.com/products/ddv087",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 4: Bridge)",
+      "title": "Step 9: Closing Bridges"
+    },
+    "cc1_bridge_10": {
+      "url": "https://direct.dragondoor.com/products/ddv087",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 4: Bridge)",
+      "title": "Step 10: Stand-to-Stand Bridges"
+    },
+    "cc1_hspu_01": {
+      "url": "https://direct.dragondoor.com/products/ddv083",
+      "source": "Official \u2014 Paul Wade / Dragon Door",
+      "title": "Step 1: Wall Headstands"
+    },
+    "cc1_hspu_02": {
+      "url": "https://direct.dragondoor.com/products/ddv083",
+      "source": "Official \u2014 Paul Wade / Dragon Door",
+      "title": "Step 2: Crow Stands"
+    },
+    "cc1_hspu_03": {
+      "url": "https://direct.dragondoor.com/products/ddv083",
+      "source": "Official \u2014 Paul Wade / Dragon Door",
+      "title": "Step 3: Wall Handstands"
+    },
+    "cc1_hspu_04": {
+      "url": "https://direct.dragondoor.com/products/ddv083",
+      "source": "Official \u2014 Paul Wade / Dragon Door",
+      "title": "Step 4: Half Handstand Push-ups"
+    },
+    "cc1_hspu_05": {
+      "url": "https://direct.dragondoor.com/products/ddv083",
+      "source": "Official \u2014 Paul Wade / Dragon Door",
+      "title": "Step 5: Handstand Push-ups"
+    },
+    "cc1_hspu_06": {
+      "url": "https://direct.dragondoor.com/products/ddv083",
+      "source": "Official \u2014 Paul Wade / Dragon Door",
+      "title": "Step 6: Close Handstand Push-ups"
+    },
+    "cc1_hspu_07": {
+      "url": "https://direct.dragondoor.com/products/ddv083",
+      "source": "Official \u2014 Paul Wade / Dragon Door",
+      "title": "Step 7: Uneven Handstand Push-ups"
+    },
+    "cc1_hspu_08": {
+      "url": "https://direct.dragondoor.com/products/ddv083",
+      "source": "Official \u2014 Paul Wade / Dragon Door",
+      "title": "Step 8: Half One-Arm Handstand Push-ups"
+    },
+    "cc1_hspu_09": {
+      "url": "https://direct.dragondoor.com/products/ddv083",
+      "source": "Official \u2014 Paul Wade / Dragon Door",
+      "title": "Step 9: Lever Handstand Push-ups"
+    },
+    "cc1_hspu_10": {
+      "url": "https://direct.dragondoor.com/products/ddv083",
+      "source": "Official \u2014 Paul Wade / Dragon Door",
+      "title": "Step 10: One-Arm Handstand Push-ups"
+    },
+    "cc1_leg_raise_01": {
+      "url": "https://www.dragondoor.com/shop-by-department/dvds/dv085/",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 3: Leg Raises)",
+      "title": "Step 1: Knee Tucks"
+    },
+    "cc1_leg_raise_02": {
+      "url": "https://www.dragondoor.com/shop-by-department/dvds/dv085/",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 3: Leg Raises)",
+      "title": "Step 2: Flat Knee Raises"
+    },
+    "cc1_leg_raise_03": {
+      "url": "https://www.dragondoor.com/shop-by-department/dvds/dv085/",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 3: Leg Raises)",
+      "title": "Step 3: Flat Bent Leg Raises"
+    },
+    "cc1_leg_raise_04": {
+      "url": "https://www.dragondoor.com/shop-by-department/dvds/dv085/",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 3: Leg Raises)",
+      "title": "Step 4: Flat Frog Raises"
+    },
+    "cc1_leg_raise_05": {
+      "url": "https://www.dragondoor.com/shop-by-department/dvds/dv085/",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 3: Leg Raises)",
+      "title": "Step 5: Flat Straight Leg Raises"
+    },
+    "cc1_leg_raise_06": {
+      "url": "https://www.dragondoor.com/shop-by-department/dvds/dv085/",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 3: Leg Raises)",
+      "title": "Step 6: Hanging Knee Raises"
+    },
+    "cc1_leg_raise_07": {
+      "url": "https://www.dragondoor.com/shop-by-department/dvds/dv085/",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 3: Leg Raises)",
+      "title": "Step 7: Hanging Bent Leg Raises"
+    },
+    "cc1_leg_raise_08": {
+      "url": "https://www.dragondoor.com/shop-by-department/dvds/dv085/",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 3: Leg Raises)",
+      "title": "Step 8: Hanging Frog Raises"
+    },
+    "cc1_leg_raise_09": {
+      "url": "https://www.dragondoor.com/shop-by-department/dvds/dv085/",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 3: Leg Raises)",
+      "title": "Step 9: Partial Straight Leg Raises"
+    },
+    "cc1_leg_raise_10": {
+      "url": "https://www.dragondoor.com/shop-by-department/dvds/dv085/",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 3: Leg Raises)",
+      "title": "Step 10: Hanging Straight Leg Raises"
+    },
+    "cc1_pull_01": {
+      "url": "https://direct.dragondoor.com/products/ddv088",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 5: Pull-up)",
+      "title": "Step 1: Vertical Pulls"
+    },
+    "cc1_pull_02": {
+      "url": "https://direct.dragondoor.com/products/ddv088",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 5: Pull-up)",
+      "title": "Step 2: Horizontal Pulls"
+    },
+    "cc1_pull_03": {
+      "url": "https://direct.dragondoor.com/products/ddv088",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 5: Pull-up)",
+      "title": "Step 3: Jackknife Pulls"
+    },
+    "cc1_pull_04": {
+      "url": "https://direct.dragondoor.com/products/ddv088",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 5: Pull-up)",
+      "title": "Step 4: Half Pull-ups"
+    },
+    "cc1_pull_05": {
+      "url": "https://direct.dragondoor.com/products/ddv088",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 5: Pull-up)",
+      "title": "Step 5: Full Pull-ups"
+    },
+    "cc1_pull_06": {
+      "url": "https://direct.dragondoor.com/products/ddv088",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 5: Pull-up)",
+      "title": "Step 6: Close Pull-ups"
+    },
+    "cc1_pull_07": {
+      "url": "https://direct.dragondoor.com/products/ddv088",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 5: Pull-up)",
+      "title": "Step 7: Uneven Pull-ups"
+    },
+    "cc1_pull_08": {
+      "url": "https://direct.dragondoor.com/products/ddv088",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 5: Pull-up)",
+      "title": "Step 8: Half One-Arm Pull-ups"
+    },
+    "cc1_pull_09": {
+      "url": "https://direct.dragondoor.com/products/ddv088",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 5: Pull-up)",
+      "title": "Step 9: Assisted One-Arm Pull-ups"
+    },
+    "cc1_pull_10": {
+      "url": "https://direct.dragondoor.com/products/ddv088",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 5: Pull-up)",
+      "title": "Step 10: One-Arm Pull-ups"
+    },
+    "cc1_push_01": {
+      "url": "https://direct.dragondoor.com/products/ddv083",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 1: Push)",
+      "title": "Step 1: Wall Push-ups"
+    },
+    "cc1_push_02": {
+      "url": "https://direct.dragondoor.com/products/ddv083",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 1: Push)",
+      "title": "Step 2: Incline Push-ups"
+    },
+    "cc1_push_03": {
+      "url": "https://direct.dragondoor.com/products/ddv083",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 1: Push)",
+      "title": "Step 3: Kneeling Push-ups"
+    },
+    "cc1_push_04": {
+      "url": "https://direct.dragondoor.com/products/ddv083",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 1: Push)",
+      "title": "Step 4: Half Push-ups"
+    },
+    "cc1_push_05": {
+      "url": "https://direct.dragondoor.com/products/ddv083",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 1: Push)",
+      "title": "Step 5: Full Push-ups"
+    },
+    "cc1_push_06": {
+      "url": "https://direct.dragondoor.com/products/ddv083",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 1: Push)",
+      "title": "Step 6: Close Push-ups"
+    },
+    "cc1_push_07": {
+      "url": "https://direct.dragondoor.com/products/ddv083",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 1: Push)",
+      "title": "Step 7: Uneven Push-ups"
+    },
+    "cc1_push_08": {
+      "url": "https://direct.dragondoor.com/products/ddv083",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 1: Push)",
+      "title": "Step 8: Half One-Arm Push-ups"
+    },
+    "cc1_push_09": {
+      "url": "https://direct.dragondoor.com/products/ddv083",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 1: Push)",
+      "title": "Step 9: Lever Push-ups"
+    },
+    "cc1_push_10": {
+      "url": "https://direct.dragondoor.com/products/ddv083",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 1: Push)",
+      "title": "Step 10: One-Arm Push-ups"
+    },
+    "cc1_squat_01": {
+      "url": "https://direct.dragondoor.com/products/ddv084",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 2: Squat)",
+      "title": "Step 1: Shoulderstand Squats"
+    },
+    "cc1_squat_02": {
+      "url": "https://direct.dragondoor.com/products/ddv084",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 2: Squat)",
+      "title": "Step 2: Jackknife Squats"
+    },
+    "cc1_squat_03": {
+      "url": "https://direct.dragondoor.com/products/ddv084",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 2: Squat)",
+      "title": "Step 3: Supported Squats"
+    },
+    "cc1_squat_04": {
+      "url": "https://direct.dragondoor.com/products/ddv084",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 2: Squat)",
+      "title": "Step 4: Half Squats"
+    },
+    "cc1_squat_05": {
+      "url": "https://direct.dragondoor.com/products/ddv084",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 2: Squat)",
+      "title": "Step 5: Full Squats"
+    },
+    "cc1_squat_06": {
+      "url": "https://direct.dragondoor.com/products/ddv084",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 2: Squat)",
+      "title": "Step 6: Close Squats"
+    },
+    "cc1_squat_07": {
+      "url": "https://direct.dragondoor.com/products/ddv084",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 2: Squat)",
+      "title": "Step 7: Uneven Squats"
+    },
+    "cc1_squat_08": {
+      "url": "https://direct.dragondoor.com/products/ddv084",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 2: Squat)",
+      "title": "Step 8: Half One-Leg Squats"
+    },
+    "cc1_squat_09": {
+      "url": "https://direct.dragondoor.com/products/ddv084",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 2: Squat)",
+      "title": "Step 9: Assisted One-Leg Squats"
+    },
+    "cc1_squat_10": {
+      "url": "https://direct.dragondoor.com/products/ddv084",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 2: Squat)",
+      "title": "Step 10: One-Leg Squats (Pistol Squats)"
+    },
+    "cc2_hspu_wall": {
+      "url": "https://direct.dragondoor.com/collections/convict-conditioning",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC2)",
+      "title": "Step 1: Handstand Push-up (Wall)"
+    },
+    "cc2_stand_to_stand_bridge": {
+      "url": "https://direct.dragondoor.com/collections/convict-conditioning",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC2)",
+      "title": "Step 2: Stand-to-Stand Bridge"
+    },
+    "cc2_l_sit": {
+      "url": "https://direct.dragondoor.com/collections/convict-conditioning",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC2)",
+      "title": "Step 3: L-Sit"
+    },
+    "cc2_v_sit": {
+      "url": "https://direct.dragondoor.com/collections/convict-conditioning",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC2)",
+      "title": "Step 4: V-Sit"
+    },
+    "cc2_human_flag_tuck": {
+      "url": "https://direct.dragondoor.com/collections/convict-conditioning",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC2)",
+      "title": "Step 5: Human Flag (Tuck)"
+    },
+    "ec_knee_pushup": {
+      "url": "https://www.youtube.com/watch?v=2n4UqRIJyk4",
+      "source": "Al Kavadlo",
+      "title": "Step 1: Knee Push-up"
+    },
+    "ec_clap_pushup": {
+      "url": "https://www.youtube.com/watch?v=2n4UqRIJyk4",
+      "source": "Al Kavadlo",
+      "title": "Step 2: Clap Push-up"
+    },
+    "ec_half_one_arm_pushup": {
+      "url": "https://www.youtube.com/watch?v=2n4UqRIJyk4",
+      "source": "Al Kavadlo",
+      "title": "Step 3: Half One-Arm Push-up"
+    },
+    "ec_switchblade_pushup": {
+      "url": "https://www.youtube.com/watch?v=2n4UqRIJyk4",
+      "source": "Al Kavadlo",
+      "title": "Step 4: Switchblade Push-up"
+    },
+    "ec_one_arm_pushup": {
+      "url": "https://www.youtube.com/watch?v=2n4UqRIJyk4",
+      "source": "Al Kavadlo",
+      "title": "Step 5: One-Arm Push-up (Explosive)"
+    },
+    "ftr_rite_1": {
+      "url": "https://www.youtube.com/watch?v=C9KCzQqcyGY",
+      "source": "Chris Kilham",
+      "title": "Step 1: Rite 1 - Spinning"
+    },
+    "ftr_rite_2": {
+      "url": "https://www.youtube.com/watch?v=C9KCzQqcyGY",
+      "source": "Chris Kilham",
+      "title": "Step 2: Rite 2 - Leg Raises"
+    },
+    "ftr_rite_3": {
+      "url": "https://www.youtube.com/watch?v=C9KCzQqcyGY",
+      "source": "Chris Kilham",
+      "title": "Step 3: Rite 3 - Kneeling Backbend"
+    },
+    "ftr_rite_4": {
+      "url": "https://www.youtube.com/watch?v=C9KCzQqcyGY",
+      "source": "Chris Kilham",
+      "title": "Step 4: Rite 4 - Tabletop Bridge"
+    },
+    "ftr_rite_5": {
+      "url": "https://www.youtube.com/watch?v=C9KCzQqcyGY",
+      "source": "Chris Kilham",
+      "title": "Step 5: Rite 5 - Pendulum (Up/Down Dog)"
+    },
+    "og_skin_the_cat": {
+      "url": "https://www.youtube.com/watch?v=AGhb8V8M758",
+      "source": "FitnessFAQs",
+      "title": "Step 1: Skin the Cat"
+    },
+    "og_german_hang": {
+      "url": "https://www.youtube.com/watch?v=AGhb8V8M758",
+      "source": "FitnessFAQs",
+      "title": "Step 2: German Hang"
+    },
+    "og_tuck_back_lever": {
+      "url": "https://www.youtube.com/watch?v=AGhb8V8M758",
+      "source": "FitnessFAQs",
+      "title": "Step 3: Tuck Back Lever"
+    },
+    "og_adv_tuck_back_lever": {
+      "url": "https://www.youtube.com/watch?v=AGhb8V8M758",
+      "source": "FitnessFAQs",
+      "title": "Step 4: Advanced Tuck Back Lever"
+    },
+    "og_straddle_back_lever": {
+      "url": "https://www.youtube.com/watch?v=AGhb8V8M758",
+      "source": "FitnessFAQs",
+      "title": "Step 5: Straddle Back Lever"
+    },
+    "og_planche_lean": {
+      "url": "https://www.youtube.com/watch?v=UoPRqPvF4AQ",
+      "source": "Tom Merrick (Bodyweight Warrior)",
+      "title": "Step 1: Planche Lean"
+    },
+    "og_tuck_planche": {
+      "url": "https://www.youtube.com/watch?v=UoPRqPvF4AQ",
+      "source": "Tom Merrick (Bodyweight Warrior)",
+      "title": "Step 2: Tuck Planche"
+    },
+    "og_adv_tuck_planche": {
+      "url": "https://www.youtube.com/watch?v=UoPRqPvF4AQ",
+      "source": "Tom Merrick (Bodyweight Warrior)",
+      "title": "Step 3: Advanced Tuck Planche"
+    },
+    "og_straddle_planche": {
+      "url": "https://www.youtube.com/watch?v=UoPRqPvF4AQ",
+      "source": "Tom Merrick (Bodyweight Warrior)",
+      "title": "Step 4: Straddle Planche"
+    },
+    "og_front_lever_tuck": {
+      "url": "https://www.youtube.com/watch?v=UoPRqPvF4AQ",
+      "source": "Tom Merrick (Bodyweight Warrior)",
+      "title": "Step 5: Front Lever (Tuck)"
+    },
+    "og_front_lever": {
+      "url": "https://www.youtube.com/watch?v=UoPRqPvF4AQ",
+      "source": "Tom Merrick (Bodyweight Warrior)",
+      "title": "Step 6: Front Lever"
+    },
+    "ss_back_squat": {
+      "url": "https://www.youtube.com/@startingstrength",
+      "source": "Official \u2014 Starting Strength",
+      "title": "Step 1: Back Squat"
+    },
+    "ss_bench_press": {
+      "url": "https://www.youtube.com/@startingstrength",
+      "source": "Official \u2014 Starting Strength",
+      "title": "Step 2: Bench Press"
+    },
+    "ss_deadlift": {
+      "url": "https://www.youtube.com/@startingstrength",
+      "source": "Official \u2014 Starting Strength",
+      "title": "Step 3: Deadlift"
+    },
+    "ss_overhead_press": {
+      "url": "https://www.youtube.com/@startingstrength",
+      "source": "Official \u2014 Starting Strength",
+      "title": "Step 4: Overhead Press"
+    },
+    "ss_power_clean": {
+      "url": "https://www.youtube.com/@startingstrength",
+      "source": "Official \u2014 Starting Strength",
+      "title": "Step 5: Power Clean"
+    }
+  }
+}

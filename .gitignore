@@ -1,8 +1,6 @@
 __pycache__/
 *.py[cod]
-data/
-.venv/
-venv/
-build/
+.pytest_cache/
 dist/
+build/personal_dev_tracker/
 *.spec.bak

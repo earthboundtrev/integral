@@ -1,0 +1,43 @@
+{
+  "source_book": "EC",
+  "family": "explosive",
+  "version": "v1",
+  "exercises": [
+    {
+      "key": "ec_knee_pushup",
+      "name": "Knee Push-up",
+      "step": 1,
+      "mastery_criteria": { "sets": 3, "reps": 25 }
+    },
+    {
+      "key": "ec_clap_pushup",
+      "name": "Clap Push-up",
+      "step": 2,
+      "mastery_criteria": { "sets": 3, "reps": 15 }
+    },
+    {
+      "key": "ec_half_one_arm_pushup",
+      "name": "Half One-Arm Push-up",
+      "step": 3,
+      "mastery_criteria": { "sets": 3, "reps": 10 }
+    },
+    {
+      "key": "ec_switchblade_pushup",
+      "name": "Switchblade Push-up",
+      "step": 4,
+      "mastery_criteria": { "sets": 2, "reps": 8 }
+    },
+    {
+      "key": "ec_one_arm_pushup",
+      "name": "One-Arm Push-up (Explosive)",
+      "step": 5,
+      "mastery_criteria": { "sets": 2, "reps": 5 }
+    }
+  ],
+  "edges": [
+    { "from": "ec_knee_pushup", "to": "ec_clap_pushup", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "ec_clap_pushup", "to": "ec_half_one_arm_pushup", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "ec_half_one_arm_pushup", "to": "ec_switchblade_pushup", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "ec_switchblade_pushup", "to": "ec_one_arm_pushup", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } }
+  ]
+}

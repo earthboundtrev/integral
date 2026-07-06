@@ -1,0 +1,43 @@
+{
+  "source_book": "OG",
+  "family": "pull",
+  "version": "v1",
+  "exercises": [
+    {
+      "key": "og_skin_the_cat",
+      "name": "Skin the Cat",
+      "step": 1,
+      "mastery_criteria": { "sets": 3, "reps": 5 }
+    },
+    {
+      "key": "og_german_hang",
+      "name": "German Hang",
+      "step": 2,
+      "mastery_criteria": { "sets": 3, "reps": 1, "hold_seconds": 30 }
+    },
+    {
+      "key": "og_tuck_back_lever",
+      "name": "Tuck Back Lever",
+      "step": 3,
+      "mastery_criteria": { "sets": 3, "reps": 1, "hold_seconds": 20 }
+    },
+    {
+      "key": "og_adv_tuck_back_lever",
+      "name": "Advanced Tuck Back Lever",
+      "step": 4,
+      "mastery_criteria": { "sets": 3, "reps": 1, "hold_seconds": 15 }
+    },
+    {
+      "key": "og_straddle_back_lever",
+      "name": "Straddle Back Lever",
+      "step": 5,
+      "mastery_criteria": { "sets": 3, "reps": 1, "hold_seconds": 10 }
+    }
+  ],
+  "edges": [
+    { "from": "og_skin_the_cat", "to": "og_german_hang", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "og_german_hang", "to": "og_tuck_back_lever", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "og_tuck_back_lever", "to": "og_adv_tuck_back_lever", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "og_adv_tuck_back_lever", "to": "og_straddle_back_lever", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } }
+  ]
+}

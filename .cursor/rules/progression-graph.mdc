@@ -1,0 +1,32 @@
+---
+description: Graph-based exercise progression model (fitness DAG)
+globs: "**/progression/**,**/*progression*,**/*fitness*"
+alwaysApply: false
+---
+
+# Progression Graph Model
+
+Implement only per Phase 2+ approved spec. ADR-006. Full spec: `docs/PROGRESSION_MODEL.md`.
+
+Every exercise from every book is a **node**. Relationships are **directed edges**. User state tracks mastery per node.
+
+## Entities
+
+- **Exercise**: `id`, `name`, `source_book` (CC1/CC2/EC/OG/SS/FTR), `family` (push/pull/core/…), `mastery_criteria` (JSON)
+- **ProgressionEdge**: `from_exercise_id`, `to_exercise_id`, `unlock_condition` (JSON), `edge_type` (prerequisite|recommended|alternative)
+- **UserExerciseProgress**: `status` (locked|available|in_progress|mastered), bests (reps/hold/weight), timestamps
+
+## Rules
+
+- Prerequisite edges must form a **DAG** — validate no cycles on insert.
+- `mastered` requires `mastery_criteria` met (e.g. `{sets:3, reps:5}` or `{hold_seconds:10}`).
+- On mastery → traverse outgoing edges → unlock nodes whose `unlock_condition` is satisfied.
+- Cross-book edges encouraged (e.g. CC One-Arm Push-up → OG Planche Lean).
+
+## Code Structure
+
+- Progression engine is **pure Python** — no Tkinter imports. Unit-testable.
+- Seed data in `progression/seed/v1/` as versioned JSON; bump version on exercise changes.
+- UI skill tree reads graph state; does not embed business logic.
+
+Full spec: `docs/PROGRESSION_MODEL.md`

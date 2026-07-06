@@ -1,0 +1,44 @@
+---
+description: Backup/export integrity — keep zip archives complete when data layout changes
+globs: "backup.py,profiles.py,storage.py,progression/db.py,tracker.py"
+alwaysApply: false
+---
+
+# Backup & Export Integrity
+
+## Canonical backup module
+
+All export/import goes through `backup.py` — never duplicate zip logic in UI files.
+
+## Required backup contents (v1)
+
+Every valid backup zip must include:
+
+| Path | Required |
+|------|----------|
+| `manifest.json` | Yes — `backup_version`, `profiles`, `files` list |
+| `config.json` | Yes — profile registry + active profile |
+| `profiles/{id}/data.json` | Yes per profile — daily life entries |
+| `profiles/{id}/fitness.db` | Yes when file exists — SQLite fitness progress |
+
+## When changing storage
+
+If you add a new persisted artifact (new DB, photos dir, etc.):
+
+1. Update `PROFILE_ARTIFACTS` in `backup.py`
+2. Update `tests/test_backup.py` roundtrip test
+3. Update Settings dialog copy if user-visible
+
+## Verification gate
+
+Before finishing any change to `profiles.py`, `storage.py`, `progression/db.py`, or profile paths:
+
+```bash
+python -m pytest tests/test_backup.py tests/test_profiles.py -q
+```
+
+Roundtrip test must pass: export → delete local files → import → data + fitness progress restored.
+
+## UI
+
+Settings → **Export This Profile**, **Export All Profiles**, **Import Backup** in `tracker.py` `show_settings()`.

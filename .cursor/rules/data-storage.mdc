@@ -1,0 +1,41 @@
+---
+description: Data model and storage conventions
+globs: "**/*.py,**/*.json"
+alwaysApply: false
+---
+
+# Data & Storage
+
+Implement only per approved spec. ADRs: 002, 005.
+
+## Paths
+
+- User data: `~/.personal_dev_tracker/data.json` (Phase 1 daily entries)
+- Future fitness: `~/.personal_dev_tracker/fitness.db` (SQLite)
+- Progress photos: `~/.personal_dev_tracker/photos/`
+
+## Daily Entry Shape
+
+```json
+{
+  "rating": 7,
+  "checklist": { "item": true },
+  "metrics": { "Sleep hours last night": 7.5 },
+  "notes": "journal text"
+}
+```
+
+Dates as `YYYY-MM-DD` keys. Categories match the 8 default domains in `docs/DATA_MODEL.md`.
+
+## Conventions
+
+- All file I/O through a `storage` module — UI never opens files directly.
+- `save_data()` writes atomically (write temp → rename) when file grows large.
+- UTF-8 encoding, `ensure_ascii=False` for notes/journal.
+- Streaks: consecutive calendar days with logs ending today; category-scoped variant per card.
+
+## 8 Categories
+
+Money/Freedom, Body & Presence, Burnout Prevention & Energy Management, Creative/Mental Work, Family/Logistics, Search Practice, Spiritual Development, Emotional Wellbeing.
+
+Do not rename categories without migration — breaks historical entries.

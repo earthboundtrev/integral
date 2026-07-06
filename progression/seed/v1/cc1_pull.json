@@ -1,0 +1,78 @@
+{
+  "source_book": "CC1",
+  "family": "pull",
+  "version": "v1",
+  "exercises": [
+    {
+      "key": "cc1_pull_01",
+      "name": "Vertical Pulls",
+      "step": 1,
+      "mastery_criteria": { "sets": 3, "reps": 40 }
+    },
+    {
+      "key": "cc1_pull_02",
+      "name": "Horizontal Pulls",
+      "step": 2,
+      "mastery_criteria": { "sets": 3, "reps": 30 }
+    },
+    {
+      "key": "cc1_pull_03",
+      "name": "Jackknife Pulls",
+      "step": 3,
+      "mastery_criteria": { "sets": 3, "reps": 20 }
+    },
+    {
+      "key": "cc1_pull_04",
+      "name": "Half Pull-ups",
+      "step": 4,
+      "mastery_criteria": { "sets": 2, "reps": 15 }
+    },
+    {
+      "key": "cc1_pull_05",
+      "name": "Full Pull-ups",
+      "step": 5,
+      "mastery_criteria": { "sets": 2, "reps": 10 }
+    },
+    {
+      "key": "cc1_pull_06",
+      "name": "Close Pull-ups",
+      "step": 6,
+      "mastery_criteria": { "sets": 2, "reps": 10 }
+    },
+    {
+      "key": "cc1_pull_07",
+      "name": "Uneven Pull-ups",
+      "step": 7,
+      "mastery_criteria": { "sets": 2, "reps": 9 }
+    },
+    {
+      "key": "cc1_pull_08",
+      "name": "Half One-Arm Pull-ups",
+      "step": 8,
+      "mastery_criteria": { "sets": 2, "reps": 8 }
+    },
+    {
+      "key": "cc1_pull_09",
+      "name": "Assisted One-Arm Pull-ups",
+      "step": 9,
+      "mastery_criteria": { "sets": 2, "reps": 7 }
+    },
+    {
+      "key": "cc1_pull_10",
+      "name": "One-Arm Pull-ups",
+      "step": 10,
+      "mastery_criteria": { "sets": 2, "reps": 6 }
+    }
+  ],
+  "edges": [
+    { "from": "cc1_pull_01", "to": "cc1_pull_02", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_pull_02", "to": "cc1_pull_03", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_pull_03", "to": "cc1_pull_04", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_pull_04", "to": "cc1_pull_05", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_pull_05", "to": "cc1_pull_06", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_pull_06", "to": "cc1_pull_07", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_pull_07", "to": "cc1_pull_08", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_pull_08", "to": "cc1_pull_09", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_pull_09", "to": "cc1_pull_10", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } }
+  ]
+}

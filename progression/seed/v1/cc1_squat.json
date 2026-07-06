@@ -1,0 +1,78 @@
+{
+  "source_book": "CC1",
+  "family": "squat",
+  "version": "v1",
+  "exercises": [
+    {
+      "key": "cc1_squat_01",
+      "name": "Shoulderstand Squats",
+      "step": 1,
+      "mastery_criteria": { "sets": 3, "reps": 50 }
+    },
+    {
+      "key": "cc1_squat_02",
+      "name": "Jackknife Squats",
+      "step": 2,
+      "mastery_criteria": { "sets": 3, "reps": 40 }
+    },
+    {
+      "key": "cc1_squat_03",
+      "name": "Supported Squats",
+      "step": 3,
+      "mastery_criteria": { "sets": 3, "reps": 30 }
+    },
+    {
+      "key": "cc1_squat_04",
+      "name": "Half Squats",
+      "step": 4,
+      "mastery_criteria": { "sets": 2, "reps": 50 }
+    },
+    {
+      "key": "cc1_squat_05",
+      "name": "Full Squats",
+      "step": 5,
+      "mastery_criteria": { "sets": 2, "reps": 30 }
+    },
+    {
+      "key": "cc1_squat_06",
+      "name": "Close Squats",
+      "step": 6,
+      "mastery_criteria": { "sets": 2, "reps": 20 }
+    },
+    {
+      "key": "cc1_squat_07",
+      "name": "Uneven Squats",
+      "step": 7,
+      "mastery_criteria": { "sets": 2, "reps": 20 }
+    },
+    {
+      "key": "cc1_squat_08",
+      "name": "Half One-Leg Squats",
+      "step": 8,
+      "mastery_criteria": { "sets": 2, "reps": 20 }
+    },
+    {
+      "key": "cc1_squat_09",
+      "name": "Assisted One-Leg Squats",
+      "step": 9,
+      "mastery_criteria": { "sets": 2, "reps": 20 }
+    },
+    {
+      "key": "cc1_squat_10",
+      "name": "One-Leg Squats (Pistol Squats)",
+      "step": 10,
+      "mastery_criteria": { "sets": 2, "reps": 50 }
+    }
+  ],
+  "edges": [
+    { "from": "cc1_squat_01", "to": "cc1_squat_02", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_squat_02", "to": "cc1_squat_03", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_squat_03", "to": "cc1_squat_04", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_squat_04", "to": "cc1_squat_05", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_squat_05", "to": "cc1_squat_06", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_squat_06", "to": "cc1_squat_07", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_squat_07", "to": "cc1_squat_08", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_squat_08", "to": "cc1_squat_09", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_squat_09", "to": "cc1_squat_10", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } }
+  ]
+}

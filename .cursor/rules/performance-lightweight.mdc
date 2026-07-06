@@ -1,0 +1,41 @@
+---
+description: Lightweight performance rules for Python/Tkinter code
+globs: "**/*.py"
+alwaysApply: false
+---
+
+# Performance & Lightweight Code
+
+## Imports
+
+```python
+# ❌ module-level — slows every launch
+import matplotlib.pyplot as plt
+
+# ✅ lazy — only when user opens Graphs tab
+def build_graphs_tab(self, parent):
+    from matplotlib.figure import Figure
+    from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+```
+
+## Data
+
+- Load `data.json` once at init; hold in memory; write on save.
+- Precompute summary stats on save, not on every dashboard refresh.
+- Migrate to SQLite only when JSON load is measurably slow (>5MB or >500ms).
+
+## UI
+
+- Prefer `ttk` widgets. Avoid unnecessary `destroy()` + full rebuild; update in place on hot paths.
+- Cache matplotlib `Figure` objects when underlying data unchanged.
+- No background threads for simple JSON — sync I/O is fine at personal scale.
+
+## Forbidden Without Explicit Approval
+
+- pandas, numpy (beyond matplotlib's transitive use), Electron, Qt, web stacks, ORMs
+- Network calls in core logging flow
+- Saving chart PNGs to disk unless user exports
+
+## Profiling First
+
+Run `python -X importtime tracker.py` before any language rewrite or heavy refactor.

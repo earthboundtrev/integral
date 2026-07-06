@@ -1,101 +1,111 @@
-# Integral — Architecture Overview
+# Architecture
 
-Canonical entry point for developers and AI agents working on **Integral** (local-first life tracking desktop app).
+## Current State (Phase 1)
 
-## System at a glance
+Single-file Python desktop app using Tkinter.
 
-Integral is a **Python 3 + Tkinter** desktop application with optional **matplotlib** charts and **PyInstaller** Windows releases.
+```
+personal-dev-tracker/
+├── tracker.py              # Main app (or split when >800 lines)
+├── docs/                   # Project documentation
+├── .cursor/rules/          # Cursor agent rules
+└── data/                   # Optional bundled defaults (categories seed)
 
-| Area | Role |
-|------|------|
-| `personal_dev_tracker.py` | Main app entry — dashboard, logging, settings |
-| `activity_grid.py` | GitHub-style contribution calendar |
-| `graphs.py` / `fitness_graphs.py` | Matplotlib chart windows |
-| `theme.py` | Light/dark theme tokens |
-| `paths.py` | Dev vs frozen exe paths (`data.json`, `programs/`, icon) |
-| `insights/` | Life-area guidance engine (trends, playbooks) |
-| `fitness/` | Program engine + Fitness Hub UI |
-| `programs/` | Official fitness progression JSON (read-only at runtime) |
-| `assets/` | App icon (`.ico`, source PNG) |
-| `tests/` | `unittest` modules |
-| `data/` | User journal (`data.json`) — **gitignored** |
-
-**Runtime (dev):** `python personal_dev_tracker.py` or `.\run.ps1`  
-**Runtime (release):** `Integral.exe` — data in `%APPDATA%\Integral\data.json`
-
-## Data flow
-
-```mermaid
-flowchart TB
-  UI[personal_dev_tracker.py + dialogs]
-  Insights[insights/engine.py]
-  Fitness[fitness/engine.py + ui.py]
-  Store[(data.json)]
-  Programs[(programs/*.json)]
-
-  UI --> Insights
-  UI --> Fitness
-  UI --> Store
-  Fitness --> Programs
-  Fitness --> Store
-  Insights --> Store
+User data (runtime):
+~/.personal_dev_tracker/
+└── data.json               # categories + daily entries
 ```
 
-## Where to put new code
-
-| You're building… | Put it in… |
-|------------------|------------|
-| New life-area logic / coaching rules | `insights/engine.py` or `insights/playbooks.py` |
-| New dashboard surface or dialog | `personal_dev_tracker.py` (split module if file grows) |
-| Reusable UI widget | New module at repo root (e.g. `activity_grid.py`) or `fitness/ui.py` pattern |
-| Chart / visualization | `graphs.py` or `fitness_graphs.py` |
-| Fitness progression rules | `fitness/engine.py` |
-| Fitness UI | `fitness/ui.py` |
-| Official program tables | `programs/{program-id}.json` |
-| Path / bundle / AppData logic | `paths.py` only |
-| Unit tests | `tests/test_*.py` |
-| Product / competitive / roadmap docs | `docs/` |
-| User-facing overview | Root `README.md` (capabilities + tagline only) |
-
-## Schema (`data.json`)
+### Phase 1 Data Shape (`data.json`)
 
 ```json
 {
-  "schema_version": 2,
-  "categories": {},
-  "entries": { "YYYY-MM-DD": { "Category Name": { "rating", "checklist", "metrics", "notes" } } },
-  "settings": { "dark_mode": false },
-  "sessions": [],
-  "program_state": {},
-  "user_levels": {}
+  "categories": {
+    "Body & Presence": {
+      "checklist": ["..."],
+      "metrics": [{ "name": "...", "type": "number|rating", "unit": "...", "default": 0 }]
+    }
+  },
+  "entries": {
+    "2026-06-27": {
+      "Body & Presence": {
+        "rating": 7,
+        "checklist": { "Completed movement/exercise": true },
+        "metrics": { "Sleep hours last night": 7.5 },
+        "notes": "..."
+      }
+    }
+  }
 }
 ```
 
-Migration lives in `fitness/engine.py` → `migrate_data()`.
+### Phase 1 UI Surfaces
 
-## Boundaries
+| Surface | Purpose |
+|---------|---------|
+| Dashboard | 8 category cards, streaks, today's status |
+| Log dialog | Rating, checklist, metrics, notes per category |
+| Graphs & Summaries | Today / week / month stats + embedded charts |
+| Full History | Chronological notes dump |
+| Settings | Placeholder → future category editor |
 
-- **Never** commit `data/` or user journal files.
-- **Never** hardcode paths — use `paths.py` (`data_file()`, `programs_dir()`, `bundle_dir()`).
-- **Program JSON** is read-only reference data; user progress is in `sessions` + `entries`.
-- **Keep daily logging fast** — rating + Save must stay under ~30 seconds UX.
-- **Local-first** — no mandatory cloud, accounts, or telemetry (roadmap items are opt-in).
+## Target State (Phase 2+)
 
-## Tests mirror domains
+```
+~/.personal_dev_tracker/
+├── data.json               # Daily life-domain entries (unchanged)
+├── fitness.db              # SQLite: exercises, edges, user progress, workout logs
+└── photos/                 # Progress photos (filesystem refs in DB)
+```
 
-| Domain | Test file |
-|--------|-----------|
-| Fitness engine | `tests/test_fitness_engine.py` |
-| Insights / guidance | `tests/test_insights_engine.py` |
-| New feature | `tests/test_{feature}.py` |
+### Module Boundaries (When Splitting)
 
-Run: `python -m unittest discover -s tests -v`
+| Module | Responsibility |
+|--------|----------------|
+| `app.py` | Tk root, navigation, window lifecycle |
+| `dashboard.py` | Category cards, streaks |
+| `logging.py` | Log dialog, save entry |
+| `summaries.py` | Today/week/month aggregation |
+| `charts.py` | Lazy matplotlib; cache figures |
+| `storage.py` | JSON load/save; future SQLite adapter |
+| `progression/` | Graph model, mastery evaluator, unlock engine |
+| `progression/seed/` | CC, OG, SS, FTR exercise + edge data |
 
-## Related docs
+### Layering Rules
 
-- Architecture: `docs/architecture.md`
-- Cursor agent rules: `.cursor/rules/` (adapted from SmartAstro workflow)
-- Roadmap: `docs/ROADMAP.md`
-- Competitive landscape: `docs/COMPETITIVE_LANDSCAPE.md`
-- Fitness PRD: `docs/fitness-program-tracking-requirements.md`
-- GitHub launch: `docs/GITHUB_LAUNCH.md`
+1. **UI never reads files directly** — goes through `storage` layer.
+2. **Summaries/charts are read-only views** — computed from in-memory data.
+3. **Progression engine is pure logic** — no Tkinter imports; testable in isolation.
+4. **Fitness workout log** links daily `entries` to `exercise_id` performances (Phase 2 bridge).
+
+## Graphs & Summaries Spec
+
+### Summaries Tab
+
+| Period | Metrics |
+|--------|---------|
+| Today | Avg rating, categories logged, per-category completion |
+| This Week | Avg rating, active days, streak, checklist completion % |
+| Last 30 Days | Avg rating, active days, total notes count, best/worst category |
+
+Precompute rolling windows on save; cache until next save.
+
+### Graphs Tab
+
+| Chart | Data |
+|-------|------|
+| Daily avg rating (30d line) | Mean of all category ratings per day |
+| Category avg (bar, all-time) | Mean rating per category |
+| Future: metric trends | Per-metric time series |
+| Future: fitness skill tree | DAG visualization |
+| Future: radar / life balance | 8-axis spider from category averages |
+
+## Integration: Daily Tracker ↔ Fitness Graph
+
+Daily category logging remains the **habit layer**. Fitness deep-tracking adds:
+
+- Workout session → exercises performed → reps/holds/weight
+- Mastery evaluation updates skill tree
+- Dashboard "Body & Presence" card shows summary; fitness view shows skill tree detail
+
+Do not merge into one monolithic form — link via shared date + category reference.

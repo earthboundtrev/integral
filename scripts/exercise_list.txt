@@ -1,0 +1,91 @@
+﻿cc1_bridge_01|CC1|bridge|1|Short Bridges
+cc1_bridge_02|CC1|bridge|2|Straight Bridges
+cc1_bridge_03|CC1|bridge|3|Angled Bridges
+cc1_bridge_04|CC1|bridge|4|Head Bridges
+cc1_bridge_05|CC1|bridge|5|Half Bridges
+cc1_bridge_06|CC1|bridge|6|Full Bridges
+cc1_bridge_07|CC1|bridge|7|Wall Walking Bridges (Down)
+cc1_bridge_08|CC1|bridge|8|Wall Walking Bridges (Up)
+cc1_bridge_09|CC1|bridge|9|Closing Bridges
+cc1_bridge_10|CC1|bridge|10|Stand-to-Stand Bridges
+cc1_hspu_01|CC1|handstand_pushup|1|Wall Headstands
+cc1_hspu_02|CC1|handstand_pushup|2|Crow Stands
+cc1_hspu_03|CC1|handstand_pushup|3|Wall Handstands
+cc1_hspu_04|CC1|handstand_pushup|4|Half Handstand Push-ups
+cc1_hspu_05|CC1|handstand_pushup|5|Handstand Push-ups
+cc1_hspu_06|CC1|handstand_pushup|6|Close Handstand Push-ups
+cc1_hspu_07|CC1|handstand_pushup|7|Uneven Handstand Push-ups
+cc1_hspu_08|CC1|handstand_pushup|8|Half One-Arm Handstand Push-ups
+cc1_hspu_09|CC1|handstand_pushup|9|Lever Handstand Push-ups
+cc1_hspu_10|CC1|handstand_pushup|10|One-Arm Handstand Push-ups
+cc1_leg_raise_01|CC1|leg_raise|1|Knee Tucks
+cc1_leg_raise_02|CC1|leg_raise|2|Flat Knee Raises
+cc1_leg_raise_03|CC1|leg_raise|3|Flat Bent Leg Raises
+cc1_leg_raise_04|CC1|leg_raise|4|Flat Frog Raises
+cc1_leg_raise_05|CC1|leg_raise|5|Flat Straight Leg Raises
+cc1_leg_raise_06|CC1|leg_raise|6|Hanging Knee Raises
+cc1_leg_raise_07|CC1|leg_raise|7|Hanging Bent Leg Raises
+cc1_leg_raise_08|CC1|leg_raise|8|Hanging Frog Raises
+cc1_leg_raise_09|CC1|leg_raise|9|Partial Straight Leg Raises
+cc1_leg_raise_10|CC1|leg_raise|10|Hanging Straight Leg Raises
+cc1_pull_01|CC1|pull|1|Vertical Pulls
+cc1_pull_02|CC1|pull|2|Horizontal Pulls
+cc1_pull_03|CC1|pull|3|Jackknife Pulls
+cc1_pull_04|CC1|pull|4|Half Pull-ups
+cc1_pull_05|CC1|pull|5|Full Pull-ups
+cc1_pull_06|CC1|pull|6|Close Pull-ups
+cc1_pull_07|CC1|pull|7|Uneven Pull-ups
+cc1_pull_08|CC1|pull|8|Half One-Arm Pull-ups
+cc1_pull_09|CC1|pull|9|Assisted One-Arm Pull-ups
+cc1_pull_10|CC1|pull|10|One-Arm Pull-ups
+cc1_push_01|CC1|push|1|Wall Push-ups
+cc1_push_02|CC1|push|2|Incline Push-ups
+cc1_push_03|CC1|push|3|Kneeling Push-ups
+cc1_push_04|CC1|push|4|Half Push-ups
+cc1_push_05|CC1|push|5|Full Push-ups
+cc1_push_06|CC1|push|6|Close Push-ups
+cc1_push_07|CC1|push|7|Uneven Push-ups
+cc1_push_08|CC1|push|8|Half One-Arm Push-ups
+cc1_push_09|CC1|push|9|Lever Push-ups
+cc1_push_10|CC1|push|10|One-Arm Push-ups
+cc1_squat_01|CC1|squat|1|Shoulderstand Squats
+cc1_squat_02|CC1|squat|2|Jackknife Squats
+cc1_squat_03|CC1|squat|3|Supported Squats
+cc1_squat_04|CC1|squat|4|Half Squats
+cc1_squat_05|CC1|squat|5|Full Squats
+cc1_squat_06|CC1|squat|6|Close Squats
+cc1_squat_07|CC1|squat|7|Uneven Squats
+cc1_squat_08|CC1|squat|8|Half One-Leg Squats
+cc1_squat_09|CC1|squat|9|Assisted One-Leg Squats
+cc1_squat_10|CC1|squat|10|One-Leg Squats (Pistol Squats)
+cc2_hspu_wall|CC2|sample|1|Handstand Push-up (Wall)
+cc2_stand_to_stand_bridge|CC2|sample|2|Stand-to-Stand Bridge
+cc2_l_sit|CC2|sample|3|L-Sit
+cc2_v_sit|CC2|sample|4|V-Sit
+cc2_human_flag_tuck|CC2|sample|5|Human Flag (Tuck)
+ec_knee_pushup|EC|explosive|1|Knee Push-up
+ec_clap_pushup|EC|explosive|2|Clap Push-up
+ec_half_one_arm_pushup|EC|explosive|3|Half One-Arm Push-up
+ec_switchblade_pushup|EC|explosive|4|Switchblade Push-up
+ec_one_arm_pushup|EC|explosive|5|One-Arm Push-up (Explosive)
+ftr_rite_1|FTR|rites|1|Rite 1 - Spinning
+ftr_rite_2|FTR|rites|2|Rite 2 - Leg Raises
+ftr_rite_3|FTR|rites|3|Rite 3 - Kneeling Backbend
+ftr_rite_4|FTR|rites|4|Rite 4 - Tabletop Bridge
+ftr_rite_5|FTR|rites|5|Rite 5 - Pendulum (Up/Down Dog)
+og_skin_the_cat|OG|pull|1|Skin the Cat
+og_german_hang|OG|pull|2|German Hang
+og_tuck_back_lever|OG|pull|3|Tuck Back Lever
+og_adv_tuck_back_lever|OG|pull|4|Advanced Tuck Back Lever
+og_straddle_back_lever|OG|pull|5|Straddle Back Lever
+og_planche_lean|OG|push|1|Planche Lean
+og_tuck_planche|OG|push|2|Tuck Planche
+og_adv_tuck_planche|OG|push|3|Advanced Tuck Planche
+og_straddle_planche|OG|push|4|Straddle Planche
+og_front_lever_tuck|OG|push|5|Front Lever (Tuck)
+og_front_lever|OG|push|6|Front Lever
+ss_back_squat|SS|main|1|Back Squat
+ss_bench_press|SS|main|2|Bench Press
+ss_deadlift|SS|main|3|Deadlift
+ss_overhead_press|SS|main|4|Overhead Press
+ss_power_clean|SS|main|5|Power Clean

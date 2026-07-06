@@ -1,0 +1,38 @@
+---
+description: Tkinter UI patterns for the tracker app
+globs: "**/*.py"
+alwaysApply: false
+---
+
+# Tkinter UI
+
+## Layout
+
+- Main window: 1200×800 dashboard with **Today's Log** bar (8 quick-log buttons + fitness), category cards, Recent Activity panel.
+- Fitness Hub: grouped program tree (expandable step series) + Step Detail panel with demo video link; search bar filters programs/steps.
+- All list/dialog windows: mouse-wheel scroll via `ui_scroll.py`.
+- Footer actions: Refresh, View Full History, **Graphs & Summaries**, Settings.
+- Log dialog: 540×720 modal with rating spinbox, checklist, metrics, scrolled notes.
+
+## Patterns
+
+- Use `ttk.Frame`, `ttk.Label`, `ttk.Button`, `ttk.Notebook` for tabs.
+- Modal dialogs: `transient(root)`, `grab_set()`, destroy on save/cancel.
+- `ScrolledText` for notes, history, and summary tab.
+- Category cards show: name, category streak, today's status (green if logged).
+
+## Graphs & Summaries Window
+
+- `ttk.Notebook` with **Summaries** (text) and **Graphs** (embedded matplotlib) tabs.
+- Summaries: Today, This Week (7d), Last 30 Days — avg rating, active days, notes count, streaks.
+- Graphs: 30-day daily avg line chart; all-time per-category bar chart.
+
+## Style
+
+- Central theme: `ui_theme.py` — colors, fonts, ttk styles, card helpers, text widget styling.
+- Apply on startup via `ui_theme.apply_theme(root)`; use `configure_window()` on Toplevel dialogs.
+- Palette: soft gray background, white cards, teal accent (`#2F7A7B`), amber streak badge.
+- Category cards: colored left accent stripe per life area (`CATEGORY_ACCENTS`).
+- Button styles: `Accent.TButton` (primary), `Logged.TButton` (completed today), default `TButton`.
+- Streak color: `#D97706`. Logged today: `#059669`. Not logged: muted gray.
+- Font: Segoe UI on Windows, Helvetica elsewhere.

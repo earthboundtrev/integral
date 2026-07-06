@@ -1,0 +1,33 @@
+---
+description: Core vision — points to PRD and spec-driven process
+alwaysApply: true
+---
+
+# Personal Development Tracker
+
+**Human writes specs. Agents write code.**
+
+| Doc | Purpose |
+|-----|---------|
+| `docs/PRD.md` | Whole product — epics, phases, backlog |
+| `docs/WORKFLOW.md` | Spec-driven loop (Gauntlet methodology) |
+| `docs/CONSTITUTION.md` | ADR index |
+| `docs/specs/README.md` | Implementation order |
+
+## Phases
+
+1. Daily tracker (8 categories, graphs, summaries)
+2. Fitness DAG (CC, OG, SS, EC, FTR skill tree)
+3. Cross-domain progression + optional coach
+
+## Lightweight
+
+Python + Tkinter. matplotlib lazy only. See ADR-001, ADR-003, `docs/PERFORMANCE.md`.
+
+## Start Implementation
+
+```
+Implement SPEC-005 per docs/specs/phase-1/005-storage-and-seed.md
+```
+
+Do not implement from this rule alone — read the spec.

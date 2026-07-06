@@ -1,0 +1,43 @@
+{
+  "source_book": "CC2",
+  "family": "sample",
+  "version": "v1",
+  "exercises": [
+    {
+      "key": "cc2_hspu_wall",
+      "name": "Handstand Push-up (Wall)",
+      "step": 1,
+      "mastery_criteria": { "sets": 2, "reps": 15 }
+    },
+    {
+      "key": "cc2_stand_to_stand_bridge",
+      "name": "Stand-to-Stand Bridge",
+      "step": 2,
+      "mastery_criteria": { "sets": 2, "reps": 10 }
+    },
+    {
+      "key": "cc2_l_sit",
+      "name": "L-Sit",
+      "step": 3,
+      "mastery_criteria": { "sets": 3, "reps": 1, "hold_seconds": 30 }
+    },
+    {
+      "key": "cc2_v_sit",
+      "name": "V-Sit",
+      "step": 4,
+      "mastery_criteria": { "sets": 3, "reps": 1, "hold_seconds": 15 }
+    },
+    {
+      "key": "cc2_human_flag_tuck",
+      "name": "Human Flag (Tuck)",
+      "step": 5,
+      "mastery_criteria": { "sets": 3, "reps": 1, "hold_seconds": 10 }
+    }
+  ],
+  "edges": [
+    { "from": "cc2_hspu_wall", "to": "cc2_stand_to_stand_bridge", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc2_stand_to_stand_bridge", "to": "cc2_l_sit", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc2_l_sit", "to": "cc2_v_sit", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc2_v_sit", "to": "cc2_human_flag_tuck", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } }
+  ]
+}

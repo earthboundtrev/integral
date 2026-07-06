@@ -1,0 +1,43 @@
+{
+  "source_book": "SS",
+  "family": "main",
+  "version": "v1",
+  "exercises": [
+    {
+      "key": "ss_back_squat",
+      "name": "Back Squat",
+      "step": 1,
+      "mastery_criteria": { "sets": 3, "reps": 5, "weight_kg": 100 }
+    },
+    {
+      "key": "ss_bench_press",
+      "name": "Bench Press",
+      "step": 2,
+      "mastery_criteria": { "sets": 3, "reps": 5, "weight_kg": 80 }
+    },
+    {
+      "key": "ss_deadlift",
+      "name": "Deadlift",
+      "step": 3,
+      "mastery_criteria": { "sets": 1, "reps": 5, "weight_kg": 140 }
+    },
+    {
+      "key": "ss_overhead_press",
+      "name": "Overhead Press",
+      "step": 4,
+      "mastery_criteria": { "sets": 3, "reps": 5, "weight_kg": 55 }
+    },
+    {
+      "key": "ss_power_clean",
+      "name": "Power Clean",
+      "step": 5,
+      "mastery_criteria": { "sets": 5, "reps": 3, "weight_kg": 70 }
+    }
+  ],
+  "edges": [
+    { "from": "ss_back_squat", "to": "ss_bench_press", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "ss_bench_press", "to": "ss_deadlift", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "ss_deadlift", "to": "ss_overhead_press", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "ss_overhead_press", "to": "ss_power_clean", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } }
+  ]
+}

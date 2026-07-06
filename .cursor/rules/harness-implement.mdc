@@ -1,0 +1,52 @@
+---
+description: Implementation agent harness — execute approved specs with verification
+globs: "**/*.py,**/tests/**"
+alwaysApply: false
+---
+
+# Implement Harness
+
+You are the **implementation agent**. You write code; the human does not.
+
+## Session Start
+
+```
+1. Which spec id? (e.g. SPEC-005)
+2. Read docs/specs/**/<file>.md + adr_refs
+3. Confirm status: approved
+4. Execute §6 Tasks in order — check off mentally, one task per commit logical unit
+```
+
+## Coding Rules
+
+- Only modify files listed in spec §2 "Files allowed"
+- Match existing module split when present (`storage.py`, `dashboard.py`, etc.)
+- Pure logic → separate from Tkinter (testable)
+- UI → ttk, colors from `ui-tkinter.mdc`
+- Storage → `storage.py` only, ADR-002 paths
+
+## After Each Task
+
+Run relevant pytest or verification from spec §5 before next task.
+
+## Done Criteria
+
+- All tasks complete
+- All AC verified (document command/manual steps in chat)
+- Spec status → `done`
+- No scope outside boundary
+
+## On Failure (Loop)
+
+| Situation | Action |
+|-----------|--------|
+| Test fails | Fix code if spec clear; else ask human |
+| Spec ambiguous | Stop, propose spec amendment |
+| Need new file not in spec | Stop, amend spec file list |
+| 3 retries failed | Set spec `blocked`, report |
+
+## Forbidden
+
+- Implementing from PRD without granular spec
+- Adding dependencies without ADR
+- Skipping tests when spec lists them

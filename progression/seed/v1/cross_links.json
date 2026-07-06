@@ -1,0 +1,12 @@
+{
+  "source_book": "CROSS",
+  "family": "cross_links",
+  "version": "v1",
+  "exercises": [],
+  "edges": [
+    { "from": "cc1_push_10", "to": "og_planche_lean", "edge_type": "recommended", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_push_10", "to": "ec_clap_pushup", "edge_type": "recommended", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_pull_10", "to": "og_front_lever_tuck", "edge_type": "recommended", "unlock_condition": { "requires": "mastered" } },
+    { "from": "ss_back_squat", "to": "cc1_squat_05", "edge_type": "recommended", "unlock_condition": { "requires": "mastered" } }
+  ]
+}

@@ -1,0 +1,40 @@
+---
+description: Review harness — verify implementation against spec AC before marking done
+alwaysApply: false
+---
+
+# Review / Eval Harness
+
+Use after implementation or when human says "verify SPEC-NNN".
+
+## Review Loop
+
+1. Read spec §4 Acceptance Criteria
+2. Read spec §5 Verification methods
+3. Run each verification command
+4. Compare behavior to AC literally — EARS wording is the contract
+5. Report table:
+
+| AC | Pass/Fail | Evidence |
+|----|-----------|----------|
+| AC-1 | ✅ | `pytest ...` output |
+
+## If Any Fail
+
+- **Code wrong, spec clear** → send back to implement harness
+- **Spec wrong** → spec author harness amends spec first (ADR-007)
+- **Flaky test** → fix test or spec verification method
+
+## Performance Eval (when spec requires)
+
+```bash
+python -X importtime tracker.py 2>&1 | findstr matplotlib
+```
+
+matplotlib should NOT appear in startup import chain until graphs opened.
+
+## Mark Done
+
+Only when all AC pass: update spec frontmatter `status: done`.
+
+Human does not need to read code — AC table is the review artifact.

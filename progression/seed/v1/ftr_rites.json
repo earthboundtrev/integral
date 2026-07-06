@@ -1,0 +1,43 @@
+{
+  "source_book": "FTR",
+  "family": "rites",
+  "version": "v1",
+  "exercises": [
+    {
+      "key": "ftr_rite_1",
+      "name": "Rite 1 - Spinning",
+      "step": 1,
+      "mastery_criteria": { "sets": 1, "reps": 21, "hold_seconds": 30 }
+    },
+    {
+      "key": "ftr_rite_2",
+      "name": "Rite 2 - Leg Raises",
+      "step": 2,
+      "mastery_criteria": { "sets": 1, "reps": 21, "hold_seconds": 3 }
+    },
+    {
+      "key": "ftr_rite_3",
+      "name": "Rite 3 - Kneeling Backbend",
+      "step": 3,
+      "mastery_criteria": { "sets": 1, "reps": 21, "hold_seconds": 3 }
+    },
+    {
+      "key": "ftr_rite_4",
+      "name": "Rite 4 - Tabletop Bridge",
+      "step": 4,
+      "mastery_criteria": { "sets": 1, "reps": 21, "hold_seconds": 5 }
+    },
+    {
+      "key": "ftr_rite_5",
+      "name": "Rite 5 - Pendulum (Up/Down Dog)",
+      "step": 5,
+      "mastery_criteria": { "sets": 1, "reps": 21, "hold_seconds": 5 }
+    }
+  ],
+  "edges": [
+    { "from": "ftr_rite_1", "to": "ftr_rite_2", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "ftr_rite_2", "to": "ftr_rite_3", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "ftr_rite_3", "to": "ftr_rite_4", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "ftr_rite_4", "to": "ftr_rite_5", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } }
+  ]
+}

@@ -1,0 +1,46 @@
+---
+description: Spec-driven workflow — read spec, implement loop, verify AC
+alwaysApply: true
+---
+
+# Spec-Driven Workflow
+
+Full process: `docs/WORKFLOW.md`. Template: `docs/SPEC_TEMPLATE.md`.
+
+## Before Writing Any Code
+
+1. Identify spec: `docs/specs/<phase>/NNN-*.md`
+2. Confirm `status: approved` — if `draft`, finish spec first
+3. Read `docs/PRD.md`, referenced ADRs, this spec's Target/Boundary/AC/Tasks
+4. Set spec status → `in_progress`
+
+## The Six Spec Essentials
+
+Every implementation must satisfy:
+
+| # | Element | Where in spec |
+|---|---------|---------------|
+| 1 | Target | §1 outcome |
+| 2 | Boundary | §2 files in/out |
+| 3 | Proof | §5 verification per AC |
+| 4 | Loop | §7 retry rules |
+| 5 | Design | §3 mermaid/data |
+| 6 | Tasks | §6 ordered checklist |
+
+## Implementation Loop
+
+```
+Read spec → Execute tasks in order → Run verification for each AC → Pass?
+  No  → Spec gap? Update spec. Code bug? Fix within file boundary. Retry (max 3).
+  Yes → Set spec status `done`, note how each AC was verified.
+```
+
+## Sizing
+
+- PRD = whole product (never implement directly)
+- **One spec ≈ one PR** — stay within spec's file list
+- Do not touch files not listed in spec without amending spec
+
+## New Feature Request
+
+If no spec exists: create one from `docs/SPEC_TEMPLATE.md`, set `draft`, ask human to approve — then implement.

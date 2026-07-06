@@ -1,0 +1,41 @@
+---
+description: Constitution — ADRs and non-negotiables agents must never break
+alwaysApply: true
+---
+
+# Constitution
+
+**Read before any work.** Specs implement features; ADRs are immutable unless human adds superseding ADR.
+
+## ADR Index (docs/adr/)
+
+| ADR | Rule |
+|-----|------|
+| 001 | Python + Tkinter only — no C++/Electron/Qt |
+| 002 | Local-first `~/.personal_dev_tracker/` — no cloud in core |
+| 003 | matplotlib lazy-loaded only |
+| 004 | SQLite for fitness Phase 2+ only |
+| 005 | 8 fixed category names — no renames without migration spec |
+| 006 | Progression is DAG — validate cycles |
+| 007 | **No code without approved spec** — spec is source of truth |
+| 008 | Local multi-profile accounts (isolated data per profile) |
+| 009 | Standalone EXE — user data in `~/.personal_dev_tracker/`, not beside EXE |
+
+## If Code Conflicts With Spec or ADR
+
+1. Stop implementing.
+2. Update spec (revision history) or add ADR.
+3. Get human approval.
+4. Re-implement.
+
+Never hotfix code that drifts from docs.
+
+## Performance Budget
+
+- Dashboard < 2s cold start
+- matplotlib NOT at module import
+- Minimal deps: stdlib + matplotlib only
+
+## Human Writes Zero Application Code
+
+Human approves PRD, ADRs, and specs. Agents implement, test, loop until AC pass.

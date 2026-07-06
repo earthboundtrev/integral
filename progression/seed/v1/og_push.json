@@ -1,0 +1,50 @@
+{
+  "source_book": "OG",
+  "family": "push",
+  "version": "v1",
+  "exercises": [
+    {
+      "key": "og_planche_lean",
+      "name": "Planche Lean",
+      "step": 1,
+      "mastery_criteria": { "sets": 3, "reps": 1, "hold_seconds": 30 }
+    },
+    {
+      "key": "og_tuck_planche",
+      "name": "Tuck Planche",
+      "step": 2,
+      "mastery_criteria": { "sets": 3, "reps": 1, "hold_seconds": 20 }
+    },
+    {
+      "key": "og_adv_tuck_planche",
+      "name": "Advanced Tuck Planche",
+      "step": 3,
+      "mastery_criteria": { "sets": 3, "reps": 1, "hold_seconds": 15 }
+    },
+    {
+      "key": "og_straddle_planche",
+      "name": "Straddle Planche",
+      "step": 4,
+      "mastery_criteria": { "sets": 3, "reps": 1, "hold_seconds": 10 }
+    },
+    {
+      "key": "og_front_lever_tuck",
+      "name": "Front Lever (Tuck)",
+      "step": 5,
+      "mastery_criteria": { "sets": 3, "reps": 1, "hold_seconds": 20 }
+    },
+    {
+      "key": "og_front_lever",
+      "name": "Front Lever",
+      "step": 6,
+      "mastery_criteria": { "sets": 3, "reps": 1, "hold_seconds": 10 }
+    }
+  ],
+  "edges": [
+    { "from": "og_planche_lean", "to": "og_tuck_planche", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "og_tuck_planche", "to": "og_adv_tuck_planche", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "og_adv_tuck_planche", "to": "og_straddle_planche", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "og_adv_tuck_planche", "to": "og_front_lever_tuck", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "og_front_lever_tuck", "to": "og_front_lever", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } }
+  ]
+}

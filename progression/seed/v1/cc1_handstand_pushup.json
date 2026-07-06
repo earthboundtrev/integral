@@ -1,0 +1,78 @@
+{
+  "source_book": "CC1",
+  "family": "handstand_pushup",
+  "version": "v1",
+  "exercises": [
+    {
+      "key": "cc1_hspu_01",
+      "name": "Wall Headstands",
+      "step": 1,
+      "mastery_criteria": { "sets": 1, "reps": 1, "hold_seconds": 120 }
+    },
+    {
+      "key": "cc1_hspu_02",
+      "name": "Crow Stands",
+      "step": 2,
+      "mastery_criteria": { "sets": 1, "reps": 1, "hold_seconds": 60 }
+    },
+    {
+      "key": "cc1_hspu_03",
+      "name": "Wall Handstands",
+      "step": 3,
+      "mastery_criteria": { "sets": 1, "reps": 1, "hold_seconds": 120 }
+    },
+    {
+      "key": "cc1_hspu_04",
+      "name": "Half Handstand Push-ups",
+      "step": 4,
+      "mastery_criteria": { "sets": 2, "reps": 20 }
+    },
+    {
+      "key": "cc1_hspu_05",
+      "name": "Handstand Push-ups",
+      "step": 5,
+      "mastery_criteria": { "sets": 2, "reps": 15 }
+    },
+    {
+      "key": "cc1_hspu_06",
+      "name": "Close Handstand Push-ups",
+      "step": 6,
+      "mastery_criteria": { "sets": 2, "reps": 12 }
+    },
+    {
+      "key": "cc1_hspu_07",
+      "name": "Uneven Handstand Push-ups",
+      "step": 7,
+      "mastery_criteria": { "sets": 2, "reps": 10 }
+    },
+    {
+      "key": "cc1_hspu_08",
+      "name": "Half One-Arm Handstand Push-ups",
+      "step": 8,
+      "mastery_criteria": { "sets": 2, "reps": 8 }
+    },
+    {
+      "key": "cc1_hspu_09",
+      "name": "Lever Handstand Push-ups",
+      "step": 9,
+      "mastery_criteria": { "sets": 2, "reps": 6 }
+    },
+    {
+      "key": "cc1_hspu_10",
+      "name": "One-Arm Handstand Push-ups",
+      "step": 10,
+      "mastery_criteria": { "sets": 1, "reps": 5 }
+    }
+  ],
+  "edges": [
+    { "from": "cc1_hspu_01", "to": "cc1_hspu_02", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_hspu_02", "to": "cc1_hspu_03", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_hspu_03", "to": "cc1_hspu_04", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_hspu_04", "to": "cc1_hspu_05", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_hspu_05", "to": "cc1_hspu_06", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_hspu_06", "to": "cc1_hspu_07", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_hspu_07", "to": "cc1_hspu_08", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_hspu_08", "to": "cc1_hspu_09", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
+    { "from": "cc1_hspu_09", "to": "cc1_hspu_10", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } }
+  ]
+}

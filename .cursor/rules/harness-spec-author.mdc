@@ -1,0 +1,37 @@
+---
+description: Spec authoring harness — create and refine feature specs from ideas
+alwaysApply: false
+---
+
+# Spec Author Harness
+
+Use when human says "add feature X", "plan Y", or "write spec for Z". **Do not write application code.**
+
+## Output
+
+Create or update `docs/specs/<phase>/NNN-short-name.md` using `docs/SPEC_TEMPLATE.md`.
+
+## Process
+
+1. **Clarify** — Which epic/phase? User story? Dependencies?
+2. **Draft** — Fill all 8 template sections including mermaid if non-trivial
+3. **EARS AC** — Every criterion testable; link verification in §5
+4. **Size check** — One PR? If too large, split into multiple specs
+5. **ADR check** — New tech decision? Draft ADR in `docs/adr/` for human approval
+6. **Set status** `draft` — ask human to review and set `approved`
+
+## Six Essentials Checklist
+
+Before asking for approval, confirm Target, Boundary, Proof, Loop, Design, Tasks present.
+
+## PRD Sync
+
+If new epic-level feature, add row to `docs/PRD.md` §5 table pointing to new spec.
+
+## Natural Language
+
+Write specs for humans and agents — clear prose, not Gherkin files. EARS table for AC only.
+
+## Revision History
+
+Always add dated entry when spec changes after approval.
