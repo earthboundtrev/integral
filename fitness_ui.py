@@ -159,64 +159,49 @@ def open_log_dialog_for_exercise(parent, repo, exercise_id, on_saved=None):
     ttk.Button(btns, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT)
 
 
-def show_fitness_window(root, on_session_saved=None):
+def show_fitness_window(root, on_session_saved=None, theme=None):
     import tkinter as tk
     from tkinter import messagebox, scrolledtext, ttk
 
     import body_composition_ui
     import fitness_programs
+    import theme as app_theme
     import ui_scroll
-    import ui_theme
     from progression.video_catalog import get_exercise_video, open_exercise_video
 
     repo = get_profile_repo()
     ensure_fitness_seeded(repo)
 
-    win = tk.Toplevel(root)
-    win.title("Fitness Progress")
-    win.geometry("1100x680")
-    win.transient(root)
-    ui_theme.configure_window(win)
+    if theme is None:
+        theme = app_theme.get_theme(False)
+        app_theme.apply_theme(root, theme)
 
-    header = ttk.Frame(win, padding=12)
+    win = tk.Toplevel(root)
+    win.title("Fitness Hub")
+    win.geometry("1100x720")
+    win.transient(root)
+    win.configure(bg=theme["bg"])
+    app_theme.apply_theme(win, theme)
+
+    header = ttk.Frame(win, padding=(16, 14, 16, 8))
     header.pack(fill=tk.X)
-    ttk.Label(header, text="Fitness Hub", style="Heading.TLabel").pack(anchor="w")
+    ttk.Label(header, text="Fitness Hub", style="Title.TLabel").pack(anchor="w")
     ttk.Label(
         header,
-        text="Programs group full step series. Expand any program to see all steps. Your current step is highlighted.",
+        text="Expand a book (CC1, SS, …), then a program (Pull, Push, …), then pick a step.",
         style="Muted.TLabel",
         wraplength=900,
-    ).pack(anchor="w", pady=4)
+    ).pack(anchor="w", pady=(4, 0))
 
-    filter_frame = ttk.LabelFrame(header, text="Find a step", padding=10, style="Card.TLabelframe")
-    filter_frame.pack(fill=tk.X, pady=(8, 0))
-    books = sorted({row["source_book"] for row in list_exercise_rows(repo)})
-    families = sorted({row["family"] for row in list_exercise_rows(repo)})
-    book_var = tk.StringVar(value="All")
-    family_var = tk.StringVar(value="All")
+    filter_frame = ttk.LabelFrame(header, text="Search steps", padding=10, style="Card.TLabelframe")
+    filter_frame.pack(fill=tk.X, pady=(10, 0))
     search_var = tk.StringVar(value="")
 
     search_row = ttk.Frame(filter_frame, style="Surface.TFrame")
-    search_row.pack(fill=tk.X, pady=(0, 6))
-    ttk.Label(search_row, text="Search", style="OnSurfaceSubheading.TLabel").pack(
-        side=tk.LEFT, padx=(0, 8)
-    )
-    search_entry = ttk.Entry(search_row, textvariable=search_var)
+    search_row.pack(fill=tk.X)
+    search_entry = ttk.Entry(search_row, textvariable=search_var, font=app_theme.FONTS["body"])
     search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8))
     ttk.Button(search_row, text="Clear", command=lambda: search_var.set("")).pack(side=tk.LEFT)
-
-    combo_row = ttk.Frame(filter_frame, style="Surface.TFrame")
-    combo_row.pack(fill=tk.X)
-    ttk.Label(combo_row, text="Book:", style="OnSurfaceMuted.TLabel").pack(side=tk.LEFT)
-    book_combo = ttk.Combobox(
-        combo_row, textvariable=book_var, values=["All"] + books, state="readonly", width=10
-    )
-    book_combo.pack(side=tk.LEFT, padx=4)
-    ttk.Label(combo_row, text="Family:", style="OnSurfaceMuted.TLabel").pack(side=tk.LEFT)
-    family_combo = ttk.Combobox(
-        combo_row, textvariable=family_var, values=["All"] + families, state="readonly", width=14
-    )
-    family_combo.pack(side=tk.LEFT, padx=4)
 
     body = ttk.Panedwindow(win, orient=tk.HORIZONTAL)
     body.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 4))
@@ -225,7 +210,7 @@ def show_fitness_window(root, on_session_saved=None):
     body.add(list_frame, weight=3)
 
     tree = ttk.Treeview(list_frame, columns=("status", "criteria"), show="tree headings")
-    tree.heading("#0", text="Program / Step")
+    tree.heading("#0", text="Book / Program / Step")
     tree.heading("status", text="Status")
     tree.heading("criteria", text="Mastery")
     tree.column("#0", width=360, stretch=True)
@@ -237,7 +222,7 @@ def show_fitness_window(root, on_session_saved=None):
     tree.configure(yscrollcommand=scroll.set)
     scroll.pack(side=tk.RIGHT, fill=tk.Y)
     ui_scroll.configure_treeview_scroll(tree)
-    ui_theme.configure_fitness_tree_tags(tree)
+    app_theme.configure_fitness_tree_tags(tree, theme)
 
     detail_frame = ttk.LabelFrame(body, text="Step Detail", padding=12, style="Card.TLabelframe")
     body.add(detail_frame, weight=2)
@@ -263,49 +248,54 @@ def show_fitness_window(root, on_session_saved=None):
     selected_video: dict[str, str] = {}
     step_rows: dict[str, dict] = {}
 
-    def current_filters():
-        book = None if book_var.get() == "All" else book_var.get()
-        family = None if family_var.get() == "All" else family_var.get()
-        return book, family
-
     def refresh_list():
         nonlocal selected_video, step_rows
-        book, family = current_filters()
         step_rows = {}
         for item in tree.get_children():
             tree.delete(item)
 
-        rows = list_exercise_rows(repo, source_book=book, family=family)
-        programs = fitness_programs.build_program_groups(rows)
-        programs = fitness_programs.filter_program_groups(programs, search_var.get())
+        rows = list_exercise_rows(repo)
+        hierarchy = fitness_programs.build_program_hierarchy(rows, expand_current=False)
+        hierarchy = fitness_programs.filter_program_hierarchy(hierarchy, search_var.get())
 
-        for program in programs:
-            parent_id = f"prog:{program['id']}"
+        for book in hierarchy:
+            book_id = book["id"]
             tree.insert(
                 "",
                 tk.END,
-                iid=parent_id,
-                text=program["title"],
-                values=("", program["summary"]),
-                tags=("program",),
-                open=program["expanded"],
+                iid=book_id,
+                text=book["title"],
+                values=("", book.get("subtitle", book["summary"])),
+                tags=("book",),
+                open=book["expanded"],
             )
-            for step in program["steps"]:
-                step = {**step, "is_current": step["id"] == program["current_step_id"]}
-                step_rows[step["id"]] = step
-                criteria = step["criteria"]
-                crit_text = ", ".join(f"{k}={v}" for k, v in criteria.items())
-                tags = [step["status"]]
-                if step["is_current"]:
-                    tags.append("current")
+            for program in book["programs"]:
+                parent_id = f"prog:{program['id']}"
                 tree.insert(
-                    parent_id,
+                    book_id,
                     tk.END,
-                    iid=step["id"],
-                    text=fitness_programs.format_step_label(step),
-                    values=(step["status"].replace("_", " "), crit_text),
-                    tags=tuple(tags),
+                    iid=parent_id,
+                    text=program["title"],
+                    values=("", program["summary"]),
+                    tags=("program",),
+                    open=program["expanded"],
                 )
+                for step in program["steps"]:
+                    step = {**step, "is_current": step["id"] == program["current_step_id"]}
+                    step_rows[step["id"]] = step
+                    criteria = step["criteria"]
+                    crit_text = ", ".join(f"{k}={v}" for k, v in criteria.items())
+                    tags = [step["status"]]
+                    if step["is_current"]:
+                        tags.append("current")
+                    tree.insert(
+                        parent_id,
+                        tk.END,
+                        iid=step["id"],
+                        text=fitness_programs.format_step_label(step),
+                        values=(step["status"].replace("_", " "), crit_text),
+                        tags=tuple(tags),
+                    )
 
     def show_step_detail(step_id: str | None):
         nonlocal selected_video
@@ -313,9 +303,11 @@ def show_fitness_window(root, on_session_saved=None):
         video_btn.configure(state=tk.DISABLED)
         log_btn.configure(state=tk.DISABLED)
 
-        if not step_id or step_id.startswith("prog:") or step_id not in step_rows:
+        if not step_id or step_id.startswith(("book:", "prog:")) or step_id not in step_rows:
             detail_title.configure(text="Select a step")
-            detail_meta.configure(text="Expand a program on the left, then click any step to see detail.")
+            detail_meta.configure(
+                text="Expand CC1 (or another book), then a program like Pull, then click a step."
+            )
             detail_criteria.configure(text="")
             detail_video.configure(text="")
             return
@@ -352,7 +344,7 @@ def show_fitness_window(root, on_session_saved=None):
 
     def open_selected_log():
         selected = tree.selection()
-        if not selected or selected[0].startswith("prog:"):
+        if not selected or selected[0].startswith(("book:", "prog:")):
             messagebox.showinfo("Select Step", "Choose a step under a program to log.")
             return
         open_log_dialog_for_exercise(win, repo, selected[0], on_saved=refresh_list)
@@ -490,8 +482,6 @@ def show_fitness_window(root, on_session_saved=None):
         for session in sessions:
             txt.insert(tk.END, format_session_summary(repo, session) + "\n\n")
 
-    book_combo.bind("<<ComboboxSelected>>", lambda _e: refresh_list())
-    family_combo.bind("<<ComboboxSelected>>", lambda _e: refresh_list())
     search_var.trace_add("write", lambda *_args: refresh_list())
     search_entry.bind("<Return>", lambda _e: refresh_list())
     search_entry.focus_set()

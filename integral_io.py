@@ -98,6 +98,21 @@ def export_milestones_csv(milestones: list[dict], path: str) -> int:
     return len(milestones)
 
 
+def export_journal_csv(journal: dict, path: str) -> int:
+    from journal import export_rows
+
+    rows = export_rows(journal)
+    with open(path, "w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=["entry_date", "written_at", "prompt", "title", "body", "backdate_reason"],
+        )
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+    return len(rows)
+
+
 def backup_payload(payload: dict) -> dict:
     return {
         **payload,

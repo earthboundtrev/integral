@@ -30,8 +30,16 @@ def day_activity_count(
     *,
     category: str | None = None,
     sessions: list[dict] | None = None,
+    journal: dict | None = None,
 ) -> int:
     date_str = day.strftime("%Y-%m-%d")
+    if category == "__journal__":
+        if not journal:
+            return 0
+        from journal import count_entries_for_day
+
+        return count_entries_for_day(journal, day)
+
     day_entries = entries.get(date_str, {})
     if category:
         return 1 if category in day_entries else 0
@@ -42,6 +50,10 @@ def day_activity_count(
             if session.get("date") == date_str:
                 count += 1
                 break
+    if journal:
+        from journal import count_entries_for_day
+
+        count += count_entries_for_day(journal, day)
     return count
 
 
@@ -94,6 +106,7 @@ class ContributionGrid(ttk.Frame):
         categories: dict,
         theme: dict,
         sessions: list[dict] | None = None,
+        journal: dict | None = None,
         on_day_click: Callable[[str], None] | None = None,
         num_weeks: int = 53,
     ) -> None:
@@ -102,6 +115,7 @@ class ContributionGrid(ttk.Frame):
         self.categories = categories
         self.theme = theme
         self.sessions = sessions or []
+        self.journal = journal or {"entries": []}
         self.on_day_click = on_day_click
         self.num_weeks = num_weeks
         self.category_filter = tk.StringVar(value="All areas")
@@ -139,7 +153,7 @@ class ContributionGrid(ttk.Frame):
         ttk.Label(row, text="Activity", font=("Helvetica", 13, "bold")).pack(side=tk.LEFT)
         ttk.Label(row, text="  —  click a day to explore", foreground=self.theme["muted"]).pack(side=tk.LEFT)
 
-        filter_values = ["All areas", *list(self.categories.keys()), "Fitness sessions"]
+        filter_values = ["All areas", "Journal", *list(self.categories.keys()), "Fitness sessions"]
         ttk.Label(row, text="Show:").pack(side=tk.RIGHT, padx=(8, 4))
         ttk.Combobox(
             row,
@@ -155,6 +169,8 @@ class ContributionGrid(ttk.Frame):
             return None
         if value == "Fitness sessions":
             return "__fitness__"
+        if value == "Journal":
+            return "__journal__"
         return value
 
     def _count_for_day(self, day: date) -> int:
@@ -167,6 +183,7 @@ class ContributionGrid(ttk.Frame):
             day,
             category=selected,
             sessions=self.sessions if selected is None else None,
+            journal=self.journal if selected in (None, "__journal__") else None,
         )
 
     def _draw(self) -> None:

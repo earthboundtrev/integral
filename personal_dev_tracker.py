@@ -21,9 +21,21 @@ from integral_dialogs import (
     show_onboarding,
     show_security_dialog,
 )
+import journal
+from journal_ui import show_journal_window
 from milestones import merge_milestones, milestone_summary
 from paths import APP_NAME, data_file, ensure_data_file, icon_path
-from theme import apply_theme, get_theme, style_canvas, style_listbox, style_text_widget
+from theme import (
+    FONTS,
+    apply_theme,
+    category_accent,
+    get_theme,
+    make_card,
+    streak_badge,
+    style_canvas,
+    style_listbox,
+    style_text_widget,
+)
 from vault import is_encrypted_file, load_data_file, save_data_file
 
 CATEGORY_SHORT_LABELS = {
@@ -64,6 +76,7 @@ class PersonalDevelopmentTracker:
         self.settings: dict = {"dark_mode": False}
         self.sessions: list = []
         self.milestones: list = []
+        self.journal: dict = journal.empty_journal()
         self.program_state: dict = {}
         self.programs: dict = load_program_definitions()
         self.data_path = DATA_FILE
@@ -436,6 +449,7 @@ class PersonalDevelopmentTracker:
             self.settings = {**{"dark_mode": False}, **migrated.get("settings", {})}
             self.sessions = migrated.get("sessions", [])
             self.milestones = merge_milestones(migrated.get("milestones"))
+            self.journal = journal.normalize_journal(migrated.get("journal"))
             self.program_state = migrated.get("program_state", {})
         else:
             self.categories = self.get_default_categories()
@@ -443,6 +457,7 @@ class PersonalDevelopmentTracker:
             self.settings = {"dark_mode": False, "onboarding_complete": False}
             self.sessions = []
             self.milestones = merge_milestones(None)
+            self.journal = journal.empty_journal()
             self.program_state = compute_program_state(self.programs, self.sessions, self.settings)
             self.save_data()
 
@@ -455,6 +470,7 @@ class PersonalDevelopmentTracker:
             "settings": self.settings,
             "sessions": self.sessions,
             "milestones": self.milestones,
+            "journal": self.journal,
             "program_state": self.program_state,
             "user_levels": {},
         }
@@ -517,32 +533,40 @@ class PersonalDevelopmentTracker:
         logged_count, total = self.count_today_logged()
         today_entries = self.entries.get(self.today_str(), {})
 
-        log_bar = ttk.LabelFrame(self.root, text="Today's Log", padding=12)
-        log_bar.pack(fill=tk.X, padx=15, pady=(0, 8))
+        log_bar = ttk.LabelFrame(self.root, text="Today's Log", padding=14, style="Card.TLabelframe")
+        log_bar.pack(fill=tk.X, padx=16, pady=(0, 10))
 
-        top = ttk.Frame(log_bar)
+        top = ttk.Frame(log_bar, style="Surface.TFrame")
         top.pack(fill=tk.X)
+        left = ttk.Frame(top, style="Surface.TFrame")
+        left.pack(side=tk.LEFT, fill=tk.X, expand=True)
         ttk.Label(
-            top,
-            text=f"{logged_count} of {total} life areas logged today",
-            font=("Helvetica", 13, "bold"),
-        ).pack(side=tk.LEFT)
+            left,
+            text=f"{logged_count} of {total} life areas logged",
+            style="OnSurfaceSubheading.TLabel",
+        ).pack(anchor="w")
         ttk.Label(
-            top,
+            left,
             text="Log as you go, or reflect at end of day — pick any area below.",
-            foreground=self.theme["muted"],
-        ).pack(side=tk.LEFT, padx=12)
+            style="OnSurfaceMuted.TLabel",
+        ).pack(anchor="w", pady=(2, 0))
 
-        actions = ttk.Frame(top)
+        actions = ttk.Frame(top, style="Surface.TFrame")
         actions.pack(side=tk.RIGHT)
         next_cat = self.first_unlogged_category()
         if next_cat:
             ttk.Button(
                 actions,
-                text=f"Continue Log → {CATEGORY_SHORT_LABELS.get(next_cat, next_cat)}",
+                text=f"Continue → {CATEGORY_SHORT_LABELS.get(next_cat, next_cat)}",
+                style="Accent.TButton",
                 command=lambda: self.open_log_dialog(next_cat),
             ).pack(side=tk.LEFT, padx=(0, 8))
-        ttk.Button(actions, text="Log Fitness Workout", command=self.show_fitness_hub).pack(side=tk.LEFT)
+        ttk.Button(
+            actions, text="Journal", style="Accent.TButton", command=self.show_journal
+        ).pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Button(
+            actions, text="Fitness Hub", style="Accent.TButton", command=self.show_fitness_hub
+        ).pack(side=tk.LEFT)
 
         progress = ttk.Progressbar(
             log_bar,
@@ -551,18 +575,20 @@ class PersonalDevelopmentTracker:
             maximum=max(total, 1),
             value=logged_count,
         )
-        progress.pack(fill=tk.X, pady=(8, 0))
+        progress.pack(fill=tk.X, pady=(10, 0))
 
-        btn_row = ttk.Frame(log_bar)
-        btn_row.pack(fill=tk.X, pady=(10, 0))
+        btn_row = ttk.Frame(log_bar, style="Surface.TFrame")
+        btn_row.pack(fill=tk.X, pady=(12, 0))
         for index, cat_name in enumerate(self.categories):
             short = CATEGORY_SHORT_LABELS.get(cat_name, cat_name)
             is_logged = cat_name in today_entries
             rating = today_entries.get(cat_name, {}).get("rating", "")
             label = f"✓ {short} ({rating}/10)" if is_logged else f"Log {short}"
+            btn_style = "Logged.TButton" if is_logged else "TButton"
             ttk.Button(
                 btn_row,
                 text=label,
+                style=btn_style,
                 command=lambda c=cat_name: self.open_log_dialog(c),
             ).grid(row=index // 4, column=index % 4, padx=4, pady=4, sticky="ew")
         for col in range(4):
@@ -579,22 +605,26 @@ class PersonalDevelopmentTracker:
         self.apply_current_theme()
 
         header = ttk.Frame(self.root)
-        header.pack(fill=tk.X, padx=15, pady=15)
+        header.pack(fill=tk.X, padx=16, pady=(16, 10))
+
+        title_block = ttk.Frame(header)
+        title_block.pack(side=tk.LEFT)
+        ttk.Label(title_block, text=APP_NAME, style="Title.TLabel").pack(anchor="w")
         ttk.Label(
-            header,
-            text=APP_NAME,
-            font=("Helvetica", 22, "bold"),
-        ).pack(side=tk.LEFT)
+            title_block,
+            text="Holistic life tracking across eighteen domains",
+            style="Muted.TLabel",
+        ).pack(anchor="w", pady=(2, 0))
+
+        right_header = ttk.Frame(header)
+        right_header.pack(side=tk.RIGHT)
+        streak_badge(right_header, self.theme, f"🔥 {self.get_streak()} day streak").pack(
+            side=tk.RIGHT, padx=(12, 0)
+        )
         ttk.Label(
-            header,
-            text=f"Today: {datetime.now().strftime('%B %d, %Y')}",
-            font=("Helvetica", 12),
-        ).pack(side=tk.RIGHT, padx=20)
-        ttk.Label(
-            header,
-            text=f"Overall streak: {self.get_streak()} days",
-            style="Accent.TLabel",
-            font=("Helvetica", 14, "bold"),
+            right_header,
+            text=f"Today · {datetime.now().strftime('%B %d, %Y')}",
+            style="Muted.TLabel",
         ).pack(side=tk.RIGHT)
 
         self.create_todays_log_bar()
@@ -607,7 +637,7 @@ class PersonalDevelopmentTracker:
         )
 
         notebook = ttk.Notebook(self.root)
-        notebook.pack(fill=tk.BOTH, expand=True, padx=15, pady=(0, 10))
+        notebook.pack(fill=tk.BOTH, expand=True, padx=16, pady=(0, 8))
 
         overview = ttk.Frame(notebook)
         categories_tab = ttk.Frame(notebook)
@@ -618,21 +648,29 @@ class PersonalDevelopmentTracker:
         self._build_categories_tab(categories_tab)
 
         footer = ttk.Frame(self.root)
-        footer.pack(fill=tk.X, padx=15, pady=10)
-        ttk.Button(footer, text="Refresh", command=self.create_dashboard).pack(side=tk.LEFT)
-        ttk.Button(footer, text="Guidance", command=self.show_guidance).pack(side=tk.LEFT, padx=8)
-        ttk.Button(footer, text="Weekly Summary", command=self.show_weekly_summary).pack(side=tk.LEFT, padx=8)
-        ttk.Button(footer, text="Full History", command=self.show_history).pack(side=tk.LEFT, padx=8)
-        ttk.Button(footer, text="Search Notes", command=self.show_search).pack(side=tk.LEFT, padx=8)
-        ttk.Button(footer, text="Graphs & Progress", command=self.show_graphs).pack(side=tk.LEFT, padx=8)
-        ttk.Button(footer, text="Fitness Hub", command=self.show_fitness_hub).pack(side=tk.LEFT, padx=8)
-        ttk.Button(footer, text="Milestones", command=self.show_milestones).pack(side=tk.LEFT, padx=8)
-        ttk.Button(footer, text="Export", command=self.show_export).pack(side=tk.LEFT, padx=8)
-        ttk.Button(footer, text="Backup", command=self.show_backup).pack(side=tk.LEFT, padx=8)
-        ttk.Button(footer, text="Edit Categories", command=self.show_settings).pack(side=tk.LEFT, padx=8)
-        ttk.Button(footer, text="Data & Security", command=self.show_security).pack(side=tk.LEFT, padx=8)
+        footer.pack(fill=tk.X, padx=16, pady=(4, 12))
+        ttk.Separator(footer, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=(0, 10))
+        nav = ttk.Frame(footer)
+        nav.pack(fill=tk.X)
+        ttk.Button(nav, text="Refresh", command=self.create_dashboard).pack(side=tk.LEFT)
+        ttk.Button(nav, text="Guidance", command=self.show_guidance).pack(side=tk.LEFT, padx=6)
+        ttk.Button(nav, text="Weekly Summary", command=self.show_weekly_summary).pack(side=tk.LEFT, padx=6)
+        ttk.Button(nav, text="Full History", command=self.show_history).pack(side=tk.LEFT, padx=6)
+        ttk.Button(nav, text="Search Notes", command=self.show_search).pack(side=tk.LEFT, padx=6)
+        ttk.Button(nav, text="Graphs & Progress", command=self.show_graphs).pack(side=tk.LEFT, padx=6)
+        ttk.Button(nav, text="Journal", style="Accent.TButton", command=self.show_journal).pack(
+            side=tk.LEFT, padx=6
+        )
+        ttk.Button(nav, text="Fitness Hub", style="Accent.TButton", command=self.show_fitness_hub).pack(
+            side=tk.LEFT, padx=6
+        )
+        ttk.Button(nav, text="Milestones", command=self.show_milestones).pack(side=tk.LEFT, padx=6)
+        ttk.Button(nav, text="Export", command=self.show_export).pack(side=tk.LEFT, padx=6)
+        ttk.Button(nav, text="Backup", command=self.show_backup).pack(side=tk.LEFT, padx=6)
+        ttk.Button(nav, text="Edit Categories", command=self.show_settings).pack(side=tk.LEFT, padx=6)
+        ttk.Button(nav, text="Data & Security", command=self.show_security).pack(side=tk.LEFT, padx=6)
         mode_label = "Light Mode" if self.settings.get("dark_mode") else "Dark Mode"
-        ttk.Button(footer, text=mode_label, command=self.toggle_dark_mode).pack(side=tk.RIGHT)
+        ttk.Button(nav, text=mode_label, command=self.toggle_dark_mode).pack(side=tk.RIGHT)
 
     def _build_overview_tab(self, parent: ttk.Frame) -> None:
         canvas = tk.Canvas(parent, highlightthickness=0)
@@ -653,7 +691,7 @@ class PersonalDevelopmentTracker:
 
         main.columnconfigure(0, weight=1)
 
-        grid_panel = ttk.Frame(main, borderwidth=2, relief="groove", padding=12)
+        grid_panel = ttk.LabelFrame(main, text="Activity", padding=12, style="Card.TLabelframe")
         grid_panel.grid(row=0, column=0, sticky="ew", padx=4, pady=4)
         ContributionGrid(
             grid_panel,
@@ -661,6 +699,7 @@ class PersonalDevelopmentTracker:
             categories=self.categories,
             theme=self.theme,
             sessions=self.sessions,
+            journal=self.journal,
             on_day_click=self.show_day_explorer,
         ).pack(fill=tk.X)
 
@@ -672,9 +711,9 @@ class PersonalDevelopmentTracker:
         ttk.Label(
             stats,
             text=f"Today: {logged_today}/{len(self.categories)} life areas logged"
-            + (f"  |  {fitness_today} fitness session(s)" if fitness_today else "")
-            + f"  |  {milestone_summary(self.milestones)}",
-            font=("Helvetica", 11),
+            + (f"  ·  {fitness_today} fitness session(s)" if fitness_today else "")
+            + f"  ·  {milestone_summary(self.milestones)}",
+            style="Muted.TLabel",
         ).pack(anchor="w")
         ttk.Button(stats, text="Explore today", command=lambda: self.show_day_explorer(today_str)).pack(
             anchor="w", pady=(6, 0)
@@ -712,10 +751,9 @@ class PersonalDevelopmentTracker:
                 row += 1
 
     def _render_guidance_panel(self, parent: ttk.Frame, row: int = 0) -> None:
-        panel = ttk.Frame(parent, borderwidth=2, relief="groove", padding=12)
+        panel = ttk.LabelFrame(parent, text="Today's Guidance", padding=12, style="Card.TLabelframe")
         panel.grid(row=row, column=0, columnspan=2, sticky="ew", padx=12, pady=(8, 8))
 
-        ttk.Label(panel, text="Today's Guidance", font=("Helvetica", 13, "bold")).pack(anchor="w")
         highlights = top_insights(self.insights, limit=3)
         if not highlights:
             ttk.Label(
@@ -741,39 +779,78 @@ class PersonalDevelopmentTracker:
 
         ttk.Button(panel, text="Full Guidance Report", command=self.show_guidance).pack(anchor="w", pady=(8, 0))
 
-    def create_category_card(self, parent: ttk.Frame, cat_name: str, cat_data: dict) -> ttk.Frame:
-        frame = ttk.Frame(parent, borderwidth=2, relief="groove", padding=12)
-        ttk.Label(frame, text=cat_name, font=("Helvetica", 14, "bold")).pack(anchor="w")
-        ttk.Label(frame, text=f"Current streak: {self.get_streak(cat_name)} days").pack(anchor="w", pady=4)
+    def create_category_card(self, parent: ttk.Frame, cat_name: str, cat_data: dict) -> tk.Frame:
+        outer, inner = make_card(parent, self.theme, accent=category_accent(cat_name))
+        surface = self.theme["surface"]
+        tk.Label(
+            inner,
+            text=cat_name,
+            font=FONTS["subheading"],
+            bg=surface,
+            fg=self.theme["fg"],
+            anchor="w",
+        ).pack(fill=tk.X)
+        tk.Label(
+            inner,
+            text=f"Streak: {self.get_streak(cat_name)} days",
+            font=FONTS["body"],
+            bg=surface,
+            fg=self.theme["muted"],
+            anchor="w",
+        ).pack(fill=tk.X, pady=(4, 0))
 
         today_str = datetime.now().strftime("%Y-%m-%d")
         today_entry = self.entries.get(today_str, {}).get(cat_name, {})
         if today_entry:
             rating = today_entry.get("rating", "?")
             status = f"Today's rating: {rating}/10"
-            style = "Success.TLabel"
+            status_fg = self.theme["success"]
         else:
             status = "Not logged today"
-            style = "Muted.TLabel"
-        ttk.Label(frame, text=status, style=style).pack(anchor="w", pady=4)
+            status_fg = self.theme["muted"]
+        tk.Label(
+            inner,
+            text=status,
+            font=FONTS["body_bold"],
+            bg=surface,
+            fg=status_fg,
+            anchor="w",
+        ).pack(fill=tk.X, pady=(4, 0))
 
         hint = category_insight(self.insights, cat_name)
         if hint:
-            hint_style = "Accent.TLabel" if hint.severity == "action" else "Muted.TLabel"
-            ttk.Label(frame, text=hint.title, style=hint_style, wraplength=320).pack(anchor="w")
+            hint_fg = self.theme["accent"] if hint.severity == "action" else self.theme["muted"]
+            tk.Label(
+                inner,
+                text=hint.title,
+                font=FONTS["body"],
+                bg=surface,
+                fg=hint_fg,
+                wraplength=320,
+                anchor="w",
+            ).pack(fill=tk.X, pady=(4, 0))
 
         ttk.Button(
-            frame,
+            inner,
             text="Log / Update Today",
+            style="Accent.TButton" if not today_entry else "TButton",
             command=lambda name=cat_name: self.open_log_dialog(name),
-        ).pack(fill=tk.X, pady=8)
+        ).pack(fill=tk.X, pady=(10, 0))
 
         notes = today_entry.get("notes", "")
         if notes:
             preview = notes[:70] + "..." if len(notes) > 70 else notes
-            ttk.Label(frame, text=f"Last note: {preview}", wraplength=320).pack(anchor="w")
+            tk.Label(
+                inner,
+                text=f"Note: {preview}",
+                font=FONTS["small"],
+                bg=surface,
+                fg=self.theme["muted"],
+                wraplength=320,
+                anchor="w",
+            ).pack(fill=tk.X, pady=(6, 0))
 
-        return frame
+        return outer
 
     def show_day_explorer(self, date_str: str) -> None:
         window = tk.Toplevel(self.root)
@@ -792,10 +869,11 @@ class PersonalDevelopmentTracker:
 
         day_entries = self.entries.get(date_str, {})
         day_fitness = [session for session in self.sessions if session.get("date") == date_str]
+        day_journal = journal.entries_for_day(self.journal, datetime.strptime(date_str, "%Y-%m-%d").date())
         ttk.Label(
             header,
-            text=f"{len(day_entries)} areas  |  {len(day_fitness)} fitness",
-            foreground=self.theme["muted"],
+            text=f"{len(day_entries)} areas  ·  {len(day_journal)} journal  ·  {len(day_fitness)} fitness",
+            style="Muted.TLabel",
         ).pack(side=tk.RIGHT)
 
         body = ttk.Frame(window)
@@ -843,6 +921,28 @@ class PersonalDevelopmentTracker:
             ttk.Label(scroll_frame, text="No life-area logs on this day.").grid(row=row, column=0, sticky="w", pady=8)
             row += 1
 
+        if day_journal:
+            ttk.Label(scroll_frame, text="Journal", style="Subheading.TLabel").grid(
+                row=row, column=0, sticky="w", pady=(12, 4)
+            )
+            row += 1
+            for item in day_journal:
+                card = ttk.LabelFrame(scroll_frame, text=item.get("title") or item.get("prompt") or "Entry", padding=8)
+                card.grid(row=row, column=0, sticky="ew", pady=4)
+                scroll_frame.columnconfigure(0, weight=1)
+                preview = item.get("body", "")
+                if len(preview) > 240:
+                    preview = preview[:240] + "..."
+                ttk.Label(card, text=preview, wraplength=620).pack(anchor="w")
+                if item.get("backdate_reason"):
+                    ttk.Label(
+                        card,
+                        text=f"Backdated: {item['backdate_reason']}",
+                        style="Muted.TLabel",
+                        wraplength=620,
+                    ).pack(anchor="w", pady=(4, 0))
+                row += 1
+
         if day_fitness:
             ttk.Label(scroll_frame, text="Fitness sessions", font=("Helvetica", 12, "bold")).grid(
                 row=row, column=0, sticky="w", pady=(12, 4)
@@ -860,7 +960,7 @@ class PersonalDevelopmentTracker:
 
         missing = [name for name in self.categories if name not in day_entries]
         if missing:
-            ttk.Label(scroll_frame, text="Not logged this day", font=("Helvetica", 11, "bold")).grid(
+            ttk.Label(scroll_frame, text="Not logged this day", style="Subheading.TLabel").grid(
                 row=row, column=0, sticky="w", pady=(16, 6)
             )
             row += 1
@@ -874,6 +974,10 @@ class PersonalDevelopmentTracker:
                 ).pack(side=tk.LEFT, padx=4, pady=4)
             row += 1
 
+        journal_row = ttk.Frame(scroll_frame)
+        journal_row.grid(row=row, column=0, sticky="w", pady=(8, 0))
+        ttk.Button(journal_row, text="+ Journal entry for this day", command=lambda: show_journal_window(self, date_str)).pack(side=tk.LEFT)
+
         footer = ttk.Frame(window)
         footer.pack(fill=tk.X, padx=15, pady=(0, 12))
         ttk.Button(footer, text="Close", command=window.destroy).pack(side=tk.RIGHT)
@@ -885,21 +989,73 @@ class PersonalDevelopmentTracker:
     def open_log_dialog(self, cat_name: str, date_str: str | None = None) -> None:
         dialog = tk.Toplevel(self.root)
         dialog.title(f"Log: {cat_name}")
-        dialog.geometry("560x760")
+        dialog.geometry("560x820")
         dialog.configure(bg=self.theme["bg"])
         dialog.transient(self.root)
         dialog.grab_set()
 
         cat_data = self.categories[cat_name]
-        today_str = date_str or datetime.now().strftime("%Y-%m-%d")
-        existing = self.entries.get(today_str, {}).get(cat_name, {})
+        today = datetime.now().strftime("%Y-%m-%d")
+        date_var = tk.StringVar(value=date_str or today)
+        backdate_var = tk.StringVar(value="")
+        existing_holder: dict[str, dict] = {"entry": {}}
 
-        ttk.Label(dialog, text=f"Date: {today_str}", font=("Helvetica", 11)).pack(pady=8)
+        def load_existing(*_args: object) -> None:
+            current_date = date_var.get().strip()
+            existing_holder["entry"] = self.entries.get(current_date, {}).get(cat_name, {})
+            existing = existing_holder["entry"]
+            rating_var.set(existing.get("rating", 5))
+            for item, var in check_vars.items():
+                var.set(existing.get("checklist", {}).get(item, False))
+            for name, var in metric_vars.items():
+                metric_def = next((m for m in cat_data["metrics"] if m["name"] == name), None)
+                default = metric_def.get("default", 0) if metric_def else 0
+                try:
+                    var.set(existing.get("metrics", {}).get(name, default))
+                except tk.TclError:
+                    pass
+            notes_text.delete("1.0", tk.END)
+            if existing.get("notes"):
+                notes_text.insert("1.0", existing["notes"])
+            backdate_var.set(existing.get("backdate_reason", "") or "")
+            refresh_backdate_ui()
 
-        ttk.Label(dialog, text="Overall Progress Rating (1-10)", font=("Helvetica", 11, "bold")).pack(
+        ttk.Label(dialog, text="Entry date (YYYY-MM-DD)", style="Subheading.TLabel").pack(anchor="w", padx=15, pady=(8, 0))
+        date_row = ttk.Frame(dialog)
+        date_row.pack(fill=tk.X, padx=15, pady=4)
+        ttk.Entry(date_row, textvariable=date_var, width=14).pack(side=tk.LEFT)
+
+        backdate_frame = ttk.Frame(dialog)
+        backdate_frame.pack(fill=tk.X, padx=15, pady=(0, 6))
+        backdate_label = ttk.Label(
+            backdate_frame,
+            text="Why are you logging for a past date?",
+            style="Muted.TLabel",
+        )
+        backdate_entry = ttk.Entry(backdate_frame, textvariable=backdate_var)
+        backdate_hint = ttk.Label(
+            backdate_frame,
+            text=f"Required for past dates (min {journal.MIN_BACKDATE_REASON_LEN} characters).",
+            style="Muted.TLabel",
+            wraplength=500,
+        )
+
+        def refresh_backdate_ui(*_args: object) -> None:
+            parsed = journal.parse_entry_date(date_var.get())
+            if parsed and parsed < datetime.now().date():
+                backdate_label.pack(anchor="w")
+                backdate_entry.pack(fill=tk.X, pady=(4, 2))
+                backdate_hint.pack(anchor="w")
+            else:
+                backdate_label.pack_forget()
+                backdate_entry.pack_forget()
+                backdate_hint.pack_forget()
+
+
+        ttk.Label(dialog, text="Overall Progress Rating (1-10)", style="Subheading.TLabel").pack(
             anchor="w", padx=15
         )
-        rating_var = tk.IntVar(value=existing.get("rating", 5))
+        rating_var = tk.IntVar(value=5)
         spin_frame = ttk.Frame(dialog)
         spin_frame.pack(padx=15, pady=5, fill=tk.X)
         ttk.Spinbox(
@@ -918,7 +1074,7 @@ class PersonalDevelopmentTracker:
         ).pack(anchor="w", padx=15, pady=(12, 4))
         check_vars: dict[str, tk.BooleanVar] = {}
         for item in cat_data["checklist"]:
-            var = tk.BooleanVar(value=existing.get("checklist", {}).get(item, False))
+            var = tk.BooleanVar(value=False)
             check_vars[item] = var
             ttk.Checkbutton(dialog, text=item, variable=var).pack(anchor="w", padx=25, pady=2)
 
@@ -930,7 +1086,7 @@ class PersonalDevelopmentTracker:
             metric_name = metric["name"]
             metric_type = metric.get("type", "number")
             metric_unit = metric.get("unit", "")
-            existing_val = existing.get("metrics", {}).get(metric_name, metric.get("default", 0))
+            existing_val = metric.get("default", 0)
 
             row = ttk.Frame(dialog)
             row.pack(fill=tk.X, padx=15, pady=3)
@@ -960,16 +1116,25 @@ class PersonalDevelopmentTracker:
         notes_text = scrolledtext.ScrolledText(dialog, height=12, width=62, wrap=tk.WORD, font=("Helvetica", 11))
         style_text_widget(notes_text, self.theme)
         notes_text.pack(padx=15, pady=5, fill=tk.BOTH, expand=True)
-        if existing.get("notes"):
-            notes_text.insert("1.0", existing["notes"])
+
+        date_var.trace_add("write", load_existing)
+        load_existing()
 
         btns = ttk.Frame(dialog)
         btns.pack(pady=15)
         ttk.Button(
             btns,
             text="Save Log",
+            style="Accent.TButton",
             command=lambda: self.save_log(
-                dialog, cat_name, today_str, rating_var, check_vars, metric_vars, notes_text
+                dialog,
+                cat_name,
+                date_var,
+                backdate_var,
+                rating_var,
+                check_vars,
+                metric_vars,
+                notes_text,
             ),
         ).pack(side=tk.LEFT, padx=10)
         ttk.Button(btns, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT)
@@ -978,12 +1143,20 @@ class PersonalDevelopmentTracker:
         self,
         dialog: tk.Toplevel,
         cat_name: str,
-        date_str: str,
+        date_var: tk.StringVar,
+        backdate_var: tk.StringVar,
         rating_var: tk.IntVar,
         check_vars: dict[str, tk.BooleanVar],
         metric_vars: dict[str, tk.Variable],
         notes_text: scrolledtext.ScrolledText,
     ) -> None:
+        date_str = date_var.get().strip()
+        reason = backdate_var.get().strip()
+        error = journal.validate_backdate(date_str, reason=reason)
+        if error:
+            messagebox.showwarning("Date", error)
+            return
+
         if date_str not in self.entries:
             self.entries[date_str] = {}
 
@@ -995,12 +1168,17 @@ class PersonalDevelopmentTracker:
             except (tk.TclError, ValueError):
                 metrics_data[name] = 0
 
-        self.entries[date_str][cat_name] = {
+        entry_payload = {
             "rating": rating_var.get(),
             "checklist": checklist_data,
             "metrics": metrics_data,
             "notes": notes_text.get("1.0", tk.END).strip(),
         }
+        parsed = journal.parse_entry_date(date_str)
+        if parsed and parsed < datetime.now().date():
+            entry_payload["backdate_reason"] = reason
+
+        self.entries[date_str][cat_name] = entry_payload
         self.save_data()
         dialog.destroy()
         messagebox.showinfo("Saved", f"Progress and notes logged for {cat_name}.")
@@ -1059,6 +1237,15 @@ class PersonalDevelopmentTracker:
                     text.insert(tk.END, f"   Metrics: {entry['metrics']}\n")
                 if entry.get("notes"):
                     text.insert(tk.END, f"   Notes:\n{entry['notes']}\n")
+
+        journal_entries = journal.list_entries(self.journal)
+        if journal_entries:
+            text.insert(tk.END, f"\n{'=' * 60}\nJOURNAL ENTRIES\n{'=' * 60}\n")
+            for item in journal_entries:
+                text.insert(tk.END, f"\n{item.get('entry_date')} — {item.get('title') or item.get('prompt')}\n")
+                if item.get("backdate_reason"):
+                    text.insert(tk.END, f"   Backdated: {item['backdate_reason']}\n")
+                text.insert(tk.END, f"{item.get('body', '')}\n")
 
     def show_weekly_summary(self) -> None:
         window = tk.Toplevel(self.root)
@@ -1133,6 +1320,9 @@ class PersonalDevelopmentTracker:
     def show_milestones(self) -> None:
         show_milestones_dialog(self)
 
+    def show_journal(self) -> None:
+        show_journal_window(self)
+
     def show_export(self) -> None:
         show_export_dialog(self)
 
@@ -1163,10 +1353,18 @@ class PersonalDevelopmentTracker:
             query = query_var.get().strip().lower()
             results.delete("1.0", tk.END)
             if not query:
-                results.insert(tk.END, "Type to search life notes, checklists, and fitness session notes.")
+                results.insert(tk.END, "Type to search life notes, journal entries, checklists, and fitness session notes.")
                 return
 
             hits = 0
+            for item in journal.search_entries(self.journal, query):
+                hits += 1
+                results.insert(tk.END, f"\n{item.get('entry_date')} — Journal: {item.get('title') or item.get('prompt')}\n")
+                if item.get("backdate_reason"):
+                    results.insert(tk.END, f"Backdated: {item['backdate_reason']}\n")
+                results.insert(tk.END, f"{item.get('body', '')}\n")
+                results.insert(tk.END, "-" * 40 + "\n")
+
             if self.entries:
                 for date in sorted(self.entries.keys(), reverse=True):
                     for cat, data in self.entries[date].items():
@@ -1227,7 +1425,7 @@ class PersonalDevelopmentTracker:
             self.save_data()
             self.create_dashboard()
 
-        fitness_ui.show_fitness_window(self.root, on_session_saved=on_session_saved)
+        fitness_ui.show_fitness_window(self.root, on_session_saved=on_session_saved, theme=self.theme)
 
     def show_settings(self) -> None:
         editor = tk.Toplevel(self.root)

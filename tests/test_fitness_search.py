@@ -1,6 +1,12 @@
 import pytest
 
-from fitness_programs import build_program_groups, filter_program_groups, filter_rows_by_search
+from fitness_programs import (
+    build_program_groups,
+    build_program_hierarchy,
+    filter_program_groups,
+    filter_program_hierarchy,
+    filter_rows_by_search,
+)
 from fitness_ui import list_exercise_rows
 from progression.db import FitnessRepository
 from progression.seed_loader import seed_all_fitness
@@ -58,7 +64,8 @@ def test_search_fitness_rows_integration(tmp_path):
     repo = make_repo(tmp_path)
     seed_all_fitness(repo)
     rows = list_exercise_rows(repo, source_book="CC2")
-    programs = build_program_groups(rows)
-    filtered = filter_program_groups(programs, "human flag")
+    hierarchy = build_program_hierarchy(rows)
+    filtered = filter_program_hierarchy(hierarchy, "human flag")
     assert len(filtered) == 1
-    assert any("Human Flag" in step["name"] for step in filtered[0]["steps"])
+    steps = filtered[0]["programs"][0]["steps"]
+    assert any("Human Flag" in step["name"] for step in steps)

@@ -33,9 +33,13 @@ FAMILY_LABELS = {
 }
 
 
+def format_family_label(family: str) -> str:
+    return FAMILY_LABELS.get(family, family.replace("_", " ").title())
+
+
 def format_program_title(source_book: str, family: str) -> str:
     book = BOOK_LABELS.get(source_book, source_book)
-    family_label = FAMILY_LABELS.get(family, family.replace("_", " ").title())
+    family_label = format_family_label(family)
     return f"{source_book} · {family_label}"
 
 
@@ -77,7 +81,7 @@ def pick_current_step(steps: list[dict]) -> dict | None:
 def build_program_groups(
     rows: list[dict],
     *,
-    expand_current: bool = True,
+    expand_current: bool = False,
 ) -> list[dict]:
     grouped: dict[tuple[str, str], list[dict]] = {}
     for row in rows:
@@ -101,6 +105,81 @@ def build_program_groups(
             }
         )
     return programs
+
+
+def build_program_hierarchy(
+    rows: list[dict],
+    *,
+    expand_current: bool = False,
+) -> list[dict]:
+    """Nest programs under book (CC1, CC2, …) then family (Pull, Push, …)."""
+    programs = build_program_groups(rows, expand_current=False)
+    for program in programs:
+        program["title"] = format_family_label(program["family"])
+        program["expanded"] = expand_current
+
+    by_book: dict[str, list[dict]] = {}
+    for program in programs:
+        by_book.setdefault(program["source_book"], []).append(program)
+
+    hierarchy: list[dict] = []
+    for source_book in sorted(by_book.keys()):
+        book_programs = by_book[source_book]
+        hierarchy.append(
+            {
+                "id": f"book:{source_book}",
+                "source_book": source_book,
+                "title": source_book,
+                "subtitle": BOOK_LABELS.get(source_book, source_book),
+                "programs": book_programs,
+                "expanded": expand_current,
+                "summary": f"{len(book_programs)} programs",
+            }
+        )
+    return hierarchy
+
+
+def filter_program_hierarchy(hierarchy: list[dict], query: str) -> list[dict]:
+    needle = query.strip().lower()
+    if not needle:
+        return hierarchy
+
+    filtered: list[dict] = []
+    for book in hierarchy:
+        book_blob = f"{book['title']} {book.get('subtitle', '')} {book['id']}".lower()
+        book_match = needle in book_blob
+
+        matching_programs: list[dict] = []
+        for program in book["programs"]:
+            program_blob = f"{program['title']} {program.get('summary', '')} {program['id']}".lower()
+            if needle in program_blob:
+                matching_programs.append({**program, "expanded": True})
+                continue
+
+            matching_steps = [step for step in program["steps"] if needle in _row_search_blob(step)]
+            if not matching_steps:
+                continue
+
+            current_id = program.get("current_step_id")
+            if current_id not in {step["id"] for step in matching_steps}:
+                current_id = matching_steps[0]["id"]
+
+            matching_programs.append(
+                {
+                    **program,
+                    "steps": matching_steps,
+                    "current_step_id": current_id,
+                    "expanded": True,
+                    "summary": f"{len(matching_steps)} matching step(s)",
+                }
+            )
+
+        if book_match:
+            filtered.append({**book, "programs": [{**p, "expanded": True} for p in book["programs"]], "expanded": True})
+        elif matching_programs:
+            filtered.append({**book, "programs": matching_programs, "expanded": True})
+
+    return filtered
 
 
 def format_step_label(step: dict) -> str:

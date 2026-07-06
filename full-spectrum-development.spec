@@ -42,6 +42,8 @@ a = Analysis(
         "progression.video_catalog",
         "progression.sessions",
         "backup",
+        "journal",
+        "journal_ui",
         "ui_scroll",
         "ui_theme",
         "integral_io",

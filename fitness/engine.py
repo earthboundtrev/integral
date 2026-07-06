@@ -386,6 +386,7 @@ def migrate_data(payload: dict[str, Any], programs: dict[str, dict]) -> dict[str
     if payload.get("schema_version", 1) >= 2:
         payload.setdefault("sessions", [])
         payload.setdefault("milestones", [])
+        payload.setdefault("journal", {"prompts": [], "entries": []})
         payload.setdefault("settings", {})
         payload["settings"].setdefault("fitness", get_fitness_settings(payload["settings"]))
         payload["settings"].setdefault("onboarding_complete", False)

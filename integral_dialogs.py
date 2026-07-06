@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, Callable
 
 from integral_io import (
     export_fitness_sessions_csv,
+    export_journal_csv,
     export_life_entries_csv,
     export_milestones_csv,
     load_backup,
@@ -32,15 +33,18 @@ def show_export_dialog(tracker: PersonalDevelopmentTracker) -> None:
     life_path = os.path.join(folder, f"integral-life-{stamp}.csv")
     fitness_path = os.path.join(folder, f"integral-fitness-{stamp}.csv")
     milestone_path = os.path.join(folder, f"integral-milestones-{stamp}.csv")
+    journal_path = os.path.join(folder, f"integral-journal-{stamp}.csv")
     try:
         life_rows = export_life_entries_csv(tracker.entries, tracker.categories, life_path)
         fitness_rows = export_fitness_sessions_csv(tracker.sessions, tracker.programs, fitness_path)
         milestone_rows = export_milestones_csv(tracker.milestones, milestone_path)
+        journal_rows = export_journal_csv(tracker.journal, journal_path)
         messagebox.showinfo(
             "Export complete",
             f"Exported to:\n{life_path}\n({life_rows} life rows)\n\n"
             f"{fitness_path}\n({fitness_rows} fitness rows)\n\n"
-            f"{milestone_path}\n({milestone_rows} milestones)",
+            f"{milestone_path}\n({milestone_rows} milestones)\n\n"
+            f"{journal_path}\n({journal_rows} journal entries)",
         )
     except OSError as exc:
         messagebox.showerror("Export failed", str(exc))
@@ -55,7 +59,7 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
 
     ttk.Label(
         window,
-        text="Back up your full journal (life + fitness + milestones) as JSON.\n"
+        text="Back up your full journal (life areas, general journal, fitness + milestones) as JSON.\n"
         "Restore replaces the current data file (a .bak copy is kept).",
         wraplength=480,
     ).pack(anchor="w", padx=15, pady=15)
