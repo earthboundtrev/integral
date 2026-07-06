@@ -79,11 +79,12 @@ def submit_performance(
     }
 
 
-def open_log_dialog_for_exercise(parent, repo, exercise_id, on_saved=None):
+def open_log_dialog_for_exercise(parent, repo, exercise_id, on_saved=None, on_session_saved=None):
     import tkinter as tk
-    from tkinter import messagebox, ttk
+    from tkinter import messagebox, scrolledtext, ttk
 
     import ui_scroll
+    from progression.sessions import create_workout_session
     from progression.video_catalog import get_exercise_video, open_exercise_video
 
     exercise = repo.get_exercise(exercise_id)
@@ -92,16 +93,23 @@ def open_log_dialog_for_exercise(parent, repo, exercise_id, on_saved=None):
 
     dialog = tk.Toplevel(parent)
     dialog.title(f"Log: {exercise.name}")
-    dialog.geometry("400x360")
+    dialog.geometry("460x540")
+    dialog.minsize(420, 420)
     dialog.transient(parent)
     dialog.grab_set()
 
+    footer = ttk.Frame(dialog, padding=10)
+    footer.pack(side=tk.BOTTOM, fill=tk.X)
+    ttk.Separator(footer, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=(0, 8))
+    footer_btns = ttk.Frame(footer)
+    footer_btns.pack(fill=tk.X)
+
     outer, inner, _canvas = ui_scroll.make_scrollable_frame(dialog)
-    outer.pack(fill=tk.BOTH, expand=True)
+    outer.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
     ttk.Label(inner, text=exercise.name, font=("Helvetica", 12, "bold")).pack(pady=8, padx=12)
     crit = ", ".join(f"{k}={v}" for k, v in exercise.mastery_criteria.items())
-    ttk.Label(inner, text=f"Mastery: {crit}", wraplength=340).pack(pady=4, padx=12)
+    ttk.Label(inner, text=f"Mastery: {crit}", wraplength=380).pack(pady=4, padx=12)
 
     seed_key = exercise.metadata.get("seed_key", exercise.id)
     video = get_exercise_video(
@@ -144,26 +152,46 @@ def open_log_dialog_for_exercise(parent, repo, exercise_id, on_saved=None):
         ttk.Label(row, text=f"{label}:", width=12).pack(side=tk.LEFT)
         ttk.Entry(row, textvariable=var, width=10).pack(side=tk.LEFT)
 
+    ttk.Label(
+        inner,
+        text="Notes (form cues, how it felt, what to try next)",
+        font=("Helvetica", 10, "bold"),
+    ).pack(anchor="w", padx=12, pady=(8, 4))
+    notes_text = scrolledtext.ScrolledText(inner, height=6, wrap=tk.WORD, font=("Helvetica", 10))
+    notes_text.pack(fill=tk.X, padx=12, pady=(0, 12))
+
     def save():
-        performance = {"sets": sets_var.get(), "reps": reps_var.get()}
+        item: dict = {
+            "exercise_id": exercise_id,
+            "sets": sets_var.get(),
+            "reps": reps_var.get(),
+        }
         if hold_var.get() > 0:
-            performance["hold_seconds"] = hold_var.get()
+            item["hold_seconds"] = hold_var.get()
         if weight_var.get() > 0:
-            performance["weight_kg"] = weight_var.get()
+            item["weight_kg"] = weight_var.get()
+        notes = notes_text.get("1.0", tk.END).strip()
         try:
-            result = submit_performance(repo, exercise_id, performance)
+            session = create_workout_session(
+                repo,
+                datetime.now().strftime("%Y-%m-%d"),
+                [item],
+                notes=notes,
+            )
         except ValueError as exc:
             messagebox.showwarning("Cannot log", str(exc), parent=dialog)
             return
         dialog.destroy()
+        if on_session_saved:
+            on_session_saved(session.date)
         if on_saved:
             on_saved()
-        messagebox.showinfo("Logged", f"{result['exercise_name']}: {result['status']}")
+        progress = repo.get_user_progress(exercise_id)
+        status = progress.status if progress else "logged"
+        messagebox.showinfo("Logged", f"{exercise.name}: {status}")
 
-    btns = ttk.Frame(inner)
-    btns.pack(pady=12)
-    ttk.Button(btns, text="Save", command=save).pack(side=tk.LEFT, padx=8)
-    ttk.Button(btns, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT)
+    ttk.Button(footer_btns, text="Save Log", style="Accent.TButton", command=save).pack(side=tk.LEFT, padx=(0, 8))
+    ttk.Button(footer_btns, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT)
 
 
 def show_fitness_window(root, on_session_saved=None, theme=None):
@@ -354,7 +382,9 @@ def show_fitness_window(root, on_session_saved=None, theme=None):
         if not selected or selected[0].startswith(("book:", "prog:")):
             messagebox.showinfo("Select Step", "Choose a step under a program to log.")
             return
-        open_log_dialog_for_exercise(win, repo, selected[0], on_saved=refresh_list)
+        open_log_dialog_for_exercise(
+            win, repo, selected[0], on_saved=refresh_list, on_session_saved=on_session_saved
+        )
 
     def open_selected_video():
         if selected_video:
@@ -379,7 +409,7 @@ def show_fitness_window(root, on_session_saved=None, theme=None):
         dialog.grab_set()
 
         outer, inner, _canvas = ui_scroll.make_scrollable_frame(dialog)
-        outer.pack(fill=tk.BOTH, expand=True)
+        outer.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
         today = datetime.now().strftime("%Y-%m-%d")
         date_var = tk.StringVar(value=today)
@@ -470,10 +500,10 @@ def show_fitness_window(root, on_session_saved=None, theme=None):
             refresh_list()
             messagebox.showinfo("Saved", f"Workout session logged for {session.date}.")
 
-        btn_row = ttk.Frame(inner, padding=10)
-        btn_row.pack(fill=tk.X)
+        btn_row = ttk.Frame(dialog, padding=10)
+        btn_row.pack(side=tk.BOTTOM, fill=tk.X)
         ttk.Button(btn_row, text="Add Set", command=add_set).pack(side=tk.LEFT)
-        ttk.Button(btn_row, text="Save Session", command=save_session).pack(side=tk.LEFT, padx=8)
+        ttk.Button(btn_row, text="Save Session", style="Accent.TButton", command=save_session).pack(side=tk.LEFT, padx=8)
         ttk.Button(btn_row, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT)
 
     def open_session_history():

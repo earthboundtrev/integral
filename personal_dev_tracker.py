@@ -38,6 +38,7 @@ from theme import (
     style_listbox,
     style_text_widget,
 )
+import ui_scroll
 from vault import is_encrypted_file, load_data_file, save_data_file
 
 CATEGORY_SHORT_LABELS = {
@@ -666,7 +667,7 @@ class PersonalDevelopmentTracker:
         self.create_todays_log_bar()
 
         if self._activity_grid is not None:
-            self._activity_grid.refresh_data(self.entries, self.journal, self.sessions)
+            self._refresh_activity_grid()
 
         if self._guidance_panel is not None:
             for child in self._guidance_panel.winfo_children():
@@ -692,7 +693,32 @@ class PersonalDevelopmentTracker:
                 self._categories_tab_built = True
 
     def _session_counts_for_date(self, date_str: str) -> int:
-        return sum(1 for session in self.sessions if session.get("date") == date_str)
+        return self._activity_session_counts().get(date_str, 0)
+
+    def _activity_session_counts(self) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for session in self.sessions:
+            date_str = session.get("date")
+            if date_str:
+                counts[date_str] = counts.get(date_str, 0) + 1
+        try:
+            from fitness_ui import get_profile_repo
+
+            for session in get_profile_repo().list_workout_sessions(limit=2000):
+                counts[session.date] = counts.get(session.date, 0) + 1
+        except Exception:
+            pass
+        return counts
+
+    def _refresh_activity_grid(self) -> None:
+        if self._activity_grid is None:
+            return
+        self._activity_grid.refresh_data(
+            self.entries,
+            self.journal,
+            self.sessions,
+            session_counts=self._activity_session_counts(),
+        )
 
     def _on_notebook_tab_changed(self, event: tk.Event) -> None:
         notebook = event.widget
@@ -812,6 +838,7 @@ class PersonalDevelopmentTracker:
             theme=self.theme,
             sessions=self.sessions,
             journal=self.journal,
+            session_counts=self._activity_session_counts(),
             on_day_click=self.show_day_explorer,
         )
         self._activity_grid.pack(fill=tk.X)
@@ -1108,7 +1135,8 @@ class PersonalDevelopmentTracker:
     def open_log_dialog(self, cat_name: str, date_str: str | None = None) -> None:
         dialog = tk.Toplevel(self.root)
         dialog.title(f"Log: {cat_name}")
-        dialog.geometry("560x820")
+        dialog.geometry("600x720")
+        dialog.minsize(520, 480)
         dialog.configure(bg=self.theme["bg"])
         dialog.transient(self.root)
         dialog.grab_set()
@@ -1117,6 +1145,22 @@ class PersonalDevelopmentTracker:
         today = datetime.now().strftime("%Y-%m-%d")
         date_var = tk.StringVar(value=date_str or today)
         backdate_var = tk.StringVar(value="")
+        rating_var = tk.IntVar(value=5)
+        check_vars: dict[str, tk.BooleanVar] = {}
+        metric_vars: dict[str, tk.Variable] = {}
+
+        footer = ttk.Frame(dialog, padding=(15, 12))
+        footer.pack(side=tk.BOTTOM, fill=tk.X)
+        ttk.Separator(footer, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=(0, 10))
+        footer_btns = ttk.Frame(footer)
+        footer_btns.pack(fill=tk.X)
+
+        outer, inner, _canvas = ui_scroll.make_scrollable_frame(dialog)
+        outer.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
+        notes_text = scrolledtext.ScrolledText(inner, height=10, width=62, wrap=tk.WORD, font=("Helvetica", 11))
+        style_text_widget(notes_text, self.theme)
+
         existing_holder: dict[str, dict] = {"entry": {}}
 
         def load_existing(*_args: object) -> None:
@@ -1139,12 +1183,12 @@ class PersonalDevelopmentTracker:
             backdate_var.set(existing.get("backdate_reason", "") or "")
             refresh_backdate_ui()
 
-        ttk.Label(dialog, text="Entry date (YYYY-MM-DD)", style="Subheading.TLabel").pack(anchor="w", padx=15, pady=(8, 0))
-        date_row = ttk.Frame(dialog)
+        ttk.Label(inner, text="Entry date (YYYY-MM-DD)", style="Subheading.TLabel").pack(anchor="w", padx=15, pady=(8, 0))
+        date_row = ttk.Frame(inner)
         date_row.pack(fill=tk.X, padx=15, pady=4)
         ttk.Entry(date_row, textvariable=date_var, width=14).pack(side=tk.LEFT)
 
-        backdate_frame = ttk.Frame(dialog)
+        backdate_frame = ttk.Frame(inner)
         backdate_frame.pack(fill=tk.X, padx=15, pady=(0, 6))
         backdate_label = ttk.Label(
             backdate_frame,
@@ -1170,12 +1214,8 @@ class PersonalDevelopmentTracker:
                 backdate_entry.pack_forget()
                 backdate_hint.pack_forget()
 
-
-        ttk.Label(dialog, text="Overall Progress Rating (1-10)", style="Subheading.TLabel").pack(
-            anchor="w", padx=15
-        )
-        rating_var = tk.IntVar(value=5)
-        spin_frame = ttk.Frame(dialog)
+        ttk.Label(inner, text="Overall Progress Rating (1-10)", style="Subheading.TLabel").pack(anchor="w", padx=15)
+        spin_frame = ttk.Frame(inner)
         spin_frame.pack(padx=15, pady=5, fill=tk.X)
         ttk.Spinbox(
             spin_frame,
@@ -1187,27 +1227,23 @@ class PersonalDevelopmentTracker:
         ).pack(side=tk.LEFT)
 
         ttk.Label(
-            dialog,
+            inner,
             text="Checklist — tick what you completed",
             font=("Helvetica", 11, "bold"),
         ).pack(anchor="w", padx=15, pady=(12, 4))
-        check_vars: dict[str, tk.BooleanVar] = {}
         for item in cat_data["checklist"]:
             var = tk.BooleanVar(value=False)
             check_vars[item] = var
-            ttk.Checkbutton(dialog, text=item, variable=var).pack(anchor="w", padx=25, pady=2)
+            ttk.Checkbutton(inner, text=item, variable=var).pack(anchor="w", padx=25, pady=2)
 
-        ttk.Label(dialog, text="Specific Measures", font=("Helvetica", 11, "bold")).pack(
-            anchor="w", padx=15, pady=(12, 4)
-        )
-        metric_vars: dict[str, tk.Variable] = {}
+        ttk.Label(inner, text="Specific Measures", font=("Helvetica", 11, "bold")).pack(anchor="w", padx=15, pady=(12, 4))
         for metric in cat_data["metrics"]:
             metric_name = metric["name"]
             metric_type = metric.get("type", "number")
             metric_unit = metric.get("unit", "")
             existing_val = metric.get("default", 0)
 
-            row = ttk.Frame(dialog)
+            row = ttk.Frame(inner)
             row.pack(fill=tk.X, padx=15, pady=3)
             ttk.Label(row, text=f"{metric_name}:").pack(side=tk.LEFT)
 
@@ -1228,21 +1264,17 @@ class PersonalDevelopmentTracker:
             metric_vars[metric_name] = var
 
         ttk.Label(
-            dialog,
+            inner,
             text="General notes / journal entry (write as much as you want)",
             font=("Helvetica", 11, "bold"),
         ).pack(anchor="w", padx=15, pady=(12, 4))
-        notes_text = scrolledtext.ScrolledText(dialog, height=12, width=62, wrap=tk.WORD, font=("Helvetica", 11))
-        style_text_widget(notes_text, self.theme)
-        notes_text.pack(padx=15, pady=5, fill=tk.BOTH, expand=True)
+        notes_text.pack(padx=15, pady=(0, 12), fill=tk.X)
 
         date_var.trace_add("write", load_existing)
         load_existing()
 
-        btns = ttk.Frame(dialog)
-        btns.pack(pady=15)
         ttk.Button(
-            btns,
+            footer_btns,
             text="Save Log",
             style="Accent.TButton",
             command=lambda: self.save_log(
@@ -1255,8 +1287,14 @@ class PersonalDevelopmentTracker:
                 metric_vars,
                 notes_text,
             ),
-        ).pack(side=tk.LEFT, padx=10)
-        ttk.Button(btns, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT)
+        ).pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Button(footer_btns, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT)
+        ttk.Label(
+            footer,
+            text="Save stores your rating, checklist, metrics, and notes for this life area.",
+            style="Muted.TLabel",
+            wraplength=560,
+        ).pack(anchor="w", pady=(8, 0))
 
     def save_log(
         self,

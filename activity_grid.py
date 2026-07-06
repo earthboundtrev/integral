@@ -8,11 +8,12 @@ from tkinter import ttk
 from typing import Callable
 
 
-LEVEL_COLORS_LIGHT = ["#EBEDF0", "#9BE9A8", "#40C463", "#30A14E", "#216E39"]
-LEVEL_COLORS_DARK = ["#161B22", "#0E4429", "#006D32", "#26A641", "#39D353"]
+LEVEL_COLORS_LIGHT = ["#EBEDF0", "#40C463", "#30A14E", "#216E39", "#196127"]
+LEVEL_COLORS_DARK = ["#161B22", "#26A641", "#006D32", "#30A14E", "#39D353"]
 
 
 def activity_level(count: int, max_categories: int = 18) -> int:
+    """Map daily contribution count to a color level (GitHub-style: any log = green)."""
     if count <= 0:
         return 0
     if count == 1:
@@ -107,6 +108,7 @@ class ContributionGrid(ttk.Frame):
         theme: dict,
         sessions: list[dict] | None = None,
         journal: dict | None = None,
+        session_counts: dict[str, int] | None = None,
         on_day_click: Callable[[str], None] | None = None,
         num_weeks: int = 53,
     ) -> None:
@@ -115,6 +117,7 @@ class ContributionGrid(ttk.Frame):
         self.categories = categories
         self.theme = theme
         self.sessions = sessions or []
+        self._session_counts_override = session_counts
         self.journal = journal or {"entries": []}
         self.on_day_click = on_day_click
         self.num_weeks = num_weeks
@@ -135,6 +138,10 @@ class ContributionGrid(ttk.Frame):
         self._canvas.pack(fill=tk.X, pady=(8, 0))
         self._canvas.bind("<Configure>", lambda _event: self._draw())
         self.category_filter.trace_add("write", lambda *_args: self._draw())
+
+        from ui_scroll import bind_mousewheel
+
+        bind_mousewheel(self._canvas, self._canvas.xview, horizontal=True)
 
         legend_row = ttk.Frame(self)
         legend_row.pack(fill=tk.X, pady=(6, 0))
@@ -157,22 +164,42 @@ class ContributionGrid(ttk.Frame):
                 self._journal_counts[date_str] = self._journal_counts.get(date_str, 0) + 1
 
         self._session_counts = {}
-        for session in self.sessions:
-            date_str = session.get("date")
-            if date_str:
-                self._session_counts[date_str] = self._session_counts.get(date_str, 0) + 1
+        if self._session_counts_override is not None:
+            self._session_counts = dict(self._session_counts_override)
+        else:
+            for session in self.sessions:
+                date_str = session.get("date")
+                if date_str:
+                    self._session_counts[date_str] = self._session_counts.get(date_str, 0) + 1
 
     def refresh_data(
         self,
         entries: dict,
         journal: dict | None = None,
         sessions: list[dict] | None = None,
+        session_counts: dict[str, int] | None = None,
     ) -> None:
         self.entries = entries
         self.journal = journal or {"entries": []}
         self.sessions = sessions or []
+        self._session_counts_override = session_counts
         self._rebuild_source_indexes()
         self._draw()
+
+    def _scroll_to_current_week(self) -> None:
+        """Keep the latest week (including today) in view — like GitHub's graph."""
+        canvas = self._canvas
+        canvas.update_idletasks()
+        region = canvas.cget("scrollregion")
+        if not region:
+            return
+        parts = region.split()
+        if len(parts) != 4:
+            return
+        total_width = float(parts[2])
+        view_width = canvas.winfo_width()
+        if total_width > view_width:
+            canvas.xview_moveto(1.0)
 
     def _build_controls(self) -> None:
         row = ttk.Frame(self)
@@ -262,12 +289,13 @@ class ContributionGrid(ttk.Frame):
                 canvas.create_rectangle(x0, y0, x1, y1, fill=color, outline=color, tags=("cell", date_str))
 
                 if day == date.today():
+                    outline = self.colors[min(level, 4)] if count > 0 else self.theme.get("accent", "#58A6FF")
                     canvas.create_rectangle(
                         x0 - 1,
                         y0 - 1,
                         x1 + 1,
                         y1 + 1,
-                        outline=self.theme["accent"],
+                        outline=outline,
                         width=1,
                     )
 
@@ -276,6 +304,7 @@ class ContributionGrid(ttk.Frame):
         canvas.tag_bind("cell", "<Button-1>", self._on_click)
 
         self._total_label.config(text=f"{total} contributions in the last year")
+        self._scroll_to_current_week()
 
     def _on_enter(self, event: tk.Event) -> None:
         canvas = self._canvas

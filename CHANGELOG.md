@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.2.8 — 2026-07-05
+
+### Fixed
+
+- **Activity grid** — today turns green immediately when you log (GitHub-style); graph auto-scrolls to the current week
+- **Activity counts** — fitness hub workout sessions included in the heatmap, not just life-area JSON entries
+- **Clearer greens** — single contributions use a more visible green in light and dark mode
+
+### Improved
+
+- **Life-area log dialogs** — scrollable form with pinned **Save Log** footer so save is never off-screen
+- **Fitness step logging** — notes field plus pinned **Save Log**; session dialog **Save Session** pinned at bottom
+
+### Build
+
+- Windows app: `dist/Integral/Integral.exe` (run `.\build.ps1`)
+
 ## 0.2.7 — 2026-07-05
 
 ### Fixed
