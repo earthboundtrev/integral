@@ -24,7 +24,7 @@ from integral_dialogs import (
 import journal
 from journal_ui import show_journal_window
 from milestones import merge_milestones, milestone_summary
-from paths import APP_NAME, data_file, ensure_data_file, icon_path
+from paths import APP_NAME, APP_VERSION, data_file, ensure_data_file, icon_path
 from theme import (
     FONTS,
     apply_theme,
@@ -66,7 +66,7 @@ DATA_FILE = data_file()
 class PersonalDevelopmentTracker:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
-        self.root.title(APP_NAME)
+        self.root.title(f"{APP_NAME} {APP_VERSION}")
         self.root.geometry("1200x800")
         self.root.minsize(900, 600)
         self._apply_window_icon()

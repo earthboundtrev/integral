@@ -1,63 +1,59 @@
-# Personal Development Tracker — Vision
+# Integral — Vision
 
 > **Canonical product doc:** [`PRD.md`](PRD.md)  
-> **Implementation:** agents execute approved specs in [`specs/`](specs/README.md) — not this file directly.
+> **Release notes:** [`../CHANGELOG.md`](../CHANGELOG.md)
 
 ## What This Is
 
-A **local-first, lightweight desktop app** for holistic personal development tracking. It starts as a daily log across eight life domains and grows into a unified progression platform — beginning with fitness, where exercise systems from multiple books connect into one skill tree.
+**Integral** is a local-first desktop app for holistic personal development — daily logging across eighteen life domains, a dedicated journal, fitness progression across respected training systems, and exports/backups that protect years of personal history.
+
+## Why It Exists
+
+The origin story is simple and personal: a lost training journal during a Convict Conditioning phase erased months of progression notes and stalled growth. Paper is wonderful until it is gone. Cloud apps are convenient until you do not trust them with your inner life.
+
+Integral is the answer to both:
+
+1. **Your data stays yours** — local files, optional encryption, portable backups
+2. **Review is easy** — search, history, activity grid, exports for long-term reading
+3. **Honest logging** — backdated entries require a reason; the tool supports integrity, not vanity metrics
+4. **Training memory** — fitness progressions (CC, Starting Strength, Overcoming Gravity, etc.) live beside daily life logs, not in a separate lost notebook
+
+If you have ever reopened a blank page and thought *I know I was further than this, I just cannot remember where* — Integral is for you.
 
 ## Core Principles
 
-1. **Lightweight first** — Fast cold start, low memory, minimal dependencies. Every feature must justify its cost.
-2. **Local-first** — Data lives on the user's machine (`~/.personal_dev_tracker/`). No cloud required for core use.
-3. **Graph-based progression** — Exercises (and eventually other domain skills) are nodes in a directed acyclic graph, not isolated linear lists.
-4. **Honest tracking** — Ratings, checklists, metrics, notes, streaks, and summaries over gamification theater.
-5. **Extensible categories** — Fitness is the first deep domain; the same progression pattern applies to other categories later.
+1. **Lightweight first** — Fast cold start, low memory, Tkinter not Electron.
+2. **Local-first** — `%APPDATA%\Integral\` (or dev `data/data.json`). No cloud required.
+3. **Graph-based fitness** — Exercises are nodes in a DAG across books and families.
+4. **Honest tracking** — Ratings, checklists, metrics, journal, streaks — not gamification theater.
+5. **Recoverable** — Export and backup are first-class; losing a device should not mean losing your story.
 
-## Life Domains (8 Categories)
+## Life Domains (18)
 
-| Category | Focus |
-|----------|-------|
-| Money/Freedom | Finances, long-term goals, freedom mindset |
-| Body & Presence | Movement, mindfulness, nourishment, sleep, energy |
-| Burnout Prevention & Energy Management | Breaks, boundaries, self-care, stress |
-| Creative/Mental Work | Deep work, ideas, creative projects |
-| Family/Logistics | Quality time, tasks, communication |
-| Search Practice | Inquiry, reflection, concrete search actions |
-| Spiritual Development | Practice, teachings, gratitude, connection |
-| Emotional Wellbeing | Emotional check-ins, journaling, regulation |
+Eight original domains expanded to eighteen, including career, relationships, home, learning, culture, food, art consumed, reading, and content consumed — see `personal_dev_tracker.py` defaults and git history (`6056116`).
 
-Each category has: checklist items, typed metrics (number/rating), overall daily rating (1–10), and free-form notes.
+## Fitness Evolution Platform
 
-## Fitness Evolution Platform (Phase 2+)
-
-Combines respected training systems into one experience:
-
-- **Convict Conditioning 1 & 2 + Explosive Calisthenics** (Paul Wade)
-- **Overcoming Gravity** (Steven Low) — gymnastics / advanced bodyweight
-- **Starting Strength** (Mark Rippetoe) — barbell
-- **Five Tibetan Rites** — yoga / vitality
-
-Beyond workout logging: visual progression, body composition (weight, measurements, photos), and eventually an AI coach that reads the progression graph to suggest personalized paths.
+- Convict Conditioning 1 & 2, Explosive Calisthenics, Overcoming Gravity, Starting Strength, Five Tibetan Rites
+- Fitness Hub: book → program family → step series
+- SQLite `fitness.db` per profile for progression state
+- Demo video links and skill tree view
 
 ## What Success Looks Like
 
-- App opens in under 2 seconds on a typical machine.
-- Daily logging takes under 60 seconds per category.
-- Graphs and summaries update instantly from local data.
-- Fitness progression shows a clear "where am I / what's next" skill tree across books.
-- Adding a new exercise or program does not require rewriting core logic.
+- Daily logging takes under a minute per domain when you are tired; journal when you have more to say
+- You can find any note or training entry from years ago in seconds
+- A full backup fits in a zip you control
+- Losing a physical notebook never has to mean losing your training arc again
 
 ## Non-Goals (For Now)
 
-- Cloud sync or online accounts (local profiles only)
-- Mobile apps
+- Cloud sync or online accounts
+- Mobile native apps
 - Social features
-- Electron or heavy web stacks
-- Rewriting in C++ (see ADR-001)
+- Electron / heavy web stacks
 
 ## Distribution
 
-- Standalone Windows `.exe` — local-first, no installer required (ADR-009, `docs/BUILD.md`)
-- User data in `~/.personal_dev_tracker/` — not bundled inside the EXE
+- Windows: `dist/Integral/Integral.exe` via `build.ps1`
+- Version tracked in `paths.APP_VERSION` and `CHANGELOG.md`
