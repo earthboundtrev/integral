@@ -335,6 +335,59 @@ class FitnessRepository:
             ).fetchone()
         return row is not None
 
+    def list_incoming_edges(self, exercise_id: str) -> list[ProgressionEdge]:
+        self.initialize()
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, from_exercise_id, to_exercise_id, edge_type, unlock_condition
+                FROM progression_edges
+                WHERE to_exercise_id = ?
+                ORDER BY edge_type, from_exercise_id
+                """,
+                (exercise_id,),
+            ).fetchall()
+        return [
+            ProgressionEdge(
+                id=row["id"],
+                from_exercise_id=row["from_exercise_id"],
+                to_exercise_id=row["to_exercise_id"],
+                edge_type=row["edge_type"],
+                unlock_condition=json.loads(row["unlock_condition"]),
+            )
+            for row in rows
+        ]
+
+    def delete_prerequisite_edges_among(self, exercise_ids: set[str]) -> int:
+        if not exercise_ids:
+            return 0
+        self.initialize()
+        placeholders = ",".join("?" for _ in exercise_ids)
+        params = tuple(exercise_ids)
+        with self.connect() as conn:
+            cursor = conn.execute(
+                f"""
+                DELETE FROM progression_edges
+                WHERE edge_type = 'prerequisite'
+                  AND from_exercise_id IN ({placeholders})
+                  AND to_exercise_id IN ({placeholders})
+                """,
+                params + params,
+            )
+            return cursor.rowcount
+
+    def update_exercise_metadata(self, exercise_id: str, metadata: dict) -> None:
+        self.initialize()
+        with self.connect() as conn:
+            conn.execute(
+                """
+                UPDATE exercises
+                SET metadata = ?
+                WHERE id = ? AND deleted_at IS NULL
+                """,
+                (json.dumps(metadata), exercise_id),
+            )
+
     def add_workout_session(self, session: WorkoutSession) -> WorkoutSession:
         self.initialize()
         with self.connect() as conn:

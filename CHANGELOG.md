@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.7 — 2026-07-05
+
+### Fixed
+
+- **Fitness Hub progression rules** — each program seed declares `step_progression` (`sequential` vs `parallel`) so unlock behavior matches the real training methodology
+- **Starting Strength** — all main lifts available from day one (no artificial squat→bench→deadlift chain)
+- **Five Tibetan Rites** — all five rites available together (daily routine, not one-at-a-time unlock)
+- **CC2 samples** — independent movement families no longer chained as one fake ladder
+- **Anti-cheese** — logging a locked sequential step is rejected; parallel families strip internal prerequisite edges
+
+### Build
+
+- Windows app: `dist/Integral/Integral.exe` (run `.\build.ps1`)
+
 ## 0.2.6 — 2026-07-05
 
 ### Improved

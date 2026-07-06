@@ -1,6 +1,8 @@
 {
   "source_book": "OG",
   "family": "pull",
+  "step_progression": "sequential",
+  "progression_notes": "Overcoming Gravity back-lever chart — master each hold before advancing.",
   "version": "v1",
   "exercises": [
     {

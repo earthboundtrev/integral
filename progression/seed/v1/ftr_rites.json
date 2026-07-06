@@ -1,7 +1,9 @@
 {
   "source_book": "FTR",
   "family": "rites",
-  "version": "v1",
+  "step_progression": "parallel",
+  "progression_notes": "All five Tibetan Rites are performed every session. Reps ramp weekly together — not unlocked one rite at a time.",
+  "version": "v2",
   "exercises": [
     {
       "key": "ftr_rite_1",
@@ -34,10 +36,5 @@
       "mastery_criteria": { "sets": 1, "reps": 21, "hold_seconds": 5 }
     }
   ],
-  "edges": [
-    { "from": "ftr_rite_1", "to": "ftr_rite_2", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
-    { "from": "ftr_rite_2", "to": "ftr_rite_3", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
-    { "from": "ftr_rite_3", "to": "ftr_rite_4", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
-    { "from": "ftr_rite_4", "to": "ftr_rite_5", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } }
-  ]
+  "edges": []
 }

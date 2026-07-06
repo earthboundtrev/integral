@@ -1,6 +1,7 @@
 {
   "source_book": "CC1",
   "family": "squat",
+  "step_progression": "sequential",
   "version": "v1",
   "exercises": [
     {

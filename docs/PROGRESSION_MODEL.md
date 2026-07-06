@@ -73,6 +73,17 @@ Per-user state on each exercise node.
 
 Flexible per movement type:
 
+### Step progression (seed file)
+
+Each seed file declares how steps unlock within that program family:
+
+| `step_progression` | Programs | Behavior |
+|--------------------|----------|----------|
+| `sequential` | CC1 Big Six, CC2 ladders, OG charts, EC PARC chains | Only step 1 available; master step *N* to unlock *N+1* |
+| `parallel` | Starting Strength main lifts, Five Tibetan Rites, independent CC2 samples | All movements available from the start — no prerequisite chain |
+
+Cross-book `recommended` edges never hard-block logging.
+
 ```json
 { "sets": 3, "reps": 5 }
 { "sets": 3, "hold_seconds": 10 }

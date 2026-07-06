@@ -8,6 +8,20 @@ from progression.models import UserExerciseProgress
 PROTECTED_STATUSES = {"in_progress", "mastered"}
 
 
+def exercise_log_allowed(repo: FitnessRepository, exercise_id: str) -> bool:
+    """Block logging locked or not-yet-unlocked sequential steps."""
+    progress = repo.get_user_progress(exercise_id)
+    if progress is not None and progress.status == "locked":
+        return False
+
+    for edge in repo.list_incoming_edges(exercise_id):
+        if edge.edge_type != "prerequisite":
+            continue
+        if not unlock_condition_satisfied(repo, edge.unlock_condition, edge.from_exercise_id):
+            return False
+    return True
+
+
 def record_performance(
     repo: FitnessRepository,
     exercise_id: str,
@@ -17,6 +31,9 @@ def record_performance(
     exercise = repo.get_exercise(exercise_id)
     if exercise is None:
         raise ValueError(f"Unknown exercise: {exercise_id}")
+
+    if not exercise_log_allowed(repo, exercise_id):
+        raise ValueError("Complete earlier steps before logging this exercise.")
 
     existing = repo.get_user_progress(exercise_id)
     timestamp = logged_at or datetime.now().isoformat(timespec="seconds")

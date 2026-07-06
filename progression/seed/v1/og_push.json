@@ -1,6 +1,8 @@
 {
   "source_book": "OG",
   "family": "push",
+  "step_progression": "sequential",
+  "progression_notes": "Overcoming Gravity planche/front-lever chart — sequential with a fork after advanced tuck planche.",
   "version": "v1",
   "exercises": [
     {

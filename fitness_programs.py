@@ -244,9 +244,10 @@ def filter_program_groups(programs: list[dict], query: str) -> list[dict]:
 
 
 def ensure_entry_points_available(repo: FitnessRepository) -> list[str]:
-    """Mark root exercises in each prerequisite chain as available."""
+    """Mark entry exercises as available — step 1 for sequential families, all for parallel."""
     from progression.engine import unlock_available_targets
     from progression.models import UserExerciseProgress
+    from progression.seed_loader import STEP_PROGRESSION_PARALLEL
 
     repo.initialize()
     incoming: set[str] = set()
@@ -255,7 +256,9 @@ def ensure_entry_points_available(repo: FitnessRepository) -> list[str]:
 
     unlocked: list[str] = []
     for exercise in repo.list_exercises():
-        if exercise.id in incoming:
+        step_progression = exercise.metadata.get("step_progression")
+        is_parallel = step_progression == STEP_PROGRESSION_PARALLEL
+        if not is_parallel and exercise.id in incoming:
             continue
         progress = repo.get_user_progress(exercise.id)
         if progress is None or progress.status == "locked":
@@ -263,6 +266,7 @@ def ensure_entry_points_available(repo: FitnessRepository) -> list[str]:
                 UserExerciseProgress(exercise_id=exercise.id, status="available")
             )
             unlocked.append(exercise.id)
-            unlock_available_targets(repo, exercise.id)
+            if not is_parallel:
+                unlock_available_targets(repo, exercise.id)
 
     return unlocked

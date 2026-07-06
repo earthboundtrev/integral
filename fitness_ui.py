@@ -20,20 +20,11 @@ def ensure_fitness_seeded(repo: FitnessRepository | None = None) -> bool:
 
     repo = repo or get_profile_repo()
     repo.initialize()
-    db_key = repo.db_path
-    if db_key in _seeded_db_paths:
-        return False
-
     before = len(repo.list_exercises())
-    if before > 0:
-        fitness_programs.ensure_entry_points_available(repo)
-        _seeded_db_paths.add(db_key)
-        return False
-
     seed_all_fitness(repo)
-    after = len(repo.list_exercises())
     fitness_programs.ensure_entry_points_available(repo)
-    _seeded_db_paths.add(db_key)
+    after = len(repo.list_exercises())
+    _seeded_db_paths.add(repo.db_path)
     return after > before
 
 
@@ -159,7 +150,11 @@ def open_log_dialog_for_exercise(parent, repo, exercise_id, on_saved=None):
             performance["hold_seconds"] = hold_var.get()
         if weight_var.get() > 0:
             performance["weight_kg"] = weight_var.get()
-        result = submit_performance(repo, exercise_id, performance)
+        try:
+            result = submit_performance(repo, exercise_id, performance)
+        except ValueError as exc:
+            messagebox.showwarning("Cannot log", str(exc), parent=dialog)
+            return
         dialog.destroy()
         if on_saved:
             on_saved()

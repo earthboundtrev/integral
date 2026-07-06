@@ -1,6 +1,8 @@
 {
   "source_book": "EC",
   "family": "explosive",
+  "step_progression": "sequential",
+  "progression_notes": "Explosive Calisthenics power pushup PARC chain — each step before the next within this chain.",
   "version": "v1",
   "exercises": [
     {

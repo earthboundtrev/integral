@@ -1,7 +1,9 @@
 {
   "source_book": "SS",
   "family": "main",
-  "version": "v1",
+  "step_progression": "parallel",
+  "progression_notes": "Starting Strength main lifts are trained together from day one on the A/B rotation — not a step ladder.",
+  "version": "v2",
   "exercises": [
     {
       "key": "ss_back_squat",
@@ -34,10 +36,5 @@
       "mastery_criteria": { "sets": 5, "reps": 3, "weight_kg": 70 }
     }
   ],
-  "edges": [
-    { "from": "ss_back_squat", "to": "ss_bench_press", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
-    { "from": "ss_bench_press", "to": "ss_deadlift", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
-    { "from": "ss_deadlift", "to": "ss_overhead_press", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } },
-    { "from": "ss_overhead_press", "to": "ss_power_clean", "edge_type": "prerequisite", "unlock_condition": { "requires": "mastered" } }
-  ]
+  "edges": []
 }
