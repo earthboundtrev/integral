@@ -198,10 +198,11 @@ def show_milestones_dialog(tracker: PersonalDevelopmentTracker) -> None:
     def save_all() -> None:
         apply_editor()
         tracker.milestones = working
+        tracker._invalidate_caches()
         tracker.save_data()
         window.destroy()
         messagebox.showinfo("Saved", milestone_summary(tracker.milestones))
-        tracker.create_dashboard()
+        tracker.refresh_dashboard()
 
     listbox.bind("<<ListboxSelect>>", load_selected)
 

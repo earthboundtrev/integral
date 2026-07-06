@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.2.6 — 2026-07-05
+
+### Improved
+
+- **Snappier UI** — logging and journal saves refresh the dashboard in place instead of rebuilding the whole window
+- **Deferred disk writes** — the interface updates immediately; saves flush in the background (synced on exit)
+- **Cached insights and streaks** — recomputed only when your data actually changes
+- **Faster encrypted saves** — reuse vault salt and derived key instead of re-running full key derivation every save
+- **Lazy Categories tab** — eighteen domain cards build only when you open that tab
+- **Faster activity grid** — indexed day counts instead of scanning all entries per cell
+- **Fitness Hub** — skip re-seeding the exercise database on every open
+- **Faster streak calculation** — walk backward from today instead of sorting every logged date
+
+### Docs
+
+- Expanded personal origin story (lost notebook, reMarkable, paper, hybrid approach, AI as force multiplier)
+
+### Build
+
+- Windows app: `dist/Integral/Integral.exe` (run `.\build.ps1`)
+
 ## 0.2.5 — 2026-07-05
 
 ### Why this release matters

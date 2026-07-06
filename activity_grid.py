@@ -127,6 +127,9 @@ class ContributionGrid(ttk.Frame):
         self.top_pad = 22
 
         self._tooltip: tk.Toplevel | None = None
+        self._journal_counts: dict[str, int] = {}
+        self._session_counts: dict[str, int] = {}
+        self._rebuild_source_indexes()
         self._build_controls()
         self._canvas = tk.Canvas(self, highlightthickness=0, height=130, bg=theme["bg"])
         self._canvas.pack(fill=tk.X, pady=(8, 0))
@@ -145,6 +148,31 @@ class ContributionGrid(ttk.Frame):
         ttk.Label(legend_row, text="More").pack(side=tk.LEFT, padx=4)
         self._total_label = ttk.Label(legend_row, text="", foreground=theme["muted"])
         self._total_label.pack(side=tk.RIGHT, padx=8)
+
+    def _rebuild_source_indexes(self) -> None:
+        self._journal_counts = {}
+        for entry in self.journal.get("entries", []):
+            date_str = entry.get("entry_date")
+            if date_str:
+                self._journal_counts[date_str] = self._journal_counts.get(date_str, 0) + 1
+
+        self._session_counts = {}
+        for session in self.sessions:
+            date_str = session.get("date")
+            if date_str:
+                self._session_counts[date_str] = self._session_counts.get(date_str, 0) + 1
+
+    def refresh_data(
+        self,
+        entries: dict,
+        journal: dict | None = None,
+        sessions: list[dict] | None = None,
+    ) -> None:
+        self.entries = entries
+        self.journal = journal or {"entries": []}
+        self.sessions = sessions or []
+        self._rebuild_source_indexes()
+        self._draw()
 
     def _build_controls(self) -> None:
         row = ttk.Frame(self)
@@ -175,16 +203,19 @@ class ContributionGrid(ttk.Frame):
 
     def _count_for_day(self, day: date) -> int:
         selected = self._selected_category()
+        date_str = day.strftime("%Y-%m-%d")
         if selected == "__fitness__":
-            date_str = day.strftime("%Y-%m-%d")
-            return sum(1 for session in self.sessions if session.get("date") == date_str)
-        return day_activity_count(
-            self.entries,
-            day,
-            category=selected,
-            sessions=self.sessions if selected is None else None,
-            journal=self.journal if selected in (None, "__journal__") else None,
-        )
+            return self._session_counts.get(date_str, 0)
+        if selected == "__journal__":
+            return self._journal_counts.get(date_str, 0)
+        if selected:
+            return 1 if selected in self.entries.get(date_str, {}) else 0
+
+        count = len(self.entries.get(date_str, {}))
+        if self._session_counts.get(date_str):
+            count += 1
+        count += self._journal_counts.get(date_str, 0)
+        return count
 
     def _draw(self) -> None:
         canvas = self._canvas
@@ -209,6 +240,7 @@ class ContributionGrid(ttk.Frame):
                 canvas.create_text(2, y, text=label, anchor="w", fill=self.theme["muted"], font=("Helvetica", 8))
 
         max_categories = max(len(self.categories), 1)
+        total = 0
 
         for week_index, week in enumerate(weeks):
             for row_index, day in enumerate(week):
@@ -223,6 +255,7 @@ class ContributionGrid(ttk.Frame):
                     continue
 
                 count = self._count_for_day(day)
+                total += count
                 level = activity_level(count, max_categories=max_categories)
                 color = self.colors[level]
                 date_str = day.strftime("%Y-%m-%d")
@@ -242,7 +275,6 @@ class ContributionGrid(ttk.Frame):
         canvas.tag_bind("cell", "<Leave>", self._on_leave)
         canvas.tag_bind("cell", "<Button-1>", self._on_click)
 
-        total = sum(self._count_for_day(day) for week in weeks for day in week if day is not None)
         self._total_label.config(text=f"{total} contributions in the last year")
 
     def _on_enter(self, event: tk.Event) -> None:

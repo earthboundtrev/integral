@@ -9,16 +9,37 @@
 
 ## Why It Exists
 
-The origin story is simple and personal: a lost training journal during a Convict Conditioning phase erased months of progression notes and stalled growth. Paper is wonderful until it is gone. Cloud apps are convenient until you do not trust them with your inner life.
+Integral grew out of a chain of failures — not of effort, but of **tools that could not hold a life record safely**.
 
-Integral is the answer to both:
+### Lost training journal
 
-1. **Your data stays yours** — local files, optional encryption, portable backups
+A lost Convict Conditioning notebook erased months of progression notes and stalled growth. Paper is wonderful until it is gone. I kept reopening a blank page thinking *I know I was further than this — I just cannot remember where.*
+
+### reMarkable
+
+I used a reMarkable tablet and liked it. When it broke and I could not afford a replacement, the story changed again. Their app still lets me **view** old notes, but I cannot **add** to that world without the hardware that syncs to their cloud. Local copies exist, yet updating them is clunky, and edits on disk do not flow back upstream. If the cloud has an outage — or worse — your relationship to your own archive becomes fragile. Convenience and ownership are not the same thing.
+
+### Paper, again
+
+I returned to paper for the cognitive benefits of handwriting. It still fails as infrastructure: easy to lose, impossible to chart over time, too much volume to revisit by hand, illegible in my own script, and fundamentally **unorganizable** without software.
+
+### The hybrid
+
+Integral is the combination I want: **write when writing helps you think**, but **store what must last** in a form I control — structured actions, dates, reasons, fitness progressions, journal entries, exports I can keep. Local-first, optionally encrypted, backup-friendly. Not a replacement for every way you capture thought; a durable layer underneath it.
+
+### Why build it now
+
+I am not a career developer. **AI acts as a force multiplier** — design, implementation, and iteration are far more tractable than they would have been alone. That does not make the product less personal; it makes building something this tailored finally realistic.
+
+If you have ever lost a notebook, hit read-only on your own notes, or stared at unsearchable pages and thought *there has to be a better way* — Integral is for you.
+
+### What Integral delivers
+
+1. **Your data stays yours** — local files, optional encryption, portable backups (no cloud required to use or review)
 2. **Review is easy** — search, history, activity grid, exports for long-term reading
 3. **Honest logging** — backdated entries require a reason; the tool supports integrity, not vanity metrics
 4. **Training memory** — fitness progressions (CC, Starting Strength, Overcoming Gravity, etc.) live beside daily life logs, not in a separate lost notebook
-
-If you have ever reopened a blank page and thought *I know I was further than this, I just cannot remember where* — Integral is for you.
+5. **Hybrid capture** — handwriting and quick notes still have a place; Integral is where structured history lives
 
 ## Core Principles
 

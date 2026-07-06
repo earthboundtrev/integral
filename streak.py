@@ -2,27 +2,21 @@ from datetime import datetime, timedelta
 
 
 def get_streak(entries, category=None):
+    """Count consecutive logged days ending today — O(streak length), not O(n log n)."""
     if not entries:
         return 0
 
-    relevant_dates = []
-    for date_str, day_entries in entries.items():
-        if category is None:
-            if day_entries:
-                relevant_dates.append(datetime.strptime(date_str, "%Y-%m-%d").date())
-        elif category in day_entries:
-            relevant_dates.append(datetime.strptime(date_str, "%Y-%m-%d").date())
-
-    if not relevant_dates:
-        return 0
-
-    sorted_dates = sorted(relevant_dates, reverse=True)
     streak = 0
     expected = datetime.now().date()
-    for day in sorted_dates:
-        if day == expected:
-            streak += 1
-            expected -= timedelta(days=1)
-        elif day < expected:
+    while True:
+        date_str = expected.strftime("%Y-%m-%d")
+        day_entries = entries.get(date_str)
+        if category is None:
+            logged = bool(day_entries)
+        else:
+            logged = bool(day_entries and category in day_entries)
+        if not logged:
             break
+        streak += 1
+        expected -= timedelta(days=1)
     return streak

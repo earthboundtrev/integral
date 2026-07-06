@@ -8,6 +8,8 @@ from progression.engine import record_performance
 from progression.seed_loader import seed_all_fitness
 from progression.sessions import create_workout_session, format_session_summary, link_session_to_body_presence
 
+_seeded_db_paths: set[str] = set()
+
 
 def get_profile_repo() -> FitnessRepository:
     return FitnessRepository()
@@ -18,10 +20,20 @@ def ensure_fitness_seeded(repo: FitnessRepository | None = None) -> bool:
 
     repo = repo or get_profile_repo()
     repo.initialize()
+    db_key = repo.db_path
+    if db_key in _seeded_db_paths:
+        return False
+
     before = len(repo.list_exercises())
+    if before > 0:
+        fitness_programs.ensure_entry_points_available(repo)
+        _seeded_db_paths.add(db_key)
+        return False
+
     seed_all_fitness(repo)
     after = len(repo.list_exercises())
     fitness_programs.ensure_entry_points_available(repo)
+    _seeded_db_paths.add(db_key)
     return after > before
 
 

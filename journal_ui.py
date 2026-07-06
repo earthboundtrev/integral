@@ -189,12 +189,12 @@ def show_journal_window(tracker: PersonalDevelopmentTracker, entry_date: str | N
                     break
 
         journal.upsert_entry(tracker.journal, item)
+        tracker._invalidate_caches()
+        tracker.refresh_dashboard()
         tracker.save_data()
         saved_id = item["id"]
         clear_editor()
         refresh_list(select_id=saved_id)
-        tracker.create_dashboard()
-        messagebox.showinfo("Saved", "Journal entry saved.", parent=win)
 
     def delete_selected() -> None:
         selection = entry_list.curselection()
@@ -204,10 +204,11 @@ def show_journal_window(tracker: PersonalDevelopmentTracker, entry_date: str | N
         if not messagebox.askyesno("Delete entry", "Delete this journal entry?", parent=win):
             return
         journal.delete_entry(tracker.journal, item["id"])
+        tracker._invalidate_caches()
+        tracker.refresh_dashboard()
         tracker.save_data()
         clear_editor()
         refresh_list()
-        tracker.create_dashboard()
 
     entry_list.bind("<<ListboxSelect>>", load_selected)
 

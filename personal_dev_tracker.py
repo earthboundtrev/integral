@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import tkinter as tk
 from datetime import datetime, timedelta
 from tkinter import messagebox, scrolledtext, simpledialog, ttk
@@ -25,6 +26,7 @@ import journal
 from journal_ui import show_journal_window
 from milestones import merge_milestones, milestone_summary
 from paths import APP_NAME, APP_VERSION, data_file, ensure_data_file, icon_path
+import streak
 from theme import (
     FONTS,
     apply_theme,
@@ -83,6 +85,21 @@ class PersonalDevelopmentTracker:
         self.vault_passphrase: str | None = None
         self.theme = get_theme(False)
         self._mousewheel_binding: str | None = None
+        self._insights_cache = None
+        self._streak_cache: dict[str, int] = {}
+        self._save_after_id: str | None = None
+        self._pending_save_payload: dict | None = None
+        self._fitness_state_dirty = False
+        self._dashboard_ready = False
+        self._categories_tab_built = False
+        self._theme_dark: bool | None = None
+        self._log_bar: ttk.LabelFrame | None = None
+        self._activity_grid: ContributionGrid | None = None
+        self._guidance_panel: ttk.LabelFrame | None = None
+        self._streak_pill: tk.Label | None = None
+        self._overview_stats_label: ttk.Label | None = None
+        self._categories_tab_frame: ttk.Frame | None = None
+        self._notebook: ttk.Notebook | None = None
 
         if is_encrypted_file(DATA_FILE) and not prompt_vault_unlock(self):
             messagebox.showerror("Locked", "Cannot open encrypted journal without passphrase.")
@@ -91,6 +108,7 @@ class PersonalDevelopmentTracker:
 
         self.load_data()
         self.apply_current_theme()
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self.create_dashboard()
         if not self.settings.get("onboarding_complete"):
             show_onboarding(self)
@@ -390,9 +408,34 @@ class PersonalDevelopmentTracker:
             },
         }
 
-    def apply_current_theme(self) -> None:
-        self.theme = get_theme(bool(self.settings.get("dark_mode", False)))
+    def apply_current_theme(self, *, force: bool = False) -> None:
+        dark = bool(self.settings.get("dark_mode", False))
+        if not force and self._theme_dark == dark:
+            return
+        self._theme_dark = dark
+        self.theme = get_theme(dark)
         apply_theme(self.root, self.theme)
+
+    def _invalidate_caches(self) -> None:
+        self._insights_cache = None
+        self._streak_cache.clear()
+
+    def _get_insights(self):
+        if self._insights_cache is None:
+            self._insights_cache = analyze_all(
+                self.entries,
+                self.categories,
+                sessions=self.sessions,
+                program_state=self.program_state,
+            )
+        return self._insights_cache
+
+    def _on_close(self) -> None:
+        if self._save_after_id:
+            self.root.after_cancel(self._save_after_id)
+            self._save_after_id = None
+        self._flush_save(sync=True)
+        self.root.destroy()
 
     def toggle_dark_mode(self) -> None:
         self.settings["dark_mode"] = not self.settings.get("dark_mode", False)
@@ -459,10 +502,12 @@ class PersonalDevelopmentTracker:
             self.milestones = merge_milestones(None)
             self.journal = journal.empty_journal()
             self.program_state = compute_program_state(self.programs, self.sessions, self.settings)
-            self.save_data()
+            self.save_data(flush=True)
 
-    def _payload(self) -> dict:
-        self.program_state = compute_program_state(self.programs, self.sessions, self.settings)
+    def _payload(self, *, recompute_fitness: bool = False) -> dict:
+        if recompute_fitness or self._fitness_state_dirty or not self.program_state:
+            self.program_state = compute_program_state(self.programs, self.sessions, self.settings)
+            self._fitness_state_dirty = False
         return {
             "schema_version": 2,
             "categories": self.categories,
@@ -475,45 +520,55 @@ class PersonalDevelopmentTracker:
             "user_levels": {},
         }
 
-    def save_data(self, categories: dict | None = None) -> None:
+    def save_data(
+        self,
+        categories: dict | None = None,
+        *,
+        recompute_fitness: bool = False,
+        flush: bool = False,
+    ) -> None:
         if categories is not None:
             self.categories = categories
-        payload = self._payload()
+        payload = self._payload(recompute_fitness=recompute_fitness)
+        self._pending_save_payload = payload
         os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
-        save_data_file(
-            DATA_FILE,
-            payload,
-            encrypted=bool(self.settings.get("encryption_enabled")),
-            passphrase=self.vault_passphrase,
-        )
+        if flush:
+            if self._save_after_id:
+                self.root.after_cancel(self._save_after_id)
+                self._save_after_id = None
+            self._flush_save(sync=True)
+            return
+        if self._save_after_id:
+            self.root.after_cancel(self._save_after_id)
+        self._save_after_id = self.root.after(250, lambda: self._flush_save(sync=False))
+
+    def _flush_save(self, sync: bool = False) -> None:
+        self._save_after_id = None
+        payload = self._pending_save_payload
+        if payload is None:
+            return
+
+        encrypted = bool(self.settings.get("encryption_enabled"))
+        passphrase = self.vault_passphrase
+        path = DATA_FILE
+
+        def write() -> None:
+            save_data_file(path, payload, encrypted=encrypted, passphrase=passphrase)
+
+        if sync:
+            write()
+            return
+        threading.Thread(target=write, daemon=True).start()
 
     def save_fitness_data(self) -> None:
-        self.save_data()
+        self._fitness_state_dirty = True
+        self.save_data(recompute_fitness=True)
 
     def get_streak(self, category: str | None = None) -> int:
-        if not self.entries:
-            return 0
-
-        relevant_dates: list[datetime.date] = []
-        for date_str, cats in self.entries.items():
-            if category is None or category in cats:
-                try:
-                    relevant_dates.append(datetime.strptime(date_str, "%Y-%m-%d").date())
-                except ValueError:
-                    continue
-
-        if not relevant_dates:
-            return 0
-
-        streak = 0
-        expected = datetime.now().date()
-        for day in sorted(relevant_dates, reverse=True):
-            if day == expected:
-                streak += 1
-                expected -= timedelta(days=1)
-            elif day < expected:
-                break
-        return streak
+        cache_key = category or "__all__"
+        if cache_key not in self._streak_cache:
+            self._streak_cache[cache_key] = streak.get_streak(self.entries, category)
+        return self._streak_cache[cache_key]
 
     def today_str(self) -> str:
         return datetime.now().strftime("%Y-%m-%d")
@@ -534,6 +589,7 @@ class PersonalDevelopmentTracker:
         today_entries = self.entries.get(self.today_str(), {})
 
         log_bar = ttk.LabelFrame(self.root, text="Today's Log", padding=14, style="Card.TLabelframe")
+        self._log_bar = log_bar
         log_bar.pack(fill=tk.X, padx=16, pady=(0, 10))
 
         top = ttk.Frame(log_bar, style="Surface.TFrame")
@@ -594,7 +650,60 @@ class PersonalDevelopmentTracker:
         for col in range(4):
             btn_row.columnconfigure(col, weight=1)
 
+    def refresh_dashboard(self, *, full: bool = False) -> None:
+        if full or not self._dashboard_ready:
+            self.create_dashboard()
+            return
+
+        self._invalidate_caches()
+        self.insights = self._get_insights()
+
+        if self._streak_pill is not None:
+            self._streak_pill.config(text=f"🔥 {self.get_streak()} day streak")
+
+        if self._log_bar is not None:
+            self._log_bar.destroy()
+        self.create_todays_log_bar()
+
+        if self._activity_grid is not None:
+            self._activity_grid.refresh_data(self.entries, self.journal, self.sessions)
+
+        if self._guidance_panel is not None:
+            for child in self._guidance_panel.winfo_children():
+                child.destroy()
+            self._fill_guidance_panel(self._guidance_panel)
+
+        if self._overview_stats_label is not None:
+            today_str = self.today_str()
+            logged_today = len(self.entries.get(today_str, {}))
+            fitness_today = self._session_counts_for_date(today_str)
+            stats_text = f"Today: {logged_today}/{len(self.categories)} life areas logged"
+            if fitness_today:
+                stats_text += f"  ·  {fitness_today} fitness session(s)"
+            stats_text += f"  ·  {milestone_summary(self.milestones)}"
+            self._overview_stats_label.config(text=stats_text)
+
+        if self._categories_tab_built and self._categories_tab_frame is not None:
+            for child in self._categories_tab_frame.winfo_children():
+                child.destroy()
+            self._categories_tab_built = False
+            if self._notebook is not None and self._notebook.index("current") == 1:
+                self._build_categories_tab(self._categories_tab_frame)
+                self._categories_tab_built = True
+
+    def _session_counts_for_date(self, date_str: str) -> int:
+        return sum(1 for session in self.sessions if session.get("date") == date_str)
+
+    def _on_notebook_tab_changed(self, event: tk.Event) -> None:
+        notebook = event.widget
+        if notebook.index("current") != 1 or self._categories_tab_built:
+            return
+        if self._categories_tab_frame is not None:
+            self._build_categories_tab(self._categories_tab_frame)
+            self._categories_tab_built = True
+
     def create_dashboard(self) -> None:
+        self._dashboard_ready = False
         if self._mousewheel_binding:
             self.root.unbind_all(self._mousewheel_binding)
             self._mousewheel_binding = None
@@ -602,7 +711,7 @@ class PersonalDevelopmentTracker:
         for widget in self.root.winfo_children():
             widget.destroy()
 
-        self.apply_current_theme()
+        self.apply_current_theme(force=True)
 
         header = ttk.Frame(self.root)
         header.pack(fill=tk.X, padx=16, pady=(16, 10))
@@ -618,9 +727,12 @@ class PersonalDevelopmentTracker:
 
         right_header = ttk.Frame(header)
         right_header.pack(side=tk.RIGHT)
-        streak_badge(right_header, self.theme, f"🔥 {self.get_streak()} day streak").pack(
-            side=tk.RIGHT, padx=(12, 0)
-        )
+        streak_frame = streak_badge(right_header, self.theme, f"🔥 {self.get_streak()} day streak")
+        streak_frame.pack(side=tk.RIGHT, padx=(12, 0))
+        for child in streak_frame.winfo_children():
+            if isinstance(child, tk.Label):
+                self._streak_pill = child
+                break
         ttk.Label(
             right_header,
             text=f"Today · {datetime.now().strftime('%B %d, %Y')}",
@@ -629,23 +741,22 @@ class PersonalDevelopmentTracker:
 
         self.create_todays_log_bar()
 
-        self.insights = analyze_all(
-            self.entries,
-            self.categories,
-            sessions=self.sessions,
-            program_state=self.program_state,
-        )
+        self._invalidate_caches()
+        self.insights = self._get_insights()
 
         notebook = ttk.Notebook(self.root)
+        self._notebook = notebook
         notebook.pack(fill=tk.BOTH, expand=True, padx=16, pady=(0, 8))
 
         overview = ttk.Frame(notebook)
         categories_tab = ttk.Frame(notebook)
+        self._categories_tab_frame = categories_tab
+        self._categories_tab_built = False
         notebook.add(overview, text="Overview")
         notebook.add(categories_tab, text="Categories")
+        notebook.bind("<<NotebookTabChanged>>", self._on_notebook_tab_changed)
 
         self._build_overview_tab(overview)
-        self._build_categories_tab(categories_tab)
 
         footer = ttk.Frame(self.root)
         footer.pack(fill=tk.X, padx=16, pady=(4, 12))
@@ -671,6 +782,7 @@ class PersonalDevelopmentTracker:
         ttk.Button(nav, text="Data & Security", command=self.show_security).pack(side=tk.LEFT, padx=6)
         mode_label = "Light Mode" if self.settings.get("dark_mode") else "Dark Mode"
         ttk.Button(nav, text=mode_label, command=self.toggle_dark_mode).pack(side=tk.RIGHT)
+        self._dashboard_ready = True
 
     def _build_overview_tab(self, parent: ttk.Frame) -> None:
         canvas = tk.Canvas(parent, highlightthickness=0)
@@ -693,7 +805,7 @@ class PersonalDevelopmentTracker:
 
         grid_panel = ttk.LabelFrame(main, text="Activity", padding=12, style="Card.TLabelframe")
         grid_panel.grid(row=0, column=0, sticky="ew", padx=4, pady=4)
-        ContributionGrid(
+        self._activity_grid = ContributionGrid(
             grid_panel,
             entries=self.entries,
             categories=self.categories,
@@ -701,20 +813,24 @@ class PersonalDevelopmentTracker:
             sessions=self.sessions,
             journal=self.journal,
             on_day_click=self.show_day_explorer,
-        ).pack(fill=tk.X)
+        )
+        self._activity_grid.pack(fill=tk.X)
 
-        today_str = datetime.now().strftime("%Y-%m-%d")
+        today_str = self.today_str()
         logged_today = len(self.entries.get(today_str, {}))
-        fitness_today = sum(1 for session in self.sessions if session.get("date") == today_str)
+        fitness_today = self._session_counts_for_date(today_str)
         stats = ttk.Frame(main, padding=8)
         stats.grid(row=1, column=0, sticky="ew", padx=4)
-        ttk.Label(
+        stats_text = f"Today: {logged_today}/{len(self.categories)} life areas logged"
+        if fitness_today:
+            stats_text += f"  ·  {fitness_today} fitness session(s)"
+        stats_text += f"  ·  {milestone_summary(self.milestones)}"
+        self._overview_stats_label = ttk.Label(
             stats,
-            text=f"Today: {logged_today}/{len(self.categories)} life areas logged"
-            + (f"  ·  {fitness_today} fitness session(s)" if fitness_today else "")
-            + f"  ·  {milestone_summary(self.milestones)}",
+            text=stats_text,
             style="Muted.TLabel",
-        ).pack(anchor="w")
+        )
+        self._overview_stats_label.pack(anchor="w")
         ttk.Button(stats, text="Explore today", command=lambda: self.show_day_explorer(today_str)).pack(
             anchor="w", pady=(6, 0)
         )
@@ -753,7 +869,10 @@ class PersonalDevelopmentTracker:
     def _render_guidance_panel(self, parent: ttk.Frame, row: int = 0) -> None:
         panel = ttk.LabelFrame(parent, text="Today's Guidance", padding=12, style="Card.TLabelframe")
         panel.grid(row=row, column=0, columnspan=2, sticky="ew", padx=12, pady=(8, 8))
+        self._guidance_panel = panel
+        self._fill_guidance_panel(panel)
 
+    def _fill_guidance_panel(self, panel: ttk.LabelFrame) -> None:
         highlights = top_insights(self.insights, limit=3)
         if not highlights:
             ttk.Label(
@@ -1179,21 +1298,16 @@ class PersonalDevelopmentTracker:
             entry_payload["backdate_reason"] = reason
 
         self.entries[date_str][cat_name] = entry_payload
-        self.save_data()
+        self._invalidate_caches()
         dialog.destroy()
-        messagebox.showinfo("Saved", f"Progress and notes logged for {cat_name}.")
-        hint = category_insight(
-            analyze_all(
-                self.entries,
-                self.categories,
-                sessions=self.sessions,
-                program_state=self.program_state,
-            ),
-            cat_name,
-        )
+        self.refresh_dashboard()
+        self.save_data(recompute_fitness=False)
+        hint = category_insight(self._get_insights(), cat_name)
         if hint and hint.suggested_actions:
-            messagebox.showinfo("Guidance", f"{hint.message}\n\nTry: {hint.suggested_actions[0]}")
-        self.create_dashboard()
+            self.root.after(
+                1,
+                lambda: messagebox.showinfo("Guidance", f"{hint.message}\n\nTry: {hint.suggested_actions[0]}"),
+            )
 
     def show_guidance(self) -> None:
         window = tk.Toplevel(self.root)
@@ -1422,8 +1536,10 @@ class PersonalDevelopmentTracker:
                 {"rating": 7, "checklist": {}, "metrics": {}, "notes": ""},
             )
             body.setdefault("checklist", {})["Completed movement or exercise"] = True
-            self.save_data()
-            self.create_dashboard()
+            self._fitness_state_dirty = True
+            self._invalidate_caches()
+            self.refresh_dashboard()
+            self.save_data(recompute_fitness=True)
 
         fitness_ui.show_fitness_window(self.root, on_session_saved=on_session_saved, theme=self.theme)
 
@@ -1590,10 +1706,11 @@ class PersonalDevelopmentTracker:
             if category_list.curselection() and saved_name is None:
                 return
             self.categories = working
+            self._invalidate_caches()
             self.save_data()
             editor.destroy()
             messagebox.showinfo("Saved", "Categories updated.")
-            self.create_dashboard()
+            self.refresh_dashboard()
 
         def reset_defaults() -> None:
             if not messagebox.askyesno("Reset", "Restore all default categories? Custom names will be kept only if not conflicting."):

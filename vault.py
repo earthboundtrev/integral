@@ -18,6 +18,7 @@ except ImportError:
 
 
 ENVELOPE_VERSION = 1
+_derived_key_cache: dict[tuple[str, bytes], bytes] = {}
 
 
 def is_encrypted_file(path: str) -> bool:
@@ -32,19 +33,44 @@ def is_encrypted_file(path: str) -> bool:
 
 
 def _derive_key(passphrase: str, salt: bytes) -> bytes:
+    cache_key = (passphrase, salt)
+    cached = _derived_key_cache.get(cache_key)
+    if cached is not None:
+        return cached
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
         length=32,
         salt=salt,
         iterations=390_000,
     )
-    return base64.urlsafe_b64encode(kdf.derive(passphrase.encode("utf-8")))
+    key = base64.urlsafe_b64encode(kdf.derive(passphrase.encode("utf-8")))
+    _derived_key_cache[cache_key] = key
+    return key
 
 
-def encrypt_payload(payload: dict[str, Any], passphrase: str) -> dict[str, Any]:
+def _existing_salt(path: str) -> bytes | None:
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+        if isinstance(data, dict) and data.get("integral_encrypted") and data.get("salt"):
+            return base64.b64decode(data["salt"])
+    except (json.JSONDecodeError, OSError, ValueError):
+        return None
+    return None
+
+
+def encrypt_payload(
+    payload: dict[str, Any],
+    passphrase: str,
+    *,
+    salt: bytes | None = None,
+) -> dict[str, Any]:
     if not CRYPTO_AVAILABLE:
         raise RuntimeError("Install cryptography: pip install cryptography")
-    salt = os.urandom(16)
+    if salt is None:
+        salt = os.urandom(16)
     key = _derive_key(passphrase, salt)
     token = Fernet(key).encrypt(json.dumps(payload, ensure_ascii=False).encode("utf-8"))
     return {
@@ -84,7 +110,8 @@ def save_data_file(path: str, payload: dict[str, Any], *, encrypted: bool, passp
     if encrypted:
         if not passphrase:
             raise PermissionError("Passphrase required to save encrypted journal.")
-        to_write = encrypt_payload(payload, passphrase)
+        salt = _existing_salt(path)
+        to_write = encrypt_payload(payload, passphrase, salt=salt)
     else:
         to_write = payload
     with open(path, "w", encoding="utf-8") as handle:
