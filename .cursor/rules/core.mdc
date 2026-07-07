@@ -62,9 +62,19 @@ For risky changes (encryption, sync, AI, data migration): also follow `.cursor/r
 ## Build & release
 
 - Dev: `.\run.ps1`
-- Exe: `.\build.ps1` → `dist\Integral\Integral.exe`
+- Exe: `.\scripts\build_exe.ps1` → `dist\Integral\Integral.exe`
 - Icon: `scripts/build_icon.py` from `assets/integral-icon-source.png`
 - See `.cursor/rules/build-release.mdc` for PyInstaller constraints
+
+### Release hygiene (required when shipping a version)
+
+On every release push to `main`, keep **only the latest** artifact and tag:
+
+1. `git rm` older `Integral-v*-windows.zip` files; add only the new zip matching `APP_VERSION` in `paths.py`
+2. Tag `v{VERSION}` on the release commit; delete all older `v*` tags locally and on `origin`
+3. Push `main` and the new tag; `git push origin --delete` each stale remote tag
+
+Full checklist and PowerShell examples: `.cursor/rules/build-release.mdc` → **Release hygiene**.
 
 ## AI collaboration
 
