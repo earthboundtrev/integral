@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.0 — 2026-07-06
+
+### Added
+
+- **Plan tomorrow** — set day intentions, fitness goals, and per-area targets for an upcoming day
+- **Plan vs Actual** — compare what you planned with what you actually logged (dashboard, day explorer, dedicated review)
+- **Fitness progression unlock** — CC-style ladders unlock the next step after meeting progression standards across qualifying sessions
+- **Set starting step** — experienced athletes can place themselves on a ladder with clear anti-rushing warnings
+- **Fitness settings** — optional bypass of progression locks; configurable sessions required before unlock
+
+### Build
+
+- Windows app: `dist/Integral/Integral.exe` (run `.\scripts\build_exe.ps1`)
+
 ## 0.2.9 — 2026-07-06
 
 ### Added

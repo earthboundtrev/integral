@@ -17,7 +17,11 @@ def test_cc1_second_step_locked_until_first_mastered(tmp_path):
     ensure_entry_points_available(repo)
 
     assert not exercise_log_allowed(repo, "cc1_push_02")
-    record_performance(repo, "cc1_push_01", {"sets": 3, "reps": 50})
+    record_performance(repo, "cc1_push_01", {"sets": 3, "reps": 50}, session_id="session-1")
+    assert repo.get_user_progress("cc1_push_01").status in {"available", "in_progress"}
+    assert not exercise_log_allowed(repo, "cc1_push_02")
+    record_performance(repo, "cc1_push_01", {"sets": 3, "reps": 50}, session_id="session-2")
+    assert repo.get_user_progress("cc1_push_01").status == "mastered"
     assert repo.get_user_progress("cc1_push_02").status == "available"
 
 

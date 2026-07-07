@@ -7,17 +7,15 @@ from typing import Any
 
 
 def default_fitness_settings() -> dict[str, Any]:
-    return {
-        "tibetan_advance_consecutive_days": 7,
-        "cc_sessions_for_advance": 2,
-        "cc_min_form_quality": 7,
-    }
+    from progression.fitness_settings import default_fitness_settings as _defaults
+
+    return _defaults()
 
 
 def get_fitness_settings(settings: dict) -> dict[str, Any]:
-    merged = default_fitness_settings()
-    merged.update(settings.get("fitness", {}))
-    return merged
+    from progression.fitness_settings import get_fitness_settings as _get
+
+    return _get(settings)
 
 
 def get_last_program_session(sessions: list[dict], program_id: str) -> dict | None:

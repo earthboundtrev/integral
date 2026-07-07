@@ -55,6 +55,7 @@ class WorkoutSet:
     reps: int | None = None
     hold_seconds: float | None = None
     weight_kg: float | None = None
+    form_quality: int | None = None
     id: str = field(default_factory=new_id)
 
 

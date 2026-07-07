@@ -24,7 +24,8 @@ def test_submit_performance_marks_mastered_and_unlocks_next(tmp_path):
     wall = next(r for r in rows if r["name"] == "Wall Push-ups")
     incline = next(r for r in rows if r["name"] == "Incline Push-ups")
 
-    result = submit_performance(repo, wall["id"], {"sets": 3, "reps": 50})
+    submit_performance(repo, wall["id"], {"sets": 3, "reps": 50}, session_id="s1")
+    result = submit_performance(repo, wall["id"], {"sets": 3, "reps": 50}, session_id="s2")
     assert result["status"] == "mastered"
 
     rows_after = list_exercise_rows(repo)

@@ -1,15 +1,34 @@
 from datetime import datetime
 from typing import Any
 
+from progression.advancement import persist_performance_for_session, ready_to_master_step
 from progression.db import FitnessRepository
+from progression.fitness_settings import get_fitness_settings, progression_locks_enabled
 from progression.mastery import meets_mastery
 from progression.models import UserExerciseProgress
 
 PROTECTED_STATUSES = {"in_progress", "mastered"}
 
 
-def exercise_log_allowed(repo: FitnessRepository, exercise_id: str) -> bool:
+def _fitness_settings(repo: FitnessRepository, fitness_settings: dict | None) -> dict:
+    if fitness_settings is not None:
+        return get_fitness_settings({"fitness": fitness_settings})
+    if getattr(repo, "fitness_settings", None):
+        return get_fitness_settings({"fitness": repo.fitness_settings})
+    return get_fitness_settings({})
+
+
+def exercise_log_allowed(
+    repo: FitnessRepository,
+    exercise_id: str,
+    *,
+    fitness_settings: dict | None = None,
+) -> bool:
     """Block logging locked or not-yet-unlocked sequential steps."""
+    settings = _fitness_settings(repo, fitness_settings)
+    if not progression_locks_enabled(settings):
+        return True
+
     progress = repo.get_user_progress(exercise_id)
     if progress is not None and progress.status == "locked":
         return False
@@ -27,18 +46,37 @@ def record_performance(
     exercise_id: str,
     performance: dict[str, Any],
     logged_at: str | None = None,
+    *,
+    fitness_settings: dict | None = None,
+    session_id: str | None = None,
 ) -> UserExerciseProgress:
     exercise = repo.get_exercise(exercise_id)
     if exercise is None:
         raise ValueError(f"Unknown exercise: {exercise_id}")
 
-    if not exercise_log_allowed(repo, exercise_id):
+    settings = _fitness_settings(repo, fitness_settings)
+    if not exercise_log_allowed(repo, exercise_id, fitness_settings=settings):
         raise ValueError("Complete earlier steps before logging this exercise.")
+
+    if session_id:
+        persist_performance_for_session(
+            repo,
+            exercise_id,
+            performance,
+            session_id,
+            fitness_settings=settings,
+        )
 
     existing = repo.get_user_progress(exercise_id)
     timestamp = logged_at or datetime.now().isoformat(timespec="seconds")
 
-    if meets_mastery(exercise.mastery_criteria, performance):
+    if ready_to_master_step(
+        repo,
+        exercise,
+        performance,
+        fitness_settings=settings,
+        session_id=session_id,
+    ):
         progress = UserExerciseProgress(
             exercise_id=exercise_id,
             status="mastered",
@@ -63,7 +101,11 @@ def record_performance(
 
     progress = UserExerciseProgress(
         exercise_id=exercise_id,
-        status=existing.status if existing else "in_progress",
+        status=(
+            "in_progress"
+            if meets_mastery(exercise.mastery_criteria, performance)
+            else (existing.status if existing else "in_progress")
+        ),
         current_step=performance.get("current_step")
         if performance.get("current_step") is not None
         else (existing.current_step if existing else None),

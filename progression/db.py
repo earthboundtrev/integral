@@ -31,8 +31,9 @@ def get_fitness_db_path(profile_id: str | None = None) -> str:
 
 
 class FitnessRepository:
-    def __init__(self, db_path: str | None = None):
+    def __init__(self, db_path: str | None = None, fitness_settings: dict | None = None):
         self.db_path = db_path or get_fitness_db_path()
+        self.fitness_settings = fitness_settings
 
     def connect(self) -> sqlite3.Connection:
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
@@ -122,6 +123,15 @@ class FitnessRepository:
                     ON body_composition_logs(date);
                 """
             )
+            self._ensure_workout_set_form_quality_column(conn)
+
+    def _ensure_workout_set_form_quality_column(self, conn: sqlite3.Connection) -> None:
+        columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(workout_sets)").fetchall()
+        }
+        if "form_quality" not in columns:
+            conn.execute("ALTER TABLE workout_sets ADD COLUMN form_quality INTEGER")
 
     def add_exercise(self, exercise: Exercise) -> Exercise:
         self.initialize()
@@ -393,7 +403,7 @@ class FitnessRepository:
         with self.connect() as conn:
             conn.execute(
                 """
-                INSERT INTO workout_sessions (id, date, notes, duration_minutes, body_weight_kg)
+                INSERT OR IGNORE INTO workout_sessions (id, date, notes, duration_minutes, body_weight_kg)
                 VALUES (?, ?, ?, ?, ?)
                 """,
                 (
@@ -412,8 +422,8 @@ class FitnessRepository:
             conn.execute(
                 """
                 INSERT INTO workout_sets (
-                    id, session_id, exercise_id, sets, reps, hold_seconds, weight_kg
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    id, session_id, exercise_id, sets, reps, hold_seconds, weight_kg, form_quality
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     workout_set.id,
@@ -423,9 +433,31 @@ class FitnessRepository:
                     workout_set.reps,
                     workout_set.hold_seconds,
                     workout_set.weight_kg,
+                    workout_set.form_quality,
                 ),
             )
         return workout_set
+
+    def workout_session_exists(self, session_id: str) -> bool:
+        self.initialize()
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM workout_sessions WHERE id = ?",
+                (session_id,),
+            ).fetchone()
+        return row is not None
+
+    def has_workout_set(self, session_id: str, exercise_id: str) -> bool:
+        self.initialize()
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT 1 FROM workout_sets
+                WHERE session_id = ? AND exercise_id = ?
+                """,
+                (session_id, exercise_id),
+            ).fetchone()
+        return row is not None
 
     def list_workout_sessions(self, limit: int = 50) -> list[WorkoutSession]:
         self.initialize()
@@ -455,7 +487,7 @@ class FitnessRepository:
         with self.connect() as conn:
             rows = conn.execute(
                 """
-                SELECT id, session_id, exercise_id, sets, reps, hold_seconds, weight_kg
+                SELECT id, session_id, exercise_id, sets, reps, hold_seconds, weight_kg, form_quality
                 FROM workout_sets
                 WHERE session_id = ?
                 ORDER BY id
@@ -471,6 +503,7 @@ class FitnessRepository:
                 reps=row["reps"],
                 hold_seconds=row["hold_seconds"],
                 weight_kg=row["weight_kg"],
+                form_quality=row["form_quality"],
             )
             for row in rows
         ]

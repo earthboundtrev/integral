@@ -10,10 +10,12 @@ from datetime import datetime, timedelta
 from tkinter import messagebox, scrolledtext, simpledialog, ttk
 
 from activity_grid import ContributionGrid
+import day_plans
+from day_plans_ui import show_plan_comparison_window, show_plan_window
 from day_watch import DayWatch
 from graphs import open_graphs
 from fitness.engine import compute_program_state, load_program_definitions, migrate_data
-from fitness.intelligence import weekly_fitness_summary
+from fitness.intelligence import get_fitness_settings, weekly_fitness_summary
 from insights.engine import analyze_all, category_insight, format_guidance_report, format_insight_line, top_insights
 from integral_dialogs import (
     prompt_vault_unlock,
@@ -82,6 +84,7 @@ class PersonalDevelopmentTracker:
         self.sessions: list = []
         self.milestones: list = []
         self.journal: dict = journal.empty_journal()
+        self.day_plans: dict = day_plans.empty_day_plans()
         self.program_state: dict = {}
         self.programs: dict = load_program_definitions()
         self.data_path = DATA_FILE
@@ -526,9 +529,11 @@ class PersonalDevelopmentTracker:
             self.settings = normalize_notification_settings(
                 {**{"dark_mode": False}, **migrated.get("settings", {})}
             )
+            self.settings["fitness"] = get_fitness_settings(self.settings)
             self.sessions = migrated.get("sessions", [])
             self.milestones = merge_milestones(migrated.get("milestones"))
             self.journal = journal.normalize_journal(migrated.get("journal"))
+            self.day_plans = day_plans.normalize_day_plans(migrated.get("day_plans"))
             self.program_state = migrated.get("program_state", {})
         else:
             self.categories = self.get_default_categories()
@@ -536,9 +541,11 @@ class PersonalDevelopmentTracker:
             self.settings = normalize_notification_settings(
                 {"dark_mode": False, "onboarding_complete": False}
             )
+            self.settings["fitness"] = get_fitness_settings(self.settings)
             self.sessions = []
             self.milestones = merge_milestones(None)
             self.journal = journal.empty_journal()
+            self.day_plans = day_plans.empty_day_plans()
             self.program_state = compute_program_state(self.programs, self.sessions, self.settings)
             self.save_data(flush=True)
 
@@ -554,6 +561,7 @@ class PersonalDevelopmentTracker:
             "sessions": self.sessions,
             "milestones": self.milestones,
             "journal": self.journal,
+            "day_plans": self.day_plans,
             "program_state": self.program_state,
             "user_levels": {},
         }
@@ -659,8 +667,32 @@ class PersonalDevelopmentTracker:
             actions, text="Journal", style="Accent.TButton", command=self.show_journal
         ).pack(side=tk.LEFT, padx=(0, 8))
         ttk.Button(
+            actions, text="Plan Tomorrow", command=self.show_plan_tomorrow
+        ).pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Button(
             actions, text="Fitness Hub", style="Accent.TButton", command=self.show_fitness_hub
         ).pack(side=tk.LEFT)
+
+        today_plan = day_plans.plan_for_date(self.day_plans, self.today_str())
+        if today_plan:
+            comparison = day_plans.compare_plan_to_actual(
+                today_plan,
+                self.entries.get(self.today_str(), {}),
+                all_categories=list(self.categories.keys()),
+            )
+            plan_row = ttk.Frame(log_bar, style="Surface.TFrame")
+            plan_row.pack(fill=tk.X, pady=(10, 0))
+            ttk.Label(
+                plan_row,
+                text=f"Today's plan: {comparison['summary']}",
+                style="OnSurfaceMuted.TLabel",
+                wraplength=760,
+            ).pack(side=tk.LEFT, fill=tk.X, expand=True)
+            ttk.Button(
+                plan_row,
+                text="Plan vs Actual",
+                command=lambda: show_plan_comparison_window(self, self.today_str()),
+            ).pack(side=tk.RIGHT)
 
         progress = ttk.Progressbar(
             log_bar,
@@ -839,6 +871,7 @@ class PersonalDevelopmentTracker:
         ttk.Button(nav, text="Journal", style="Accent.TButton", command=self.show_journal).pack(
             side=tk.LEFT, padx=6
         )
+        ttk.Button(nav, text="Plan Tomorrow", command=self.show_plan_tomorrow).pack(side=tk.LEFT, padx=6)
         ttk.Button(nav, text="Fitness Hub", style="Accent.TButton", command=self.show_fitness_hub).pack(
             side=tk.LEFT, padx=6
         )
@@ -1078,6 +1111,36 @@ class PersonalDevelopmentTracker:
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
         row = 0
+        day_plan = day_plans.plan_for_date(self.day_plans, date_str)
+        if day_plan:
+            comparison = day_plans.compare_plan_to_actual(
+                day_plan,
+                day_entries,
+                all_categories=list(self.categories.keys()),
+            )
+            plan_card = ttk.LabelFrame(scroll_frame, text="Plan for this day", padding=10)
+            plan_card.grid(row=row, column=0, sticky="ew", pady=(0, 10))
+            scroll_frame.columnconfigure(0, weight=1)
+            ttk.Label(plan_card, text=comparison["summary"], wraplength=620).pack(anchor="w")
+            if day_plan.get("day_intention"):
+                ttk.Label(
+                    plan_card,
+                    text=f"Intention: {day_plan['day_intention']}",
+                    wraplength=620,
+                ).pack(anchor="w", pady=(6, 0))
+            if day_plan.get("fitness_note"):
+                ttk.Label(
+                    plan_card,
+                    text=f"Fitness: {day_plan['fitness_note']}",
+                    wraplength=620,
+                ).pack(anchor="w", pady=(4, 0))
+            ttk.Button(
+                plan_card,
+                text="Plan vs Actual",
+                command=lambda: show_plan_comparison_window(self, date_str),
+            ).pack(anchor="w", pady=(8, 0))
+            row += 1
+
         if day_entries:
             for cat_name, entry in sorted(day_entries.items()):
                 card = ttk.Frame(scroll_frame, borderwidth=1, relief="groove", padding=10)
@@ -1518,6 +1581,9 @@ class PersonalDevelopmentTracker:
     def show_journal(self) -> None:
         show_journal_window(self)
 
+    def show_plan_tomorrow(self) -> None:
+        show_plan_window(self)
+
     def show_export(self) -> None:
         show_export_dialog(self)
 
@@ -1622,7 +1688,17 @@ class PersonalDevelopmentTracker:
             self.refresh_dashboard()
             self.save_data(recompute_fitness=True)
 
-        fitness_ui.show_fitness_window(self.root, on_session_saved=on_session_saved, theme=self.theme)
+        def on_fitness_settings_changed(updated: dict) -> None:
+            self.settings["fitness"] = updated
+            self.save_data(flush=True)
+
+        fitness_ui.show_fitness_window(
+            self.root,
+            on_session_saved=on_session_saved,
+            theme=self.theme,
+            fitness_settings=self.settings.get("fitness"),
+            on_fitness_settings_changed=on_fitness_settings_changed,
+        )
 
     def show_settings(self) -> None:
         editor = tk.Toplevel(self.root)

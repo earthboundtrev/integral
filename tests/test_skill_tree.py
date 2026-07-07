@@ -34,7 +34,8 @@ def test_skill_tree_colors_mastered_and_available_nodes(tmp_path):
     wall = next(ex for ex in repo.list_exercises() if ex.name == "Wall Push-ups")
     incline = next(ex for ex in repo.list_exercises() if ex.name == "Incline Push-ups")
 
-    record_performance(repo, wall.id, {"sets": 3, "reps": 50})
+    record_performance(repo, wall.id, {"sets": 3, "reps": 50}, session_id="s1")
+    record_performance(repo, wall.id, {"sets": 3, "reps": 50}, session_id="s2")
     model = build_skill_tree_model(repo, source_book="CC1", family="push")
     nodes = {node["id"]: node for node in model["nodes"]}
 

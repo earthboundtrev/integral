@@ -32,6 +32,7 @@ def create_workout_session(
             reps=item.get("reps"),
             hold_seconds=item.get("hold_seconds"),
             weight_kg=item.get("weight_kg"),
+            form_quality=item.get("form_quality"),
         )
         repo.add_workout_set(workout_set)
 
@@ -45,7 +46,12 @@ def create_workout_session(
         if workout_set.weight_kg is not None:
             performance["weight_kg"] = workout_set.weight_kg
         if performance:
-            record_performance(repo, workout_set.exercise_id, performance)
+            record_performance(
+                repo,
+                workout_set.exercise_id,
+                performance,
+                session_id=session.id,
+            )
 
     return session
 

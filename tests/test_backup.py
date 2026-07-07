@@ -56,7 +56,8 @@ def test_export_and_import_profile_roundtrip(temp_app, tmp_path):
     db_path = os.path.join(profiles.get_profile_dir("default"), "fitness.db")
     repo = FitnessRepository(db_path)
     seed_all_fitness(repo)
-    record_performance(repo, "cc1_push_01", {"sets": 3, "reps": 50})
+    record_performance(repo, "cc1_push_01", {"sets": 3, "reps": 50}, session_id="s1")
+    record_performance(repo, "cc1_push_01", {"sets": 3, "reps": 50}, session_id="s2")
     del repo
     gc.collect()
 

@@ -15,7 +15,8 @@ def test_recommendations_include_fitness_available(tmp_path):
     seed_all_fitness(repo)
     from progression.engine import record_performance
 
-    record_performance(repo, "cc1_push_01", {"sets": 3, "reps": 50})
+    record_performance(repo, "cc1_push_01", {"sets": 3, "reps": 50}, session_id="s1")
+    record_performance(repo, "cc1_push_01", {"sets": 3, "reps": 50}, session_id="s2")
     categories = get_default_categories()
     recs = build_recommendations({}, categories, repo)
     assert any("Incline Push-ups" in rec or "Fitness:" in rec for rec in recs)

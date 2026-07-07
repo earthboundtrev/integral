@@ -11,18 +11,21 @@ from progression.sessions import create_workout_session, format_session_summary,
 _seeded_db_paths: set[str] = set()
 
 
-def get_profile_repo() -> FitnessRepository:
-    return FitnessRepository()
+def get_profile_repo(fitness_settings: dict | None = None) -> FitnessRepository:
+    return FitnessRepository(fitness_settings=fitness_settings)
 
 
-def ensure_fitness_seeded(repo: FitnessRepository | None = None) -> bool:
+def ensure_fitness_seeded(repo: FitnessRepository | None = None, fitness_settings: dict | None = None) -> bool:
     import fitness_programs
+    from progression.placement import apply_stored_placements
 
-    repo = repo or get_profile_repo()
+    repo = repo or get_profile_repo(fitness_settings)
     repo.initialize()
     before = len(repo.list_exercises())
     seed_all_fitness(repo)
     fitness_programs.ensure_entry_points_available(repo)
+    if fitness_settings:
+        apply_stored_placements(repo, fitness_settings)
     after = len(repo.list_exercises())
     _seeded_db_paths.add(repo.db_path)
     return after > before
@@ -68,8 +71,17 @@ def submit_performance(
     repo: FitnessRepository,
     exercise_id: str,
     performance: dict,
+    *,
+    fitness_settings: dict | None = None,
+    session_id: str | None = None,
 ) -> dict:
-    progress = record_performance(repo, exercise_id, performance)
+    progress = record_performance(
+        repo,
+        exercise_id,
+        performance,
+        fitness_settings=fitness_settings,
+        session_id=session_id,
+    )
     exercise = repo.get_exercise(exercise_id)
     return {
         "exercise_id": exercise_id,
@@ -79,16 +91,37 @@ def submit_performance(
     }
 
 
-def open_log_dialog_for_exercise(parent, repo, exercise_id, on_saved=None, on_session_saved=None):
+def open_log_dialog_for_exercise(
+    parent,
+    repo,
+    exercise_id,
+    on_saved=None,
+    on_session_saved=None,
+    *,
+    fitness_settings: dict | None = None,
+):
     import tkinter as tk
     from tkinter import messagebox, scrolledtext, ttk
 
     import ui_scroll
+    from progression.advancement import format_advancement_hint
+    from progression.engine import exercise_log_allowed
     from progression.sessions import create_workout_session
     from progression.video_catalog import get_exercise_video, open_exercise_video
 
     exercise = repo.get_exercise(exercise_id)
     if exercise is None:
+        return
+
+    settings = fitness_settings or getattr(repo, "fitness_settings", None) or {}
+    if not exercise_log_allowed(repo, exercise_id, fitness_settings=settings):
+        messagebox.showwarning(
+            "Step locked",
+            "Complete earlier steps before logging this one.\n\n"
+            "If you already have training history, use Set Starting Step or turn on "
+            "progression overrides in Fitness Settings.",
+            parent=parent,
+        )
         return
 
     dialog = tk.Toplevel(parent)
@@ -109,7 +142,10 @@ def open_log_dialog_for_exercise(parent, repo, exercise_id, on_saved=None, on_se
 
     ttk.Label(inner, text=exercise.name, font=("Helvetica", 12, "bold")).pack(pady=8, padx=12)
     crit = ", ".join(f"{k}={v}" for k, v in exercise.mastery_criteria.items())
-    ttk.Label(inner, text=f"Mastery: {crit}", wraplength=380).pack(pady=4, padx=12)
+    ttk.Label(inner, text=f"Progression standard: {crit}", wraplength=380).pack(pady=4, padx=12)
+    hint = format_advancement_hint(repo, exercise, fitness_settings=settings)
+    if hint:
+        ttk.Label(inner, text=hint, wraplength=380, style="Muted.TLabel").pack(pady=(0, 6), padx=12)
 
     seed_key = exercise.metadata.get("seed_key", exercise.id)
     video = get_exercise_video(
@@ -139,6 +175,7 @@ def open_log_dialog_for_exercise(parent, repo, exercise_id, on_saved=None, on_se
     reps_var = tk.IntVar(value=5)
     hold_var = tk.DoubleVar(value=0.0)
     weight_var = tk.DoubleVar(value=0.0)
+    form_var = tk.IntVar(value=8)
 
     for label, var in [("Sets", sets_var), ("Reps", reps_var)]:
         row = ttk.Frame(fields)
@@ -151,6 +188,14 @@ def open_log_dialog_for_exercise(parent, repo, exercise_id, on_saved=None, on_se
         row.pack(fill=tk.X, pady=3)
         ttk.Label(row, text=f"{label}:", width=12).pack(side=tk.LEFT)
         ttk.Entry(row, textvariable=var, width=10).pack(side=tk.LEFT)
+
+    form_row = ttk.Frame(fields)
+    form_row.pack(fill=tk.X, pady=3)
+    ttk.Label(form_row, text="Form quality:", width=12).pack(side=tk.LEFT)
+    ttk.Spinbox(form_row, from_=1, to=10, textvariable=form_var, width=8).pack(side=tk.LEFT)
+    ttk.Label(form_row, text="(1–10, 7+ to count toward unlock)", style="Muted.TLabel").pack(
+        side=tk.LEFT, padx=(8, 0)
+    )
 
     ttk.Label(
         inner,
@@ -170,6 +215,7 @@ def open_log_dialog_for_exercise(parent, repo, exercise_id, on_saved=None, on_se
             item["hold_seconds"] = hold_var.get()
         if weight_var.get() > 0:
             item["weight_kg"] = weight_var.get()
+        item["form_quality"] = form_var.get()
         notes = notes_text.get("1.0", tk.END).strip()
         try:
             session = create_workout_session(
@@ -194,7 +240,14 @@ def open_log_dialog_for_exercise(parent, repo, exercise_id, on_saved=None, on_se
     ttk.Button(footer_btns, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT)
 
 
-def show_fitness_window(root, on_session_saved=None, theme=None):
+def show_fitness_window(
+    root,
+    on_session_saved=None,
+    theme=None,
+    *,
+    fitness_settings: dict | None = None,
+    on_fitness_settings_changed=None,
+):
     import tkinter as tk
     from tkinter import messagebox, scrolledtext, ttk
 
@@ -202,10 +255,20 @@ def show_fitness_window(root, on_session_saved=None, theme=None):
     import fitness_programs
     import theme as app_theme
     import ui_scroll
+    from progression.advancement import format_advancement_hint
+    from progression.engine import exercise_log_allowed
+    from progression.fitness_settings import (
+        LOCK_BYPASS_WARNING,
+        PLACEMENT_WARNING,
+        get_fitness_settings,
+        progression_locks_enabled,
+    )
+    from progression.placement import apply_program_placement, is_sequential_program, program_key
     from progression.video_catalog import get_exercise_video, open_exercise_video
 
-    repo = get_profile_repo()
-    ensure_fitness_seeded(repo)
+    settings = get_fitness_settings({"fitness": fitness_settings or {}})
+    repo = get_profile_repo(settings)
+    ensure_fitness_seeded(repo, settings)
 
     if theme is None:
         theme = app_theme.get_theme(False)
@@ -270,6 +333,8 @@ def show_fitness_window(root, on_session_saved=None, theme=None):
     detail_meta.pack(anchor="w", pady=4)
     detail_criteria = ttk.Label(detail_frame, text="", style="OnSurface.TLabel", wraplength=320)
     detail_criteria.pack(anchor="w", pady=4)
+    detail_hint = ttk.Label(detail_frame, text="", style="OnSurfaceMuted.TLabel", wraplength=320)
+    detail_hint.pack(anchor="w", pady=(0, 4))
     detail_video = ttk.Label(detail_frame, text="", style="OnSurfaceMuted.TLabel", wraplength=320)
     detail_video.pack(anchor="w", pady=(8, 4))
 
@@ -344,6 +409,7 @@ def show_fitness_window(root, on_session_saved=None, theme=None):
                 text="Expand CC1 (or another book), then a program like Pull, then click a step."
             )
             detail_criteria.configure(text="")
+            detail_hint.configure(text="")
             detail_video.configure(text="")
             return
 
@@ -354,8 +420,14 @@ def show_fitness_window(root, on_session_saved=None, theme=None):
             text=f"{step['source_book']} · Step {step.get('step', '?')} · {step['status'].replace('_', ' ')}"
         )
         detail_criteria.configure(
-            text="Mastery: " + ", ".join(f"{k}={v}" for k, v in step["criteria"].items())
+            text="Progression standard: " + ", ".join(f"{k}={v}" for k, v in step["criteria"].items())
         )
+        if exercise:
+            detail_hint.configure(
+                text=format_advancement_hint(repo, exercise, fitness_settings=settings)
+            )
+        else:
+            detail_hint.configure(text="")
 
         seed_key = exercise.metadata.get("seed_key", step_id) if exercise else step_id
         video = get_exercise_video(
@@ -371,7 +443,18 @@ def show_fitness_window(root, on_session_saved=None, theme=None):
         else:
             detail_video.configure(text="No demo video cataloged yet for this step.")
 
-        log_btn.configure(state=tk.NORMAL)
+        can_log = exercise_log_allowed(repo, step_id, fitness_settings=settings)
+        if can_log:
+            log_btn.configure(state=tk.NORMAL)
+        else:
+            log_btn.configure(state=tk.DISABLED)
+            if progression_locks_enabled(settings):
+                detail_hint.configure(
+                    text=(
+                        (detail_hint.cget("text") + "\n\n") if detail_hint.cget("text") else ""
+                    )
+                    + "This step is locked until you meet the progression standard on earlier steps."
+                )
 
     def on_tree_select(_event=None):
         selected = tree.selection()
@@ -383,7 +466,12 @@ def show_fitness_window(root, on_session_saved=None, theme=None):
             messagebox.showinfo("Select Step", "Choose a step under a program to log.")
             return
         open_log_dialog_for_exercise(
-            win, repo, selected[0], on_saved=refresh_list, on_session_saved=on_session_saved
+            win,
+            repo,
+            selected[0],
+            on_saved=refresh_list,
+            on_session_saved=on_session_saved,
+            fitness_settings=settings,
         )
 
     def open_selected_video():
@@ -400,6 +488,150 @@ def show_fitness_window(root, on_session_saved=None, theme=None):
         import skill_tree
 
         skill_tree.show_skill_tree_window(win, repo)
+
+    def open_fitness_settings():
+        dialog = tk.Toplevel(win)
+        dialog.title("Fitness Settings")
+        dialog.geometry("560x360")
+        dialog.transient(win)
+        dialog.grab_set()
+
+        frame = ttk.Frame(dialog, padding=16)
+        frame.pack(fill=tk.BOTH, expand=True)
+
+        ttk.Label(frame, text=LOCK_BYPASS_WARNING, wraplength=500, style="Muted.TLabel").pack(
+            anchor="w", pady=(0, 12)
+        )
+        bypass_var = tk.BooleanVar(value=bool(settings.get("disable_progression_locks")))
+        ttk.Checkbutton(
+            frame,
+            text="Allow logging any step (bypass progression locks)",
+            variable=bypass_var,
+        ).pack(anchor="w")
+
+        ttk.Separator(frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=14)
+        ttk.Label(
+            frame,
+            text="Sessions required at progression standard before the next CC-style step unlocks:",
+            wraplength=500,
+        ).pack(anchor="w")
+        sessions_var = tk.IntVar(value=int(settings.get("cc_sessions_for_advance", 2)))
+        ttk.Spinbox(frame, from_=1, to=5, textvariable=sessions_var, width=6).pack(anchor="w", pady=6)
+
+        def save_settings():
+            settings["disable_progression_locks"] = bool(bypass_var.get())
+            settings["cc_sessions_for_advance"] = max(1, int(sessions_var.get()))
+            repo.fitness_settings = settings
+            if on_fitness_settings_changed:
+                on_fitness_settings_changed(settings)
+            dialog.destroy()
+            refresh_list()
+
+        btn_row = ttk.Frame(frame)
+        btn_row.pack(anchor="e", pady=(16, 0))
+        ttk.Button(btn_row, text="Cancel", command=dialog.destroy).pack(side=tk.RIGHT, padx=(8, 0))
+        ttk.Button(btn_row, text="Save", style="Accent.TButton", command=save_settings).pack(side=tk.RIGHT)
+
+    def open_placement_dialog():
+        selected = tree.selection()
+        program = None
+        if selected and selected[0].startswith("prog:"):
+            prog_id = selected[0].removeprefix("prog:")
+            for book in fitness_programs.build_program_hierarchy(list_exercise_rows(repo)):
+                for item in book["programs"]:
+                    if item["id"] == prog_id:
+                        program = item
+                        break
+        elif selected and selected[0] in step_rows:
+            step = step_rows[selected[0]]
+            for book in fitness_programs.build_program_hierarchy(list_exercise_rows(repo)):
+                for item in book["programs"]:
+                    if item["source_book"] == step["source_book"] and item["family"] == step["family"]:
+                        program = item
+                        break
+
+        if program is None:
+            messagebox.showinfo(
+                "Select a program",
+                "Expand a book and select a program (e.g. CC1 → Pull) or a step within it.",
+                parent=win,
+            )
+            return
+
+        if not is_sequential_program(repo, program["source_book"], program["family"]):
+            messagebox.showinfo(
+                "Not a step ladder",
+                "This program does not use sequential step locking — all movements stay available.",
+                parent=win,
+            )
+            return
+
+        dialog = tk.Toplevel(win)
+        dialog.title(f"Set Starting Step — {program['title']}")
+        dialog.geometry("560x420")
+        dialog.transient(win)
+        dialog.grab_set()
+
+        frame = ttk.Frame(dialog, padding=16)
+        frame.pack(fill=tk.BOTH, expand=True)
+        ttk.Label(frame, text=PLACEMENT_WARNING, wraplength=500, style="Muted.TLabel").pack(
+            anchor="w", pady=(0, 12)
+        )
+
+        step_values = [step.get("step") for step in program["steps"] if step.get("step")]
+        current = next(
+            (step.get("step") for step in program["steps"] if step.get("status") in {"available", "in_progress"}),
+            step_values[0] if step_values else 1,
+        )
+        step_var = tk.IntVar(value=current or 1)
+        ttk.Label(frame, text="I am currently working at step:").pack(anchor="w")
+        ttk.Spinbox(
+            frame,
+            from_=min(step_values) if step_values else 1,
+            to=max(step_values) if step_values else 10,
+            textvariable=step_var,
+            width=8,
+        ).pack(anchor="w", pady=6)
+
+        confirm_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            frame,
+            text="I have prior training experience and understand the risks of skipping foundational work",
+            variable=confirm_var,
+            wraplength=500,
+        ).pack(anchor="w", pady=12)
+
+        def apply_placement():
+            if not confirm_var.get():
+                messagebox.showwarning(
+                    "Confirm experience",
+                    "Please confirm you understand the risks before overriding placement.",
+                    parent=dialog,
+                )
+                return
+            target = int(step_var.get())
+            apply_program_placement(repo, program["source_book"], program["family"], target)
+            key = program_key(program["source_book"], program["family"])
+            placements = dict(settings.get("placements") or {})
+            placements[key] = target
+            settings["placements"] = placements
+            repo.fitness_settings = settings
+            if on_fitness_settings_changed:
+                on_fitness_settings_changed(settings)
+            dialog.destroy()
+            refresh_list()
+            messagebox.showinfo(
+                "Placement updated",
+                f"Set {program['title']} to step {target}. Earlier steps marked complete; later steps stay locked.",
+                parent=win,
+            )
+
+        btn_row = ttk.Frame(frame)
+        btn_row.pack(anchor="e", pady=(16, 0))
+        ttk.Button(btn_row, text="Cancel", command=dialog.destroy).pack(side=tk.RIGHT, padx=(8, 0))
+        ttk.Button(btn_row, text="Apply Placement", style="Accent.TButton", command=apply_placement).pack(
+            side=tk.RIGHT
+        )
 
     def open_session_dialog():
         dialog = tk.Toplevel(win)
@@ -539,6 +771,8 @@ def show_fitness_window(root, on_session_saved=None, theme=None):
         command=lambda: body_composition_ui.show_body_composition_window(win, repo),
     ).pack(side=tk.LEFT, padx=6)
     ttk.Button(btn_bar, text="Skill Tree", command=open_skill_tree).pack(side=tk.LEFT, padx=6)
+    ttk.Button(btn_bar, text="Set Starting Step", command=open_placement_dialog).pack(side=tk.LEFT, padx=6)
+    ttk.Button(btn_bar, text="Fitness Settings", command=open_fitness_settings).pack(side=tk.LEFT, padx=6)
     ttk.Button(btn_bar, text="Refresh", command=refresh_list).pack(side=tk.LEFT, padx=6)
 
     refresh_list()

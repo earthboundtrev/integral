@@ -60,7 +60,8 @@ def test_mastering_wall_pushup_unlocks_incline(tmp_path):
     wall_id = key_map["cc1_push_01"]
     incline_id = key_map["cc1_push_02"]
 
-    record_performance(repo, wall_id, {"sets": 3, "reps": 50})
+    record_performance(repo, wall_id, {"sets": 3, "reps": 50}, session_id="s1")
+    record_performance(repo, wall_id, {"sets": 3, "reps": 50}, session_id="s2")
 
     assert repo.get_user_progress(wall_id).status == "mastered"
     assert repo.get_user_progress(incline_id).status == "available"
