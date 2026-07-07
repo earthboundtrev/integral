@@ -7,6 +7,9 @@ from progression.db import FitnessRepository
 from progression.engine import record_performance
 from progression.models import WorkoutSession, WorkoutSet
 
+BODY_MOVEMENT_CHECKLIST = "Completed movement or exercise"
+LEGACY_BODY_MOVEMENT_CHECKLIST = "Completed movement/exercise"
+
 
 def create_workout_session(
     repo: FitnessRepository,
@@ -81,11 +84,40 @@ def format_session_summary(repo: FitnessRepository, session: WorkoutSession) -> 
     return "\n".join(lines)
 
 
+def bridge_fitness_to_daily_entries(entries: dict, session_date: str) -> None:
+    """Connect a fitness session date to the daily Body & Presence life-area log."""
+    day = entries.setdefault(session_date, {})
+    body = day.setdefault(
+        "Body & Presence",
+        {"rating": 7, "checklist": {}, "metrics": {}, "notes": ""},
+    )
+    checklist = body.setdefault("checklist", {})
+    checklist[BODY_MOVEMENT_CHECKLIST] = True
+    checklist.pop(LEGACY_BODY_MOVEMENT_CHECKLIST, None)
+
+
+def sync_fitness_sessions_to_entries(
+    entries: dict,
+    fitness_settings: dict | None = None,
+    *,
+    repo: FitnessRepository | None = None,
+) -> bool:
+    """Backfill daily entries from SQLite workout sessions (idempotent)."""
+    repo = repo or FitnessRepository(fitness_settings=fitness_settings)
+    repo.initialize()
+    changed = False
+    session_dates = {session.date for session in repo.list_workout_sessions(limit=5000)}
+    for session_date in session_dates:
+        before = entries.get(session_date, {}).get("Body & Presence", {}).get("checklist", {})
+        bridge_fitness_to_daily_entries(entries, session_date)
+        after = entries.get(session_date, {}).get("Body & Presence", {}).get("checklist", {})
+        if before != after:
+            changed = True
+    return changed
+
+
 def link_session_to_body_presence(data: dict, session_date: str) -> dict:
     """Mark Body & Presence checklist when a workout is logged."""
     entries = data.setdefault("entries", {})
-    day = entries.setdefault(session_date, {})
-    body = day.setdefault("Body & Presence", {})
-    checklist = body.setdefault("checklist", {})
-    checklist["Completed movement/exercise"] = True
+    bridge_fitness_to_daily_entries(entries, session_date)
     return data

@@ -113,7 +113,13 @@ def draw_skill_tree(canvas, model: dict) -> None:
     canvas.configure(scrollregion=(0, 0, model["width"], model["height"]))
 
 
-def show_skill_tree_window(root, repo: FitnessRepository | None = None):
+def show_skill_tree_window(
+    root,
+    repo: FitnessRepository | None = None,
+    *,
+    on_session_saved=None,
+    fitness_settings: dict | None = None,
+):
     import tkinter as tk
     from tkinter import ttk
 
@@ -173,6 +179,7 @@ def show_skill_tree_window(root, repo: FitnessRepository | None = None):
 
     import ui_scroll
 
+    ui_scroll.activate_dialog_scrolling(win, canvas)
     ui_scroll.bind_mousewheel(canvas, canvas.yview)
     ui_scroll.bind_mousewheel(canvas, canvas.xview, horizontal=True)
 
@@ -194,7 +201,14 @@ def show_skill_tree_window(root, repo: FitnessRepository | None = None):
         for tag in tags:
             if tag.startswith("node:"):
                 exercise_id = tag.split(":", 1)[1]
-                open_log_dialog_for_exercise(win, repo, exercise_id, on_saved=refresh)
+                open_log_dialog_for_exercise(
+                    win,
+                    repo,
+                    exercise_id,
+                    on_saved=refresh,
+                    on_session_saved=on_session_saved,
+                    fitness_settings=fitness_settings,
+                )
                 return
 
     canvas.bind("<Button-1>", on_node_click)

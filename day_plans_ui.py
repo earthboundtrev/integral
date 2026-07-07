@@ -22,11 +22,19 @@ def show_plan_window(tracker: "PersonalDevelopmentTracker", plan_date: str | Non
     win = tk.Toplevel(tracker.root)
     win.title("Plan Your Day")
     win.geometry("920x760")
+    win.minsize(640, 480)
     win.configure(bg=theme["bg"])
     win.transient(tracker.root)
 
+    footer = ttk.Frame(win, padding=12)
+    footer.pack(side=tk.BOTTOM, fill=tk.X)
+    ttk.Separator(footer, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=(0, 10))
+    save_btn = ttk.Button(footer, text="Save Plan", style="Accent.TButton")
+    save_btn.pack(side=tk.RIGHT)
+    ttk.Button(footer, text="Close", command=win.destroy).pack(side=tk.RIGHT, padx=(0, 8))
+
     header = ttk.Frame(win, padding=(16, 14, 16, 8))
-    header.pack(fill=tk.X)
+    header.pack(side=tk.TOP, fill=tk.X)
     ttk.Label(header, text="Plan Your Day", style="Title.TLabel").pack(anchor="w")
     ttk.Label(
         header,
@@ -37,7 +45,7 @@ def show_plan_window(tracker: "PersonalDevelopmentTracker", plan_date: str | Non
     ).pack(anchor="w", pady=(4, 0))
 
     body = ttk.Frame(win, padding=(16, 0, 16, 8))
-    body.pack(fill=tk.BOTH, expand=True)
+    body.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
     top = ttk.LabelFrame(body, text="Plan date", padding=10, style="Card.TLabelframe")
     top.pack(fill=tk.X, pady=(0, 10))
@@ -141,14 +149,9 @@ def show_plan_window(tracker: "PersonalDevelopmentTracker", plan_date: str | Non
         tracker.refresh_dashboard()
         messagebox.showinfo("Saved", f"Plan saved for {planned_for}.", parent=win)
 
+    save_btn.configure(command=save_plan)
     date_var.trace_add("write", load_plan_for_date)
     load_plan_for_date()
-
-    footer = ttk.Frame(win, padding=12)
-    footer.pack(fill=tk.X)
-    ttk.Separator(footer, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=(0, 10))
-    ttk.Button(footer, text="Save Plan", style="Accent.TButton", command=save_plan).pack(side=tk.RIGHT)
-    ttk.Button(footer, text="Close", command=win.destroy).pack(side=tk.RIGHT, padx=(0, 8))
 
 
 def show_plan_comparison_window(tracker: "PersonalDevelopmentTracker", date_str: str) -> None:
@@ -163,17 +166,29 @@ def show_plan_comparison_window(tracker: "PersonalDevelopmentTracker", date_str:
     win = tk.Toplevel(tracker.root)
     win.title("Plan vs Actual")
     win.geometry("820x680")
+    win.minsize(560, 420)
     win.configure(bg=theme["bg"])
     win.transient(tracker.root)
 
+    footer = ttk.Frame(win, padding=12)
+    footer.pack(side=tk.BOTTOM, fill=tk.X)
+    ttk.Button(
+        footer,
+        text="Explore full day",
+        command=lambda: (win.destroy(), tracker.show_day_explorer(date_str)),
+    ).pack(side=tk.LEFT)
+    ttk.Button(footer, text="Close", command=win.destroy).pack(side=tk.RIGHT)
+
     header = ttk.Frame(win, padding=(16, 14, 16, 8))
-    header.pack(fill=tk.X)
+    header.pack(side=tk.TOP, fill=tk.X)
     ttk.Label(header, text="Plan vs Actual", style="Title.TLabel").pack(anchor="w")
     ttk.Label(header, text=date_str, style="Muted.TLabel").pack(anchor="w", pady=(2, 0))
     ttk.Label(header, text=comparison["summary"], wraplength=760).pack(anchor="w", pady=(8, 0))
 
-    outer, inner, _canvas = ui_scroll.make_scrollable_frame(win)
-    outer.pack(fill=tk.BOTH, expand=True, padx=16, pady=(0, 8))
+    scroll_host = ttk.Frame(win, padding=(16, 0, 16, 8))
+    scroll_host.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+    outer, inner, _canvas = ui_scroll.make_scrollable_frame(scroll_host)
+    outer.pack(fill=tk.BOTH, expand=True)
 
     if comparison.get("day_intention"):
         block = ttk.LabelFrame(inner, text="Day intention", padding=10, style="Card.TLabelframe")
@@ -209,12 +224,3 @@ def show_plan_comparison_window(tracker: "PersonalDevelopmentTracker", date_str:
                 ttk.Label(card, text=f"Actual notes: {actual['notes']}", wraplength=720).pack(anchor="w")
         elif row["status"] == "not_logged":
             ttk.Label(card, text="Not logged yet.", style="OnSurfaceMuted.TLabel").pack(anchor="w")
-
-    footer = ttk.Frame(win, padding=12)
-    footer.pack(fill=tk.X)
-    ttk.Button(
-        footer,
-        text="Explore full day",
-        command=lambda: (win.destroy(), tracker.show_day_explorer(date_str)),
-    ).pack(side=tk.LEFT)
-    ttk.Button(footer, text="Close", command=win.destroy).pack(side=tk.RIGHT)

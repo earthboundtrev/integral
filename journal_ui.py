@@ -23,8 +23,12 @@ def show_journal_window(tracker: PersonalDevelopmentTracker, entry_date: str | N
     win.configure(bg=theme["bg"])
     win.transient(tracker.root)
 
+    footer = ttk.Frame(win, padding=(16, 8, 16, 12))
+    footer.pack(side=tk.BOTTOM, fill=tk.X)
+    ttk.Button(footer, text="Close", command=win.destroy).pack(side=tk.RIGHT)
+
     header = ttk.Frame(win, padding=(16, 14, 16, 8))
-    header.pack(fill=tk.X)
+    header.pack(side=tk.TOP, fill=tk.X)
     ttk.Label(header, text="Journal", style="Title.TLabel").pack(anchor="w")
     ttk.Label(
         header,
@@ -35,7 +39,7 @@ def show_journal_window(tracker: PersonalDevelopmentTracker, entry_date: str | N
     ).pack(anchor="w", pady=(4, 0))
 
     body = ttk.Frame(win, padding=(16, 0, 16, 8))
-    body.pack(fill=tk.BOTH, expand=True)
+    body.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
     body.columnconfigure(0, weight=1)
     body.columnconfigure(1, weight=2)
     body.rowconfigure(0, weight=1)
@@ -221,10 +225,6 @@ def show_journal_window(tracker: PersonalDevelopmentTracker, entry_date: str | N
     editor_btns.grid(row=6, column=0, sticky="ew", pady=(10, 0))
     ttk.Button(editor_btns, text="Save Entry", style="Accent.TButton", command=save_entry).pack(side=tk.LEFT)
     ttk.Button(editor_btns, text="Clear", command=clear_editor).pack(side=tk.LEFT, padx=8)
-
-    footer = ttk.Frame(win, padding=(16, 8, 16, 12))
-    footer.pack(fill=tk.X)
-    ttk.Button(footer, text="Close", command=win.destroy).pack(side=tk.RIGHT)
 
     refresh_list()
     body_text.focus_set()

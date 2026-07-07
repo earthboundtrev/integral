@@ -30,6 +30,7 @@ from journal_ui import show_journal_window
 from milestones import merge_milestones, milestone_summary
 from notifications import ReminderScheduler, normalize_notification_settings
 from paths import APP_NAME, APP_VERSION, data_file, ensure_data_file, icon_path
+from progression.sessions import bridge_fitness_to_daily_entries, sync_fitness_sessions_to_entries
 import streak
 from theme import (
     FONTS,
@@ -535,6 +536,8 @@ class PersonalDevelopmentTracker:
             self.journal = journal.normalize_journal(migrated.get("journal"))
             self.day_plans = day_plans.normalize_day_plans(migrated.get("day_plans"))
             self.program_state = migrated.get("program_state", {})
+            if sync_fitness_sessions_to_entries(self.entries, self.settings.get("fitness")):
+                self.save_data(flush=True)
         else:
             self.categories = self.get_default_categories()
             self.entries = {}
@@ -670,7 +673,10 @@ class PersonalDevelopmentTracker:
             actions, text="Plan Tomorrow", command=self.show_plan_tomorrow
         ).pack(side=tk.LEFT, padx=(0, 8))
         ttk.Button(
-            actions, text="Fitness Hub", style="Accent.TButton", command=self.show_fitness_hub
+            actions, text="Log Exercise", style="Accent.TButton", command=self.show_log_exercise
+        ).pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Button(
+            actions, text="Fitness Hub", command=self.show_fitness_hub
         ).pack(side=tk.LEFT)
 
         today_plan = day_plans.plan_for_date(self.day_plans, self.today_str())
@@ -703,8 +709,14 @@ class PersonalDevelopmentTracker:
         )
         progress.pack(fill=tk.X, pady=(10, 0))
 
-        btn_row = ttk.Frame(log_bar, style="Surface.TFrame")
-        btn_row.pack(fill=tk.X, pady=(12, 0))
+        cat_scroll_host = ttk.Frame(log_bar, style="Surface.TFrame")
+        cat_scroll_host.pack(fill=tk.X, pady=(12, 0))
+        _cat_wrap, btn_row, _cat_canvas = ui_scroll.make_bounded_vertical_scroll(
+            cat_scroll_host,
+            max_height=168,
+            overflow_hint="↓ Scroll for more categories",
+        )
+        _cat_wrap.pack(fill=tk.X)
         for index, cat_name in enumerate(self.categories):
             short = CATEGORY_SHORT_LABELS.get(cat_name, cat_name)
             is_logged = cat_name in today_entries
@@ -838,6 +850,15 @@ class PersonalDevelopmentTracker:
         )
         self._date_label.pack(side=tk.RIGHT)
 
+        footer = ttk.Frame(self.root)
+        footer.pack(side=tk.BOTTOM, fill=tk.X, padx=16, pady=(4, 12))
+        ttk.Separator(footer, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=(0, 10))
+        nav_host, nav, _nav_canvas = ui_scroll.make_horizontal_scroll_row(
+            footer,
+            overflow_hint="Scroll for more →",
+        )
+        nav_host.pack(fill=tk.X)
+
         self.create_todays_log_bar()
 
         self._invalidate_caches()
@@ -845,7 +866,7 @@ class PersonalDevelopmentTracker:
 
         notebook = ttk.Notebook(self.root)
         self._notebook = notebook
-        notebook.pack(fill=tk.BOTH, expand=True, padx=16, pady=(0, 8))
+        notebook.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=16, pady=(0, 8))
 
         overview = ttk.Frame(notebook)
         categories_tab = ttk.Frame(notebook)
@@ -857,11 +878,6 @@ class PersonalDevelopmentTracker:
 
         self._build_overview_tab(overview)
 
-        footer = ttk.Frame(self.root)
-        footer.pack(fill=tk.X, padx=16, pady=(4, 12))
-        ttk.Separator(footer, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=(0, 10))
-        nav = ttk.Frame(footer)
-        nav.pack(fill=tk.X)
         ttk.Button(nav, text="Refresh", command=self.create_dashboard).pack(side=tk.LEFT)
         ttk.Button(nav, text="Guidance", command=self.show_guidance).pack(side=tk.LEFT, padx=6)
         ttk.Button(nav, text="Weekly Summary", command=self.show_weekly_summary).pack(side=tk.LEFT, padx=6)
@@ -872,9 +888,10 @@ class PersonalDevelopmentTracker:
             side=tk.LEFT, padx=6
         )
         ttk.Button(nav, text="Plan Tomorrow", command=self.show_plan_tomorrow).pack(side=tk.LEFT, padx=6)
-        ttk.Button(nav, text="Fitness Hub", style="Accent.TButton", command=self.show_fitness_hub).pack(
+        ttk.Button(nav, text="Log Exercise", style="Accent.TButton", command=self.show_log_exercise).pack(
             side=tk.LEFT, padx=6
         )
+        ttk.Button(nav, text="Fitness Hub", command=self.show_fitness_hub).pack(side=tk.LEFT, padx=6)
         ttk.Button(nav, text="Milestones", command=self.show_milestones).pack(side=tk.LEFT, padx=6)
         ttk.Button(nav, text="Export", command=self.show_export).pack(side=tk.LEFT, padx=6)
         ttk.Button(nav, text="Backup", command=self.show_backup).pack(side=tk.LEFT, padx=6)
@@ -1083,32 +1100,32 @@ class PersonalDevelopmentTracker:
         window.configure(bg=self.theme["bg"])
         window.transient(self.root)
 
+        footer = ttk.Frame(window)
+        footer.pack(side=tk.BOTTOM, fill=tk.X, padx=15, pady=(0, 12))
+        ttk.Button(
+            footer,
+            text="Log exercise for this day",
+            command=lambda: (window.destroy(), self.show_log_exercise(date_str)),
+        ).pack(side=tk.LEFT)
+        ttk.Button(footer, text="Close", command=window.destroy).pack(side=tk.RIGHT)
+
         header = ttk.Frame(window)
-        header.pack(fill=tk.X, padx=15, pady=12)
+        header.pack(side=tk.TOP, fill=tk.X, padx=15, pady=12)
         ttk.Label(header, text=day_label, font=("Helvetica", 16, "bold")).pack(side=tk.LEFT)
 
         day_entries = self.entries.get(date_str, {})
-        day_fitness = [session for session in self.sessions if session.get("date") == date_str]
+        day_fitness_summaries = self._fitness_summaries_for_date(date_str)
         day_journal = journal.entries_for_day(self.journal, datetime.strptime(date_str, "%Y-%m-%d").date())
         ttk.Label(
             header,
-            text=f"{len(day_entries)} areas  ·  {len(day_journal)} journal  ·  {len(day_fitness)} fitness",
+            text=f"{len(day_entries)} areas  ·  {len(day_journal)} journal  ·  {len(day_fitness_summaries)} fitness",
             style="Muted.TLabel",
         ).pack(side=tk.RIGHT)
 
-        body = ttk.Frame(window)
-        body.pack(fill=tk.BOTH, expand=True, padx=15, pady=(0, 15))
-        body.columnconfigure(0, weight=1)
-
-        canvas = tk.Canvas(body, highlightthickness=0)
-        style_canvas(canvas, self.theme)
-        scrollbar = ttk.Scrollbar(body, orient=tk.VERTICAL, command=canvas.yview)
-        scroll_frame = ttk.Frame(canvas)
-        scroll_frame.bind("<Configure>", lambda _event: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
-        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        scroll_host = ttk.Frame(window)
+        scroll_host.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=15, pady=(0, 15))
+        outer, scroll_frame, _canvas = ui_scroll.make_scrollable_frame(scroll_host)
+        outer.pack(fill=tk.BOTH, expand=True)
 
         row = 0
         day_plan = day_plans.plan_for_date(self.day_plans, date_str)
@@ -1193,19 +1210,15 @@ class PersonalDevelopmentTracker:
                     ).pack(anchor="w", pady=(4, 0))
                 row += 1
 
-        if day_fitness:
+        if day_fitness_summaries:
             ttk.Label(scroll_frame, text="Fitness sessions", font=("Helvetica", 12, "bold")).grid(
                 row=row, column=0, sticky="w", pady=(12, 4)
             )
             row += 1
-            for session in day_fitness:
-                program = self.programs.get(session.get("program_id", ""), {})
-                ttk.Label(
-                    scroll_frame,
-                    text=f"• {program.get('name', session.get('program_id', 'Fitness'))}"
-                    + (f" — {session.get('notes', '')[:80]}" if session.get("notes") else ""),
-                    wraplength=620,
-                ).grid(row=row, column=0, sticky="w")
+            for summary in day_fitness_summaries:
+                ttk.Label(scroll_frame, text=f"• {summary}", wraplength=620).grid(
+                    row=row, column=0, sticky="w"
+                )
                 row += 1
 
         missing = [name for name in self.categories if name not in day_entries]
@@ -1227,10 +1240,6 @@ class PersonalDevelopmentTracker:
         journal_row = ttk.Frame(scroll_frame)
         journal_row.grid(row=row, column=0, sticky="w", pady=(8, 0))
         ttk.Button(journal_row, text="+ Journal entry for this day", command=lambda: show_journal_window(self, date_str)).pack(side=tk.LEFT)
-
-        footer = ttk.Frame(window)
-        footer.pack(fill=tk.X, padx=15, pady=(0, 12))
-        ttk.Button(footer, text="Close", command=window.destroy).pack(side=tk.RIGHT)
 
     def _open_log_and_close(self, parent_window: tk.Toplevel, cat_name: str, date_str: str) -> None:
         parent_window.destroy()
@@ -1457,27 +1466,38 @@ class PersonalDevelopmentTracker:
         window = tk.Toplevel(self.root)
         window.title("Guidance & Maintenance")
         window.geometry("920x720")
+        window.minsize(560, 400)
         window.configure(bg=self.theme["bg"])
+
+        footer = ttk.Frame(window, padding=(12, 10))
+        footer.pack(side=tk.BOTTOM, fill=tk.X)
+        ttk.Button(footer, text="Close", command=window.destroy).pack(side=tk.RIGHT)
 
         ttk.Label(
             window,
             text="Intelligent guidance from your logs — trends, gaps, and next steps",
             font=("Helvetica", 13, "bold"),
-        ).pack(anchor="w", padx=12, pady=12)
+        ).pack(side=tk.TOP, anchor="w", padx=12, pady=12)
 
         text = scrolledtext.ScrolledText(window, wrap=tk.WORD, font=("Helvetica", 11))
         style_text_widget(text, self.theme)
-        text.pack(fill=tk.BOTH, expand=True, padx=12, pady=(0, 12))
+        text.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=12, pady=(0, 12))
         text.insert(tk.END, format_guidance_report(self.insights))
 
     def show_history(self) -> None:
         window = tk.Toplevel(self.root)
         window.title("Full History")
         window.geometry("860x640")
+        window.minsize(560, 400)
         window.configure(bg=self.theme["bg"])
+
+        footer = ttk.Frame(window, padding=(12, 10))
+        footer.pack(side=tk.BOTTOM, fill=tk.X)
+        ttk.Button(footer, text="Close", command=window.destroy).pack(side=tk.RIGHT)
+
         text = scrolledtext.ScrolledText(window, wrap=tk.WORD, font=("Consolas", 10))
         style_text_widget(text, self.theme)
-        text.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        text.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=10, pady=10)
 
         if not self.entries:
             text.insert(tk.END, "No entries yet.")
@@ -1509,7 +1529,12 @@ class PersonalDevelopmentTracker:
         window = tk.Toplevel(self.root)
         window.title("Weekly Summary")
         window.geometry("900x680")
+        window.minsize(560, 400)
         window.configure(bg=self.theme["bg"])
+
+        footer = ttk.Frame(window, padding=(12, 10))
+        footer.pack(side=tk.BOTTOM, fill=tk.X)
+        ttk.Button(footer, text="Close", command=window.destroy).pack(side=tk.RIGHT)
 
         end = datetime.now().date()
         start = end - timedelta(days=6)
@@ -1517,11 +1542,11 @@ class PersonalDevelopmentTracker:
             window,
             text=f"Week of {start.strftime('%b %d')} – {end.strftime('%b %d, %Y')}",
             font=("Helvetica", 14, "bold"),
-        ).pack(anchor="w", padx=12, pady=12)
+        ).pack(side=tk.TOP, anchor="w", padx=12, pady=12)
 
         text = scrolledtext.ScrolledText(window, wrap=tk.WORD, font=("Helvetica", 11))
         style_text_widget(text, self.theme)
-        text.pack(fill=tk.BOTH, expand=True, padx=12, pady=(0, 12))
+        text.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=12, pady=(0, 12))
 
         week_dates = [(start + timedelta(days=offset)).strftime("%Y-%m-%d") for offset in range(7)]
         days_logged = sum(1 for date in week_dates if date in self.entries)
@@ -1597,10 +1622,15 @@ class PersonalDevelopmentTracker:
         window = tk.Toplevel(self.root)
         window.title("Search Notes")
         window.geometry("860x640")
+        window.minsize(560, 400)
         window.configure(bg=self.theme["bg"])
 
+        footer = ttk.Frame(window, padding=(12, 10))
+        footer.pack(side=tk.BOTTOM, fill=tk.X)
+        ttk.Button(footer, text="Close", command=window.destroy).pack(side=tk.RIGHT)
+
         search_frame = ttk.Frame(window)
-        search_frame.pack(fill=tk.X, padx=10, pady=10)
+        search_frame.pack(side=tk.TOP, fill=tk.X, padx=10, pady=10)
         ttk.Label(search_frame, text="Search:").pack(side=tk.LEFT)
         query_var = tk.StringVar()
         entry = ttk.Entry(search_frame, textvariable=query_var, width=50)
@@ -1608,7 +1638,7 @@ class PersonalDevelopmentTracker:
 
         results = scrolledtext.ScrolledText(window, wrap=tk.WORD, font=("Consolas", 10))
         style_text_widget(results, self.theme)
-        results.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
+        results.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
 
         def run_search(*_args: object) -> None:
             query = query_var.get().strip().lower()
@@ -1673,20 +1703,63 @@ class PersonalDevelopmentTracker:
     def show_graphs(self) -> None:
         open_graphs(self.root, self.entries, self.categories, self.theme)
 
-    def show_fitness_hub(self) -> None:
+    def _on_fitness_session_saved(self, session_date: str) -> None:
+        bridge_fitness_to_daily_entries(self.entries, session_date)
+        self._fitness_state_dirty = True
+        self._invalidate_caches()
+        self.refresh_dashboard()
+        self.save_data(recompute_fitness=True)
+
+    def _fitness_session_count_for_date(self, date_str: str) -> int:
+        return self._activity_session_counts().get(date_str, 0)
+
+    def _fitness_summaries_for_date(self, date_str: str) -> list[str]:
+        summaries: list[str] = []
+        for session in self.sessions:
+            if session.get("date") != date_str:
+                continue
+            program = self.programs.get(session.get("program_id", ""), {})
+            label = program.get("name", session.get("program_id", "Fitness"))
+            note = session.get("notes", "")
+            summaries.append(f"{label}" + (f" — {note[:80]}" if note else ""))
+
+        try:
+            from fitness_ui import get_profile_repo
+            from progression.sessions import format_session_summary
+
+            repo = get_profile_repo(self.settings.get("fitness"))
+            repo.initialize()
+            for session in repo.list_workout_sessions(limit=5000):
+                if session.date != date_str:
+                    continue
+                summary = format_session_summary(repo, session)
+                lines = [line.strip() for line in summary.splitlines() if line.strip()]
+                if len(lines) > 1:
+                    summaries.append(lines[1].lstrip("• "))
+                elif lines:
+                    summaries.append(f"Workout logged ({lines[0].replace('Date: ', '')})")
+                else:
+                    summaries.append("Workout logged")
+        except Exception:
+            pass
+        return summaries
+
+    def show_log_exercise(self, date_str: str | None = None) -> None:
         import fitness_ui
 
-        def on_session_saved(session_date: str) -> None:
-            day = self.entries.setdefault(session_date, {})
-            body = day.setdefault(
-                "Body & Presence",
-                {"rating": 7, "checklist": {}, "metrics": {}, "notes": ""},
-            )
-            body.setdefault("checklist", {})["Completed movement or exercise"] = True
-            self._fitness_state_dirty = True
-            self._invalidate_caches()
-            self.refresh_dashboard()
-            self.save_data(recompute_fitness=True)
+        target = date_str or self.today_str()
+        repo = fitness_ui.get_profile_repo(self.settings.get("fitness"))
+        fitness_ui.ensure_fitness_seeded(repo, self.settings.get("fitness"))
+        fitness_ui.open_new_session_dialog(
+            self.root,
+            repo,
+            initial_date=target,
+            on_session_saved=self._on_fitness_session_saved,
+            fitness_settings=self.settings.get("fitness"),
+        )
+
+    def show_fitness_hub(self) -> None:
+        import fitness_ui
 
         def on_fitness_settings_changed(updated: dict) -> None:
             self.settings["fitness"] = updated
@@ -1694,7 +1767,7 @@ class PersonalDevelopmentTracker:
 
         fitness_ui.show_fitness_window(
             self.root,
-            on_session_saved=on_session_saved,
+            on_session_saved=self._on_fitness_session_saved,
             theme=self.theme,
             fitness_settings=self.settings.get("fitness"),
             on_fitness_settings_changed=on_fitness_settings_changed,
@@ -1704,14 +1777,29 @@ class PersonalDevelopmentTracker:
         editor = tk.Toplevel(self.root)
         editor.title("Edit Categories")
         editor.geometry("920x640")
+        editor.minsize(720, 480)
         editor.configure(bg=self.theme["bg"])
         editor.transient(self.root)
         editor.grab_set()
 
         working = json.loads(json.dumps(self.categories))
 
+        buttons = ttk.Frame(editor)
+        buttons.pack(side=tk.BOTTOM, fill=tk.X, padx=12, pady=(0, 12))
+        add_btn = ttk.Button(buttons, text="Add Category")
+        add_btn.pack(side=tk.LEFT)
+        delete_btn = ttk.Button(buttons, text="Delete Category")
+        delete_btn.pack(side=tk.LEFT, padx=8)
+        save_cat_btn = ttk.Button(buttons, text="Save Category")
+        save_cat_btn.pack(side=tk.LEFT, padx=8)
+        reset_btn = ttk.Button(buttons, text="Reset Defaults")
+        reset_btn.pack(side=tk.LEFT, padx=8)
+        save_close_btn = ttk.Button(buttons, text="Save & Close")
+        save_close_btn.pack(side=tk.RIGHT)
+        ttk.Button(buttons, text="Cancel", command=editor.destroy).pack(side=tk.RIGHT, padx=8)
+
         body = ttk.Frame(editor)
-        body.pack(fill=tk.BOTH, expand=True, padx=12, pady=12)
+        body.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=12, pady=12)
         body.columnconfigure(1, weight=1)
         body.rowconfigure(0, weight=1)
 
@@ -1719,10 +1807,14 @@ class PersonalDevelopmentTracker:
         category_list = tk.Listbox(body, height=20, width=28, exportselection=False)
         category_list.grid(row=0, column=0, sticky="ns", padx=(0, 10))
         style_listbox(category_list, self.theme)
+        ui_scroll.bind_mousewheel(category_list, category_list.yview)
 
-        editor_panel = ttk.Frame(body)
-        editor_panel.grid(row=0, column=1, sticky="nsew")
-        editor_panel.columnconfigure(0, weight=1)
+        editor_host = ttk.Frame(body)
+        editor_host.grid(row=0, column=1, sticky="nsew")
+        editor_host.rowconfigure(0, weight=1)
+        editor_host.columnconfigure(0, weight=1)
+        outer, editor_panel, _canvas = ui_scroll.make_scrollable_frame(editor_host)
+        outer.grid(row=0, column=0, sticky="nsew")
 
         ttk.Label(editor_panel, text="Category name").grid(row=0, column=0, sticky="w")
         name_var = tk.StringVar()
@@ -1732,14 +1824,13 @@ class PersonalDevelopmentTracker:
         ttk.Label(editor_panel, text="Checklist items (one per line)").grid(row=2, column=0, sticky="w")
         checklist_text = scrolledtext.ScrolledText(editor_panel, height=8, wrap=tk.WORD)
         style_text_widget(checklist_text, self.theme)
-        checklist_text.grid(row=3, column=0, sticky="nsew", pady=(0, 10))
+        checklist_text.grid(row=3, column=0, sticky="ew", pady=(0, 10))
 
         ttk.Label(editor_panel, text="Metrics (name | type | unit | default)").grid(row=4, column=0, sticky="w")
         metrics_text = scrolledtext.ScrolledText(editor_panel, height=8, wrap=tk.WORD)
         style_text_widget(metrics_text, self.theme)
-        metrics_text.grid(row=5, column=0, sticky="nsew")
-        editor_panel.rowconfigure(3, weight=1)
-        editor_panel.rowconfigure(5, weight=1)
+        metrics_text.grid(row=5, column=0, sticky="ew", pady=(0, 8))
+        editor_panel.columnconfigure(0, weight=1)
 
         def refresh_list(select_name: str | None = None) -> None:
             category_list.delete(0, tk.END)
@@ -1878,14 +1969,11 @@ class PersonalDevelopmentTracker:
 
         category_list.bind("<<ListboxSelect>>", load_selected)
 
-        buttons = ttk.Frame(editor)
-        buttons.pack(fill=tk.X, padx=12, pady=(0, 12))
-        ttk.Button(buttons, text="Add Category", command=add_category).pack(side=tk.LEFT)
-        ttk.Button(buttons, text="Delete Category", command=delete_category).pack(side=tk.LEFT, padx=8)
-        ttk.Button(buttons, text="Save Category", command=save_category).pack(side=tk.LEFT, padx=8)
-        ttk.Button(buttons, text="Reset Defaults", command=reset_defaults).pack(side=tk.LEFT, padx=8)
-        ttk.Button(buttons, text="Save & Close", command=save_all).pack(side=tk.RIGHT)
-        ttk.Button(buttons, text="Cancel", command=editor.destroy).pack(side=tk.RIGHT, padx=8)
+        add_btn.configure(command=add_category)
+        delete_btn.configure(command=delete_category)
+        save_cat_btn.configure(command=save_category)
+        reset_btn.configure(command=reset_defaults)
+        save_close_btn.configure(command=save_all)
 
         refresh_list(next(iter(working.keys())))
 

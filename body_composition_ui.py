@@ -75,14 +75,18 @@ def show_body_composition_window(root, repo: FitnessRepository | None = None):
     def open_log_dialog():
         dialog = tk.Toplevel(win)
         dialog.title("Log Body Composition")
-        dialog.geometry("400x400")
+        dialog.geometry("400x440")
+        dialog.minsize(360, 360)
         dialog.transient(win)
         dialog.grab_set()
 
         import ui_scroll
 
+        footer = ttk.Frame(dialog, padding=10)
+        footer.pack(side=tk.BOTTOM, fill=tk.X)
+
         outer, inner, _canvas = ui_scroll.make_scrollable_frame(dialog)
-        outer.pack(fill=tk.BOTH, expand=True)
+        outer.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
         today = datetime.now().strftime("%Y-%m-%d")
         date_var = tk.StringVar(value=today)
@@ -128,10 +132,8 @@ def show_body_composition_window(root, repo: FitnessRepository | None = None):
             refresh()
             messagebox.showinfo("Saved", "Body composition logged.")
 
-        btns = ttk.Frame(inner, padding=10)
-        btns.pack(fill=tk.X)
-        ttk.Button(btns, text="Save", command=save).pack(side=tk.LEFT, padx=6)
-        ttk.Button(btns, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT)
+        ttk.Button(footer, text="Save", command=save).pack(side=tk.LEFT, padx=6)
+        ttk.Button(footer, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT)
 
     footer = ttk.Frame(win, padding=10)
     footer.pack(fill=tk.X)

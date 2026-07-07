@@ -112,16 +112,28 @@ def show_milestones_dialog(tracker: PersonalDevelopmentTracker) -> None:
     window = tk.Toplevel(tracker.root)
     window.title("Quarterly Milestones")
     window.geometry("720x520")
+    window.minsize(640, 420)
     window.configure(bg=tracker.theme["bg"])
     window.transient(tracker.root)
 
     year, quarter, label = current_quarter_label()
+
+    buttons = ttk.Frame(window)
+    buttons.pack(side=tk.BOTTOM, fill=tk.X, padx=12, pady=12)
+    add_btn = ttk.Button(buttons, text="Add")
+    add_btn.pack(side=tk.LEFT)
+    apply_btn = ttk.Button(buttons, text="Apply")
+    apply_btn.pack(side=tk.LEFT, padx=8)
+    save_btn = ttk.Button(buttons, text="Save & Close")
+    save_btn.pack(side=tk.RIGHT)
+    ttk.Button(buttons, text="Cancel", command=window.destroy).pack(side=tk.RIGHT, padx=8)
+
     ttk.Label(window, text=f"{label} — track what matters this quarter", font=("Helvetica", 13, "bold")).pack(
-        anchor="w", padx=12, pady=12
+        side=tk.TOP, anchor="w", padx=12, pady=12
     )
 
     body = ttk.Frame(window)
-    body.pack(fill=tk.BOTH, expand=True, padx=12)
+    body.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=12)
     body.columnconfigure(0, weight=1)
     body.rowconfigure(0, weight=1)
 
@@ -206,12 +218,9 @@ def show_milestones_dialog(tracker: PersonalDevelopmentTracker) -> None:
 
     listbox.bind("<<ListboxSelect>>", load_selected)
 
-    buttons = ttk.Frame(window)
-    buttons.pack(fill=tk.X, padx=12, pady=12)
-    ttk.Button(buttons, text="Add", command=add_milestone).pack(side=tk.LEFT)
-    ttk.Button(buttons, text="Apply", command=apply_editor).pack(side=tk.LEFT, padx=8)
-    ttk.Button(buttons, text="Save & Close", command=save_all).pack(side=tk.RIGHT)
-    ttk.Button(buttons, text="Cancel", command=window.destroy).pack(side=tk.RIGHT, padx=8)
+    add_btn.configure(command=add_milestone)
+    apply_btn.configure(command=apply_editor)
+    save_btn.configure(command=save_all)
 
     refresh_list(0 if working else None)
 
@@ -337,17 +346,21 @@ def prompt_vault_unlock(tracker: PersonalDevelopmentTracker) -> bool:
 def show_onboarding(tracker: PersonalDevelopmentTracker, on_done: Callable[[], None] | None = None) -> None:
     window = tk.Toplevel(tracker.root)
     window.title("Welcome to Integral")
-    window.geometry("640x480")
+    window.geometry("640x520")
+    window.minsize(480, 400)
     window.configure(bg=tracker.theme["bg"])
     window.transient(tracker.root)
     window.grab_set()
 
+    footer = ttk.Frame(window, padding=(0, 16))
+    footer.pack(side=tk.BOTTOM, fill=tk.X)
+
     ttk.Label(window, text="Tend every area of your life.", font=("Helvetica", 18, "bold")).pack(
-        anchor="w", padx=20, pady=(20, 8)
+        side=tk.TOP, anchor="w", padx=20, pady=(20, 8)
     )
     body = scrolledtext.ScrolledText(window, wrap=tk.WORD, font=("Helvetica", 11), height=14)
     style_text_widget(body, tracker.theme)
-    body.pack(fill=tk.BOTH, expand=True, padx=20, pady=8)
+    body.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=20, pady=8)
     body.insert(
         tk.END,
         "Integral is free, open-source software — your data stays on this machine.\n\n"
@@ -372,4 +385,4 @@ def show_onboarding(tracker: PersonalDevelopmentTracker, on_done: Callable[[], N
         if on_done:
             on_done()
 
-    ttk.Button(window, text="Get started", command=finish).pack(pady=16)
+    ttk.Button(footer, text="Get started", command=finish).pack()

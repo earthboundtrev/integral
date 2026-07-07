@@ -36,6 +36,14 @@ But paper stinks as the *system*:
 - My **handwriting** is rough; future-me does not want to decode it.
 - It doesn’t stay **organized**. I can try. Software can do it better. Paper can’t.
 
+### Externalizing what you're processing
+
+Some of us don't really *know* what we think until it's outside our heads. Pen and paper are still the best tools I know for that — slow enough to feel honest, physical enough to stick. But paper alone can't carry everything I need to work through: eighteen life domains, fitness progressions, plans versus what actually happened, threads I need to find again months later.
+
+I built Integral because **externalizing information is how I process it** — not as a productivity trick, but as a cognitive need. Once something is written in a structure I chose, I can compare days, notice drift, and stop rehearsing the same thoughts in a loop. A generic notes app captures fragments. A cloud journal often stops being *mine* the moment the hardware or the sync model changes. I wanted one place that holds the whole picture and stays on my machine.
+
+If you're the kind of person who reaches for a notebook when something won't settle — and you've hit the ceiling of what paper alone can organize — you're probably the same kind of person who ends up building something like this. The need doesn't show up on a feature checklist. It's why the app exists at all.
+
 ### The combination approach
 
 Integral is what I actually want: **keep writing things down** when that’s how I think — on paper, on whatever I have — but **put what needs to last** somewhere I control.

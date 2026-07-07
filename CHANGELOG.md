@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.3.1 — 2026-07-07
+
+### Fixed
+
+- **Dialog scrolling** — popups scroll reliably with mouse wheel anywhere in the window; action buttons stay pinned at the bottom
+- **Overflow hints** — narrow or short windows show “scroll for more” on toolbars and the today’s-log category grid
+- **Fitness ↔ daily log bridge** — workouts from Fitness Hub now mark **Body & Presence** on the correct date and appear in the activity grid and day explorer
+- **Backfill on startup** — existing workouts in `fitness.db` sync to daily entries automatically
+- **Skill Tree logging** — exercise logs from the skill tree update the main tracker (same as Fitness Hub)
+
+### Added
+
+- **Log Exercise** — quick session logger from Today’s Log and the footer (pick date, add sets, save)
+- **Day explorer** — “Log exercise for this day” for past dates; fitness sessions listed from the progression database
+- **Session date** on single-step exercise log dialogs (no longer forced to today only)
+
+### Build
+
+- Windows app: `dist/Integral/Integral.exe` (run `.\scripts\build_exe.ps1`)
+- Release zip: `Integral-v0.3.1-windows.zip`
+
 ## 0.3.0 — 2026-07-06
 
 ### Added

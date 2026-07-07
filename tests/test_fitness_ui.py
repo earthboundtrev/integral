@@ -66,7 +66,25 @@ def test_workout_session_persists_sets(tmp_path):
 def test_link_session_to_body_presence(tmp_path):
     data = {"categories": {}, "entries": {}}
     updated = link_session_to_body_presence(data, "2026-06-27")
-    assert updated["entries"]["2026-06-27"]["Body & Presence"]["checklist"]["Completed movement/exercise"]
+    checklist = updated["entries"]["2026-06-27"]["Body & Presence"]["checklist"]
+    assert checklist["Completed movement or exercise"]
+
+
+def test_sync_fitness_sessions_to_entries(tmp_path):
+    from progression.sessions import sync_fitness_sessions_to_entries
+
+    repo = make_repo(tmp_path)
+    seed_all_fitness(repo)
+    wall = repo.get_exercise("cc1_push_01")
+    create_workout_session(
+        repo,
+        "2026-07-06",
+        [{"exercise_id": wall.id, "sets": 3, "reps": 20}],
+    )
+    entries: dict = {}
+    assert sync_fitness_sessions_to_entries(entries, repo=repo) is True
+    assert entries["2026-07-06"]["Body & Presence"]["checklist"]["Completed movement or exercise"]
+    assert sync_fitness_sessions_to_entries(entries, repo=repo) is False
 
 
 def test_fitness_ui_has_no_matplotlib_import():

@@ -6,7 +6,13 @@ import storage
 from progression.db import FitnessRepository
 from progression.engine import record_performance
 from progression.seed_loader import seed_all_fitness
-from progression.sessions import create_workout_session, format_session_summary, link_session_to_body_presence
+from progression.sessions import (
+    bridge_fitness_to_daily_entries,
+    create_workout_session,
+    format_session_summary,
+    link_session_to_body_presence,
+    sync_fitness_sessions_to_entries,
+)
 
 _seeded_db_paths: set[str] = set()
 
@@ -98,6 +104,7 @@ def open_log_dialog_for_exercise(
     on_saved=None,
     on_session_saved=None,
     *,
+    session_date: str | None = None,
     fitness_settings: dict | None = None,
 ):
     import tkinter as tk
@@ -141,6 +148,13 @@ def open_log_dialog_for_exercise(
     outer.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
     ttk.Label(inner, text=exercise.name, font=("Helvetica", 12, "bold")).pack(pady=8, padx=12)
+
+    date_var = tk.StringVar(value=session_date or datetime.now().strftime("%Y-%m-%d"))
+    date_row = ttk.Frame(inner, padding=(12, 0))
+    date_row.pack(fill=tk.X)
+    ttk.Label(date_row, text="Session date:", width=12).pack(side=tk.LEFT)
+    ttk.Entry(date_row, textvariable=date_var, width=14).pack(side=tk.LEFT)
+
     crit = ", ".join(f"{k}={v}" for k, v in exercise.mastery_criteria.items())
     ttk.Label(inner, text=f"Progression standard: {crit}", wraplength=380).pack(pady=4, padx=12)
     hint = format_advancement_hint(repo, exercise, fitness_settings=settings)
@@ -220,7 +234,7 @@ def open_log_dialog_for_exercise(
         try:
             session = create_workout_session(
                 repo,
-                datetime.now().strftime("%Y-%m-%d"),
+                date_var.get().strip(),
                 [item],
                 notes=notes,
             )
@@ -230,6 +244,10 @@ def open_log_dialog_for_exercise(
         dialog.destroy()
         if on_session_saved:
             on_session_saved(session.date)
+        else:
+            data = storage.load()
+            data = link_session_to_body_presence(data, session.date)
+            storage.save(data)
         if on_saved:
             on_saved()
         progress = repo.get_user_progress(exercise_id)
@@ -238,6 +256,128 @@ def open_log_dialog_for_exercise(
 
     ttk.Button(footer_btns, text="Save Log", style="Accent.TButton", command=save).pack(side=tk.LEFT, padx=(0, 8))
     ttk.Button(footer_btns, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT)
+
+
+def open_new_session_dialog(
+    parent,
+    repo: FitnessRepository,
+    *,
+    initial_date: str | None = None,
+    on_session_saved=None,
+    on_after_save=None,
+    fitness_settings: dict | None = None,
+):
+    """Open the multi-exercise workout session logger (usable outside Fitness Hub)."""
+    import tkinter as tk
+    from tkinter import messagebox, ttk
+
+    import ui_scroll
+
+    dialog = tk.Toplevel(parent)
+    dialog.title("Log Exercise Session")
+    dialog.geometry("540x520")
+    dialog.minsize(480, 400)
+    dialog.transient(parent)
+    dialog.grab_set()
+
+    btn_row = ttk.Frame(dialog, padding=10)
+    btn_row.pack(side=tk.BOTTOM, fill=tk.X)
+
+    outer, inner, _canvas = ui_scroll.make_scrollable_frame(dialog)
+    outer.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
+    date_var = tk.StringVar(value=initial_date or datetime.now().strftime("%Y-%m-%d"))
+    notes_var = tk.StringVar(value="")
+    duration_var = tk.IntVar(value=45)
+    weight_var = tk.DoubleVar(value=0.0)
+    exercise_var = tk.StringVar()
+    sets_var = tk.IntVar(value=3)
+    reps_var = tk.IntVar(value=10)
+    hold_var = tk.DoubleVar(value=0.0)
+    set_weight_var = tk.DoubleVar(value=0.0)
+
+    form = ttk.Frame(inner, padding=10)
+    form.pack(fill=tk.X)
+    for label, var in [
+        ("Date", date_var),
+        ("Notes", notes_var),
+        ("Duration (min)", duration_var),
+        ("Body weight (kg)", weight_var),
+    ]:
+        row = ttk.Frame(form)
+        row.pack(fill=tk.X, pady=3)
+        ttk.Label(row, text=f"{label}:", width=16).pack(side=tk.LEFT)
+        ttk.Entry(row, textvariable=var, width=28).pack(side=tk.LEFT)
+
+    ttk.Label(form, text="Add sets below, then Save Session.").pack(anchor="w", pady=6)
+
+    set_frame = ttk.LabelFrame(form, text="Add Set", padding=8)
+    set_frame.pack(fill=tk.X, pady=4)
+    exercise_names = {row["name"]: row["id"] for row in list_exercise_rows(repo)}
+    ex_combo = ttk.Combobox(set_frame, textvariable=exercise_var, values=list(exercise_names.keys()), width=28)
+    ex_combo.pack(fill=tk.X, pady=2)
+    for label, var in [("Sets", sets_var), ("Reps", reps_var)]:
+        row = ttk.Frame(set_frame)
+        row.pack(fill=tk.X, pady=2)
+        ttk.Label(row, text=f"{label}:", width=10).pack(side=tk.LEFT)
+        ttk.Spinbox(row, from_=0, to=999, textvariable=var, width=8).pack(side=tk.LEFT)
+    for label, var in [("Hold (sec)", hold_var), ("Weight (kg)", set_weight_var)]:
+        row = ttk.Frame(set_frame)
+        row.pack(fill=tk.X, pady=2)
+        ttk.Label(row, text=f"{label}:", width=10).pack(side=tk.LEFT)
+        ttk.Entry(row, textvariable=var, width=10).pack(side=tk.LEFT)
+
+    pending_sets: list[dict] = []
+    preview = tk.Listbox(form, height=8)
+    preview.pack(fill=tk.BOTH, expand=True, pady=6)
+    ui_scroll.bind_mousewheel(preview, preview.yview)
+
+    def add_set():
+        name = exercise_var.get().strip()
+        if name not in exercise_names:
+            messagebox.showinfo("Exercise", "Select a valid exercise.", parent=dialog)
+            return
+        item = {
+            "exercise_id": exercise_names[name],
+            "name": name,
+            "sets": sets_var.get(),
+            "reps": reps_var.get(),
+        }
+        if hold_var.get() > 0:
+            item["hold_seconds"] = hold_var.get()
+        if set_weight_var.get() > 0:
+            item["weight_kg"] = set_weight_var.get()
+        pending_sets.append(item)
+        preview.insert(tk.END, f"{name}: {item.get('sets')}x{item.get('reps')}")
+
+    def save_session():
+        if not pending_sets:
+            messagebox.showinfo("Session", "Add at least one set.", parent=dialog)
+            return
+        session = create_workout_session(
+            repo,
+            date_var.get().strip(),
+            pending_sets,
+            notes=notes_var.get().strip(),
+            duration_minutes=duration_var.get() or None,
+            body_weight_kg=weight_var.get() if weight_var.get() > 0 else None,
+        )
+        if on_session_saved:
+            on_session_saved(session.date)
+        else:
+            data = storage.load()
+            data = link_session_to_body_presence(data, session.date)
+            storage.save(data)
+        dialog.destroy()
+        if on_after_save:
+            on_after_save()
+        messagebox.showinfo("Saved", f"Workout session logged for {session.date}.", parent=parent)
+
+    ttk.Button(btn_row, text="Add Set", command=add_set).pack(side=tk.LEFT)
+    ttk.Button(btn_row, text="Save Session", style="Accent.TButton", command=save_session).pack(
+        side=tk.LEFT, padx=8
+    )
+    ttk.Button(btn_row, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT)
 
 
 def show_fitness_window(
@@ -277,12 +417,23 @@ def show_fitness_window(
     win = tk.Toplevel(root)
     win.title("Fitness Hub")
     win.geometry("1100x720")
+    win.minsize(800, 520)
     win.transient(root)
     win.configure(bg=theme["bg"])
     app_theme.apply_theme(win, theme)
 
+    footer = ttk.Frame(win, padding=12)
+    footer.pack(side=tk.BOTTOM, fill=tk.X)
+    ttk.Separator(footer, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=(0, 10))
+    nav_host, btn_bar, _nav_canvas = ui_scroll.make_horizontal_scroll_row(
+        footer,
+        height=40,
+        overflow_hint="Scroll for more →",
+    )
+    nav_host.pack(fill=tk.X)
+
     header = ttk.Frame(win, padding=(16, 14, 16, 8))
-    header.pack(fill=tk.X)
+    header.pack(side=tk.TOP, fill=tk.X)
     ttk.Label(header, text="Fitness Hub", style="Title.TLabel").pack(anchor="w")
     ttk.Label(
         header,
@@ -302,7 +453,7 @@ def show_fitness_window(
     ttk.Button(search_row, text="Clear", command=lambda: search_var.set("")).pack(side=tk.LEFT)
 
     body = ttk.Panedwindow(win, orient=tk.HORIZONTAL)
-    body.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 4))
+    body.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=10, pady=(0, 4))
 
     list_frame = ttk.Frame(body, padding=(0, 0, 8, 0))
     body.add(list_frame, weight=3)
@@ -487,36 +638,40 @@ def show_fitness_window(
     def open_skill_tree():
         import skill_tree
 
-        skill_tree.show_skill_tree_window(win, repo)
+        skill_tree.show_skill_tree_window(
+            win,
+            repo,
+            on_session_saved=on_session_saved,
+            fitness_settings=settings,
+        )
 
     def open_fitness_settings():
-        dialog = tk.Toplevel(win)
-        dialog.title("Fitness Settings")
-        dialog.geometry("560x360")
-        dialog.transient(win)
-        dialog.grab_set()
+        dialog, inner, footer, _canvas, _refresh = ui_scroll.create_dialog_shell(
+            win,
+            title="Fitness Settings",
+            geometry="560x420",
+            minsize=(480, 320),
+            grab=True,
+        )
 
-        frame = ttk.Frame(dialog, padding=16)
-        frame.pack(fill=tk.BOTH, expand=True)
-
-        ttk.Label(frame, text=LOCK_BYPASS_WARNING, wraplength=500, style="Muted.TLabel").pack(
-            anchor="w", pady=(0, 12)
+        ttk.Label(inner, text=LOCK_BYPASS_WARNING, wraplength=500, style="Muted.TLabel").pack(
+            anchor="w", padx=16, pady=(16, 12)
         )
         bypass_var = tk.BooleanVar(value=bool(settings.get("disable_progression_locks")))
         ttk.Checkbutton(
-            frame,
+            inner,
             text="Allow logging any step (bypass progression locks)",
             variable=bypass_var,
-        ).pack(anchor="w")
+        ).pack(anchor="w", padx=16)
 
-        ttk.Separator(frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=14)
+        ttk.Separator(inner, orient=tk.HORIZONTAL).pack(fill=tk.X, padx=16, pady=14)
         ttk.Label(
-            frame,
+            inner,
             text="Sessions required at progression standard before the next CC-style step unlocks:",
             wraplength=500,
-        ).pack(anchor="w")
+        ).pack(anchor="w", padx=16)
         sessions_var = tk.IntVar(value=int(settings.get("cc_sessions_for_advance", 2)))
-        ttk.Spinbox(frame, from_=1, to=5, textvariable=sessions_var, width=6).pack(anchor="w", pady=6)
+        ttk.Spinbox(inner, from_=1, to=5, textvariable=sessions_var, width=6).pack(anchor="w", padx=16, pady=6)
 
         def save_settings():
             settings["disable_progression_locks"] = bool(bypass_var.get())
@@ -527,10 +682,8 @@ def show_fitness_window(
             dialog.destroy()
             refresh_list()
 
-        btn_row = ttk.Frame(frame)
-        btn_row.pack(anchor="e", pady=(16, 0))
-        ttk.Button(btn_row, text="Cancel", command=dialog.destroy).pack(side=tk.RIGHT, padx=(8, 0))
-        ttk.Button(btn_row, text="Save", style="Accent.TButton", command=save_settings).pack(side=tk.RIGHT)
+        ttk.Button(footer, text="Cancel", command=dialog.destroy).pack(side=tk.RIGHT, padx=(8, 0))
+        ttk.Button(footer, text="Save", style="Accent.TButton", command=save_settings).pack(side=tk.RIGHT)
 
     def open_placement_dialog():
         selected = tree.selection()
@@ -566,16 +719,16 @@ def show_fitness_window(
             )
             return
 
-        dialog = tk.Toplevel(win)
-        dialog.title(f"Set Starting Step — {program['title']}")
-        dialog.geometry("560x420")
-        dialog.transient(win)
-        dialog.grab_set()
+        dialog, inner, footer, _canvas, _refresh = ui_scroll.create_dialog_shell(
+            win,
+            title=f"Set Starting Step — {program['title']}",
+            geometry="560x480",
+            minsize=(480, 360),
+            grab=True,
+        )
 
-        frame = ttk.Frame(dialog, padding=16)
-        frame.pack(fill=tk.BOTH, expand=True)
-        ttk.Label(frame, text=PLACEMENT_WARNING, wraplength=500, style="Muted.TLabel").pack(
-            anchor="w", pady=(0, 12)
+        ttk.Label(inner, text=PLACEMENT_WARNING, wraplength=500, style="Muted.TLabel").pack(
+            anchor="w", padx=16, pady=(16, 12)
         )
 
         step_values = [step.get("step") for step in program["steps"] if step.get("step")]
@@ -584,22 +737,22 @@ def show_fitness_window(
             step_values[0] if step_values else 1,
         )
         step_var = tk.IntVar(value=current or 1)
-        ttk.Label(frame, text="I am currently working at step:").pack(anchor="w")
+        ttk.Label(inner, text="I am currently working at step:").pack(anchor="w", padx=16)
         ttk.Spinbox(
-            frame,
+            inner,
             from_=min(step_values) if step_values else 1,
             to=max(step_values) if step_values else 10,
             textvariable=step_var,
             width=8,
-        ).pack(anchor="w", pady=6)
+        ).pack(anchor="w", padx=16, pady=6)
 
         confirm_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(
-            frame,
+            inner,
             text="I have prior training experience and understand the risks of skipping foundational work",
             variable=confirm_var,
             wraplength=500,
-        ).pack(anchor="w", pady=12)
+        ).pack(anchor="w", padx=16, pady=12)
 
         def apply_placement():
             if not confirm_var.get():
@@ -626,125 +779,33 @@ def show_fitness_window(
                 parent=win,
             )
 
-        btn_row = ttk.Frame(frame)
-        btn_row.pack(anchor="e", pady=(16, 0))
-        ttk.Button(btn_row, text="Cancel", command=dialog.destroy).pack(side=tk.RIGHT, padx=(8, 0))
-        ttk.Button(btn_row, text="Apply Placement", style="Accent.TButton", command=apply_placement).pack(
+        ttk.Button(footer, text="Cancel", command=dialog.destroy).pack(side=tk.RIGHT, padx=(8, 0))
+        ttk.Button(footer, text="Apply Placement", style="Accent.TButton", command=apply_placement).pack(
             side=tk.RIGHT
         )
 
     def open_session_dialog():
-        dialog = tk.Toplevel(win)
-        dialog.title("New Workout Session")
-        dialog.geometry("540x520")
-        dialog.transient(win)
-        dialog.grab_set()
-
-        outer, inner, _canvas = ui_scroll.make_scrollable_frame(dialog)
-        outer.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
-
-        today = datetime.now().strftime("%Y-%m-%d")
-        date_var = tk.StringVar(value=today)
-        notes_var = tk.StringVar(value="")
-        duration_var = tk.IntVar(value=45)
-        weight_var = tk.DoubleVar(value=0.0)
-        exercise_var = tk.StringVar()
-        sets_var = tk.IntVar(value=3)
-        reps_var = tk.IntVar(value=10)
-        hold_var = tk.DoubleVar(value=0.0)
-        set_weight_var = tk.DoubleVar(value=0.0)
-
-        form = ttk.Frame(inner, padding=10)
-        form.pack(fill=tk.X)
-        for label, var in [
-            ("Date", date_var),
-            ("Notes", notes_var),
-            ("Duration (min)", duration_var),
-            ("Body weight (kg)", weight_var),
-        ]:
-            row = ttk.Frame(form)
-            row.pack(fill=tk.X, pady=3)
-            ttk.Label(row, text=f"{label}:", width=16).pack(side=tk.LEFT)
-            ttk.Entry(row, textvariable=var, width=28).pack(side=tk.LEFT)
-
-        ttk.Label(form, text="Add sets below, then Save Session.").pack(anchor="w", pady=6)
-
-        set_frame = ttk.LabelFrame(form, text="Add Set", padding=8)
-        set_frame.pack(fill=tk.X, pady=4)
-        exercise_names = {row["name"]: row["id"] for row in list_exercise_rows(repo)}
-        ex_combo = ttk.Combobox(
-            set_frame, textvariable=exercise_var, values=list(exercise_names.keys()), width=28
+        open_new_session_dialog(
+            win,
+            repo,
+            on_session_saved=on_session_saved,
+            on_after_save=refresh_list,
+            fitness_settings=settings,
         )
-        ex_combo.pack(fill=tk.X, pady=2)
-        for label, var in [("Sets", sets_var), ("Reps", reps_var)]:
-            row = ttk.Frame(set_frame)
-            row.pack(fill=tk.X, pady=2)
-            ttk.Label(row, text=f"{label}:", width=10).pack(side=tk.LEFT)
-            ttk.Spinbox(row, from_=0, to=999, textvariable=var, width=8).pack(side=tk.LEFT)
-        for label, var in [("Hold (sec)", hold_var), ("Weight (kg)", set_weight_var)]:
-            row = ttk.Frame(set_frame)
-            row.pack(fill=tk.X, pady=2)
-            ttk.Label(row, text=f"{label}:", width=10).pack(side=tk.LEFT)
-            ttk.Entry(row, textvariable=var, width=10).pack(side=tk.LEFT)
-
-        pending_sets: list[dict] = []
-        preview = tk.Listbox(form, height=8)
-        preview.pack(fill=tk.BOTH, expand=True, pady=6)
-        ui_scroll.bind_mousewheel(preview, preview.yview)
-
-        def add_set():
-            name = exercise_var.get().strip()
-            if name not in exercise_names:
-                messagebox.showinfo("Exercise", "Select a valid exercise.")
-                return
-            item = {
-                "exercise_id": exercise_names[name],
-                "name": name,
-                "sets": sets_var.get(),
-                "reps": reps_var.get(),
-            }
-            if hold_var.get() > 0:
-                item["hold_seconds"] = hold_var.get()
-            if set_weight_var.get() > 0:
-                item["weight_kg"] = set_weight_var.get()
-            pending_sets.append(item)
-            preview.insert(tk.END, f"{name}: {item.get('sets')}x{item.get('reps')}")
-
-        def save_session():
-            if not pending_sets:
-                messagebox.showinfo("Session", "Add at least one set.")
-                return
-            session = create_workout_session(
-                repo,
-                date_var.get().strip(),
-                pending_sets,
-                notes=notes_var.get().strip(),
-                duration_minutes=duration_var.get() or None,
-                body_weight_kg=weight_var.get() if weight_var.get() > 0 else None,
-            )
-            if on_session_saved:
-                on_session_saved(session.date)
-            else:
-                data = storage.load()
-                data = link_session_to_body_presence(data, session.date)
-                storage.save(data)
-            dialog.destroy()
-            refresh_list()
-            messagebox.showinfo("Saved", f"Workout session logged for {session.date}.")
-
-        btn_row = ttk.Frame(dialog, padding=10)
-        btn_row.pack(side=tk.BOTTOM, fill=tk.X)
-        ttk.Button(btn_row, text="Add Set", command=add_set).pack(side=tk.LEFT)
-        ttk.Button(btn_row, text="Save Session", style="Accent.TButton", command=save_session).pack(side=tk.LEFT, padx=8)
-        ttk.Button(btn_row, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT)
 
     def open_session_history():
         hist = tk.Toplevel(win)
         hist.title("Workout Session History")
         hist.geometry("560x480")
+        hist.minsize(420, 320)
         hist.transient(win)
+
+        footer = ttk.Frame(hist, padding=(10, 8))
+        footer.pack(side=tk.BOTTOM, fill=tk.X)
+        ttk.Button(footer, text="Close", command=hist.destroy).pack(side=tk.RIGHT)
+
         txt = scrolledtext.ScrolledText(hist, wrap=tk.WORD, font=("Helvetica", 10))
-        txt.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        txt.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=10, pady=10)
         sessions = repo.list_workout_sessions()
         if not sessions:
             txt.insert(tk.END, "No workout sessions yet.")
@@ -755,11 +816,6 @@ def show_fitness_window(
     search_entry.bind("<Return>", lambda _e: refresh_list())
     search_entry.focus_set()
 
-    footer = ttk.Frame(win, padding=12)
-    footer.pack(fill=tk.X)
-    ttk.Separator(footer, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=(0, 10))
-    btn_bar = ttk.Frame(footer)
-    btn_bar.pack(fill=tk.X)
     ttk.Button(btn_bar, text="Log Selected", style="Accent.TButton", command=open_selected_log).pack(
         side=tk.LEFT
     )
