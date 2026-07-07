@@ -29,11 +29,43 @@ User-writable data → `data_file()` / `user_data_dir()` only — never beside e
 
 ## Release checklist
 
-- [ ] `python -m unittest discover -s tests -v` passes
-- [ ] `.\build.ps1` succeeds
-- [ ] Zip `dist\Integral\` for GitHub Release
+- [ ] `python -m pytest` passes
+- [ ] `.\scripts\build_exe.ps1` succeeds
+- [ ] Zip `dist\Integral\` → `Integral-v{VERSION}-windows.zip` (match `APP_VERSION` in `paths.py`)
 - [ ] Release notes mention `%APPDATA%\Integral\data.json` backup path
 - [ ] Do not attach user `data/` to release artifacts
+
+## Release hygiene (required on every version push)
+
+Keep **one** current release on `main` — not a pile of old zips and tags.
+
+1. **Zip artifacts in repo root**
+   - Add only `Integral-v{VERSION}-windows.zip` for the version you are shipping
+   - `git rm` every older `Integral-v*-windows.zip` before committing the new one
+
+2. **Git tags**
+   - Create tag `v{VERSION}` for the release commit
+   - Delete all older local tags: `git tag -l "v*" | Where-Object { $_ -ne "v{VERSION}" } | ForEach-Object { git tag -d $_ }`
+   - After push, delete stale remote tags: `git push origin --delete <old-tag>` for each removed tag (or batch delete)
+
+3. **GitHub Release** (when publishing)
+   - Attach only the new zip; remove or supersede prior release assets on GitHub if applicable
+
+4. **Commit message**
+   - Use `Release v{VERSION}: <short summary>.` to match existing history
+
+Example (replacing v0.2.8 with v0.2.9):
+
+```powershell
+git rm Integral-v0.2.8-windows.zip
+Compress-Archive -Path dist\Integral\* -DestinationPath Integral-v0.2.9-windows.zip
+git add Integral-v0.2.9-windows.zip paths.py CHANGELOG.md ...
+git commit -m "Release v0.2.9: Windows reminders and midnight day rollover."
+git tag -a v0.2.9 -m "Integral v0.2.9"
+git tag -d v0.2.8
+git push origin main v0.2.9
+git push origin --delete v0.2.8
+```
 
 ## Do not
 

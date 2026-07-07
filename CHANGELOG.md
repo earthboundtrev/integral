@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.9 — 2026-07-06
+
+### Added
+
+- **Windows toast reminders** — Duolingo-style nudges through the day; after your first log, only one evening wrap-up reminder
+- **Automatic day rollover** — date, streak, and today's log refresh at midnight while Integral stays open
+
+### Release hygiene
+
+- Repo keeps only the latest `Integral-v*-windows.zip`; older release zips and git tags are removed on each release
+
+### Build
+
+- Windows app: `dist/Integral/Integral.exe` (run `.\scripts\build_exe.ps1`)
+
 ## 0.2.8 — 2026-07-05
 
 ### Fixed

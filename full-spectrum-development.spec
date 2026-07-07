@@ -55,6 +55,8 @@ a = Analysis(
         "insights",
         "insights.engine",
         "insights.playbooks",
+        "notifications",
+        "day_watch",
     ],
     hookspath=[],
     hooksconfig={},

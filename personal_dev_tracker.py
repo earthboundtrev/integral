@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 from tkinter import messagebox, scrolledtext, simpledialog, ttk
 
 from activity_grid import ContributionGrid
+from day_watch import DayWatch
 from graphs import open_graphs
 from fitness.engine import compute_program_state, load_program_definitions, migrate_data
 from fitness.intelligence import weekly_fitness_summary
@@ -25,6 +26,7 @@ from integral_dialogs import (
 import journal
 from journal_ui import show_journal_window
 from milestones import merge_milestones, milestone_summary
+from notifications import ReminderScheduler, normalize_notification_settings
 from paths import APP_NAME, APP_VERSION, data_file, ensure_data_file, icon_path
 import streak
 from theme import (
@@ -98,7 +100,10 @@ class PersonalDevelopmentTracker:
         self._activity_grid: ContributionGrid | None = None
         self._guidance_panel: ttk.LabelFrame | None = None
         self._streak_pill: tk.Label | None = None
+        self._date_label: ttk.Label | None = None
         self._overview_stats_label: ttk.Label | None = None
+        self._reminder_scheduler: ReminderScheduler | None = None
+        self._day_watch: DayWatch | None = None
         self._categories_tab_frame: ttk.Frame | None = None
         self._notebook: ttk.Notebook | None = None
 
@@ -111,6 +116,8 @@ class PersonalDevelopmentTracker:
         self.apply_current_theme()
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self.create_dashboard()
+        self._start_day_watch()
+        self._start_reminder_scheduler()
         if not self.settings.get("onboarding_complete"):
             show_onboarding(self)
 
@@ -432,11 +439,37 @@ class PersonalDevelopmentTracker:
         return self._insights_cache
 
     def _on_close(self) -> None:
+        if self._reminder_scheduler is not None:
+            self._reminder_scheduler.stop()
+        if self._day_watch is not None:
+            self._day_watch.stop()
         if self._save_after_id:
             self.root.after_cancel(self._save_after_id)
             self._save_after_id = None
         self._flush_save(sync=True)
         self.root.destroy()
+
+    def _start_day_watch(self) -> None:
+        self._day_watch = DayWatch(self.root, on_new_day=self._on_calendar_day_changed)
+
+    def _start_reminder_scheduler(self) -> None:
+        self.settings = normalize_notification_settings(self.settings)
+        self._reminder_scheduler = ReminderScheduler(
+            self.root,
+            get_settings=lambda: self.settings,
+            set_settings=self._apply_notification_settings,
+            has_logged_today=lambda: bool(self.entries.get(self.today_str())),
+            persist_settings=lambda: self.save_data(flush=True),
+        )
+
+    def _apply_notification_settings(self, settings: dict) -> None:
+        self.settings = settings
+
+    def _on_calendar_day_changed(self, previous_day, new_day) -> None:
+        del previous_day, new_day
+        if self._reminder_scheduler is not None:
+            self._reminder_scheduler.reset_for_new_day()
+        self.refresh_dashboard(full=True)
 
     def toggle_dark_mode(self) -> None:
         self.settings["dark_mode"] = not self.settings.get("dark_mode", False)
@@ -490,7 +523,9 @@ class PersonalDevelopmentTracker:
             migrated = migrate_data(data, self.programs)
             self.categories = self.merge_categories_with_defaults(migrated.get("categories"))
             self.entries = migrated.get("entries", {})
-            self.settings = {**{"dark_mode": False}, **migrated.get("settings", {})}
+            self.settings = normalize_notification_settings(
+                {**{"dark_mode": False}, **migrated.get("settings", {})}
+            )
             self.sessions = migrated.get("sessions", [])
             self.milestones = merge_milestones(migrated.get("milestones"))
             self.journal = journal.normalize_journal(migrated.get("journal"))
@@ -498,7 +533,9 @@ class PersonalDevelopmentTracker:
         else:
             self.categories = self.get_default_categories()
             self.entries = {}
-            self.settings = {"dark_mode": False, "onboarding_complete": False}
+            self.settings = normalize_notification_settings(
+                {"dark_mode": False, "onboarding_complete": False}
+            )
             self.sessions = []
             self.milestones = merge_milestones(None)
             self.journal = journal.empty_journal()
@@ -662,6 +699,9 @@ class PersonalDevelopmentTracker:
         if self._streak_pill is not None:
             self._streak_pill.config(text=f"🔥 {self.get_streak()} day streak")
 
+        if self._date_label is not None:
+            self._date_label.config(text=f"Today · {datetime.now().strftime('%B %d, %Y')}")
+
         if self._log_bar is not None:
             self._log_bar.destroy()
         self.create_todays_log_bar()
@@ -759,11 +799,12 @@ class PersonalDevelopmentTracker:
             if isinstance(child, tk.Label):
                 self._streak_pill = child
                 break
-        ttk.Label(
+        self._date_label = ttk.Label(
             right_header,
             text=f"Today · {datetime.now().strftime('%B %d, %Y')}",
             style="Muted.TLabel",
-        ).pack(side=tk.RIGHT)
+        )
+        self._date_label.pack(side=tk.RIGHT)
 
         self.create_todays_log_bar()
 
@@ -1338,6 +1379,8 @@ class PersonalDevelopmentTracker:
         self.entries[date_str][cat_name] = entry_payload
         self._invalidate_caches()
         dialog.destroy()
+        if date_str == self.today_str() and self._reminder_scheduler is not None:
+            self._reminder_scheduler.notify_logged_today()
         self.refresh_dashboard()
         self.save_data(recompute_fitness=False)
         hint = category_insight(self._get_insights(), cat_name)
