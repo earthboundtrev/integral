@@ -80,31 +80,39 @@ class GraphWindow:
         entries: dict,
         categories: dict,
         theme: dict,
+        *,
+        journal_data: dict | None = None,
+        fitness_settings: dict | None = None,
     ) -> None:
         self.entries = entries
         self.categories = categories
         self.theme = theme
+        self.journal_data = journal_data
+        self.fitness_settings = fitness_settings
 
         self.window = tk.Toplevel(parent)
         self.window.title("Graphing & Progress")
         self.window.geometry("1100x760")
         self.window.configure(bg=theme["bg"])
 
-        if not entries:
-            ttk.Label(
-                self.window,
-                text="Log a few days of data to see charts.",
-                font=("Helvetica", 12),
-            ).pack(expand=True)
-            return
-
         notebook = ttk.Notebook(self.window)
         notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        self._add_ratings_tab(notebook)
-        self._add_metrics_tab(notebook)
-        self._add_heatmap_tab(notebook)
-        self._add_radar_tab(notebook)
+        if entries:
+            self._add_ratings_tab(notebook)
+            self._add_metrics_tab(notebook)
+            self._add_heatmap_tab(notebook)
+            self._add_radar_tab(notebook)
+        else:
+            empty = ttk.Frame(notebook, padding=20)
+            notebook.add(empty, text="Charts")
+            ttk.Label(
+                empty,
+                text="Log a few days of data to see charts.",
+                font=("Helvetica", 12),
+            ).pack(anchor="w")
+
+        self._add_ai_insight_tab(notebook)
 
     def _figure(self, rows: int = 1, cols: int = 1) -> tuple[Figure, FigureCanvasTkAgg]:
         figure = Figure(figsize=(10, 5 if rows == 1 else 7), dpi=100)
@@ -312,10 +320,40 @@ class GraphWindow:
         canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
         canvas.draw()
 
+    def _add_ai_insight_tab(self, notebook: ttk.Notebook) -> None:
+        import ai_insights
 
-def open_graphs(parent: tk.Misc, entries: dict, categories: dict, theme: dict) -> None:
+        tab = ttk.Frame(notebook)
+        notebook.add(tab, text="AI Insight")
+        ai_insights.mount_insight_panel(
+            tab,
+            self.theme,
+            entries=self.entries,
+            categories=self.categories,
+            journal_data=self.journal_data,
+            fitness_settings=self.fitness_settings,
+            default_days=7,
+        )
+
+
+def open_graphs(
+    parent: tk.Misc,
+    entries: dict,
+    categories: dict,
+    theme: dict,
+    *,
+    journal_data: dict | None = None,
+    fitness_settings: dict | None = None,
+) -> None:
     try:
-        GraphWindow(parent, entries, categories, theme)
+        GraphWindow(
+            parent,
+            entries,
+            categories,
+            theme,
+            journal_data=journal_data,
+            fitness_settings=fitness_settings,
+        )
     except ImportError:
         messagebox.showerror(
             "Matplotlib required",

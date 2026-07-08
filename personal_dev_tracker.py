@@ -1534,6 +1534,12 @@ class PersonalDevelopmentTracker:
 
         footer = ttk.Frame(window, padding=(12, 10))
         footer.pack(side=tk.BOTTOM, fill=tk.X)
+        ttk.Button(
+            footer,
+            text="Get AI Insight",
+            style="Accent.TButton",
+            command=lambda: self._show_ai_insight(default_days=7),
+        ).pack(side=tk.LEFT)
         ttk.Button(footer, text="Close", command=window.destroy).pack(side=tk.RIGHT)
 
         end = datetime.now().date()
@@ -1701,7 +1707,27 @@ class PersonalDevelopmentTracker:
         run_search()
 
     def show_graphs(self) -> None:
-        open_graphs(self.root, self.entries, self.categories, self.theme)
+        open_graphs(
+            self.root,
+            self.entries,
+            self.categories,
+            self.theme,
+            journal_data=self.journal,
+            fitness_settings=self.settings.get("fitness"),
+        )
+
+    def _show_ai_insight(self, *, default_days: int = 7) -> None:
+        import ai_insights
+
+        ai_insights.show_insight_dialog(
+            self.root,
+            self.theme,
+            entries=self.entries,
+            categories=self.categories,
+            journal_data=self.journal,
+            fitness_settings=self.settings.get("fitness"),
+            default_days=default_days,
+        )
 
     def _on_fitness_session_saved(self, session_date: str) -> None:
         bridge_fitness_to_daily_entries(self.entries, session_date)

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.2 — 2026-07-08
+
+### Added
+
+- **AI Insight (optional)** — local Ollama summaries of your last 7–30 days (domains, journal, fitness); no cloud, no embeddings
+- **Weekly Review** and **Emotional Patterns** insight types in **Graphs & Progress → AI Insight**
+- **Get AI Insight** on the Weekly Summary footer
+- `requirements-ai.txt` for the optional `ollama` Python client
+
+### Build
+
+- Windows app: `dist/Integral/Integral.exe` (run `.\build.ps1`)
+- Release zip: `Integral-v0.3.2-windows.zip`
+
 ## 0.3.1 — 2026-07-07
 
 ### Fixed

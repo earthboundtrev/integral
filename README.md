@@ -92,8 +92,34 @@ User data: `%APPDATA%\Integral\data.json` (encrypted optional via Data & Securit
 | **Activity** | GitHub-style contribution grid; click any day |
 | **Fitness Hub** | CC1/CC2/SS/OG/EC/FTR — nested book → program → steps |
 | **Safety net** | Export CSV, full JSON backup, optional vault encryption |
+| **AI Insight (optional)** | Local Ollama review of recent logs — see below |
 
 Tests: `python -m pytest tests/ -q`
+
+### Optional: Local AI insights (Ollama)
+
+Integral can summarize your last **7–30 days** with a **small local model** — no cloud API, no embeddings, no extra databases. Your logs stay on your machine; only a compact text summary of recent domains, journal excerpts, and fitness sessions is sent to Ollama on `localhost`.
+
+**Insight types**
+
+| Type | What it does |
+|------|----------------|
+| **Weekly Review** | Patterns, wins, and 1–2 concrete next steps across all life domains |
+| **Emotional Patterns** | Mood, stress, relational notes, and burnout signals from journal + domain notes |
+
+**Where to find it**
+
+- **Graphs & Progress → AI Insight** — pick the insight type and time window, then generate
+- **Weekly Summary → Get AI Insight** — quick weekly review from the summary screen
+
+**Setup (Windows)**
+
+1. Install [Ollama](https://ollama.com) (or `winget install Ollama.Ollama`) and start it — the tray app or `ollama serve`
+2. From the Integral repo: `pip install -r requirements-ai.txt`
+3. Pull the default model (about 2 GB): `ollama pull llama3.2:3b`
+4. Open Integral and use **AI Insight** as above
+
+The first insight after a cold start can take 30–60 seconds while the model loads; later runs are faster. Integral runs fine without Ollama — this feature is entirely optional and skipped if the client or server is missing.
 
 ## Documentation
 

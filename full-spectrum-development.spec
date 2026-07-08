@@ -62,6 +62,7 @@ a = Analysis(
         "progression.placement",
         "day_plans",
         "day_plans_ui",
+        "ai_insights",
     ],
     hookspath=[],
     hooksconfig={},
