@@ -670,6 +670,12 @@ class PersonalDevelopmentTracker:
             actions, text="Journal", style="Accent.TButton", command=self.show_journal
         ).pack(side=tk.LEFT, padx=(0, 8))
         ttk.Button(
+            actions,
+            text="AI Insight",
+            style="Accent.TButton",
+            command=lambda: self._show_ai_insight(default_days=7),
+        ).pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Button(
             actions, text="Plan Tomorrow", command=self.show_plan_tomorrow
         ).pack(side=tk.LEFT, padx=(0, 8))
         ttk.Button(
@@ -881,6 +887,12 @@ class PersonalDevelopmentTracker:
         ttk.Button(nav, text="Refresh", command=self.create_dashboard).pack(side=tk.LEFT)
         ttk.Button(nav, text="Guidance", command=self.show_guidance).pack(side=tk.LEFT, padx=6)
         ttk.Button(nav, text="Weekly Summary", command=self.show_weekly_summary).pack(side=tk.LEFT, padx=6)
+        ttk.Button(
+            nav,
+            text="AI Insight",
+            style="Accent.TButton",
+            command=lambda: self._show_ai_insight(default_days=7),
+        ).pack(side=tk.LEFT, padx=6)
         ttk.Button(nav, text="Full History", command=self.show_history).pack(side=tk.LEFT, padx=6)
         ttk.Button(nav, text="Search Notes", command=self.show_search).pack(side=tk.LEFT, padx=6)
         ttk.Button(nav, text="Graphs & Progress", command=self.show_graphs).pack(side=tk.LEFT, padx=6)
@@ -943,17 +955,28 @@ class PersonalDevelopmentTracker:
         if fitness_today:
             stats_text += f"  ·  {fitness_today} fitness session(s)"
         stats_text += f"  ·  {milestone_summary(self.milestones)}"
+        stats_left = ttk.Frame(stats)
+        stats_left.pack(side=tk.LEFT, fill=tk.X, expand=True)
         self._overview_stats_label = ttk.Label(
-            stats,
+            stats_left,
             text=stats_text,
             style="Muted.TLabel",
         )
         self._overview_stats_label.pack(anchor="w")
-        ttk.Button(stats, text="Explore today", command=lambda: self.show_day_explorer(today_str)).pack(
+        ttk.Button(stats_left, text="Explore today", command=lambda: self.show_day_explorer(today_str)).pack(
             anchor="w", pady=(6, 0)
         )
+        stats_actions = ttk.Frame(stats)
+        stats_actions.pack(side=tk.RIGHT)
+        ttk.Button(
+            stats_actions,
+            text="AI Insight",
+            style="Accent.TButton",
+            command=lambda: self._show_ai_insight(default_days=7),
+        ).pack(anchor="e")
 
-        self._render_guidance_panel(main, row=2)
+        self._render_ai_insight_panel(main, row=2)
+        self._render_guidance_panel(main, row=3)
 
     def _build_categories_tab(self, parent: ttk.Frame) -> None:
         canvas = tk.Canvas(parent, highlightthickness=0)
@@ -983,6 +1006,36 @@ class PersonalDevelopmentTracker:
             if col > 1:
                 col = 0
                 row += 1
+
+    def _render_ai_insight_panel(self, parent: ttk.Frame, row: int = 0) -> None:
+        panel = ttk.LabelFrame(
+            parent,
+            text="Local AI Insight (optional — Ollama on your machine)",
+            padding=12,
+            style="Card.TLabelframe",
+        )
+        panel.grid(row=row, column=0, columnspan=2, sticky="ew", padx=12, pady=(8, 8))
+        ttk.Label(
+            panel,
+            text=(
+                "Summarize your last 7–30 days across life domains, journal, and fitness. "
+                "Private, local, no cloud — requires Ollama (see README)."
+            ),
+            wraplength=900,
+        ).pack(anchor="w", pady=(4, 0))
+        actions = ttk.Frame(panel)
+        actions.pack(anchor="w", pady=(10, 0))
+        ttk.Button(
+            actions,
+            text="Get AI Insight",
+            style="Accent.TButton",
+            command=lambda: self._show_ai_insight(default_days=7),
+        ).pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Button(
+            actions,
+            text="Open in Graphs & Progress",
+            command=self.show_graphs_ai,
+        ).pack(side=tk.LEFT)
 
     def _render_guidance_panel(self, parent: ttk.Frame, row: int = 0) -> None:
         panel = ttk.LabelFrame(parent, text="Today's Guidance", padding=12, style="Card.TLabelframe")
@@ -1014,7 +1067,15 @@ class PersonalDevelopmentTracker:
                         wraplength=880,
                     ).pack(anchor="w", padx=12)
 
-        ttk.Button(panel, text="Full Guidance Report", command=self.show_guidance).pack(anchor="w", pady=(8, 0))
+        btn_row = ttk.Frame(panel)
+        btn_row.pack(anchor="w", pady=(8, 0))
+        ttk.Button(btn_row, text="Full Guidance Report", command=self.show_guidance).pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Button(
+            btn_row,
+            text="AI Insight",
+            style="Accent.TButton",
+            command=lambda: self._show_ai_insight(default_days=7),
+        ).pack(side=tk.LEFT)
 
     def create_category_card(self, parent: ttk.Frame, cat_name: str, cat_data: dict) -> tk.Frame:
         outer, inner = make_card(parent, self.theme, accent=category_accent(cat_name))
@@ -1471,6 +1532,12 @@ class PersonalDevelopmentTracker:
 
         footer = ttk.Frame(window, padding=(12, 10))
         footer.pack(side=tk.BOTTOM, fill=tk.X)
+        ttk.Button(
+            footer,
+            text="AI Insight",
+            style="Accent.TButton",
+            command=lambda: self._show_ai_insight(default_days=7),
+        ).pack(side=tk.LEFT, padx=(0, 8))
         ttk.Button(footer, text="Close", command=window.destroy).pack(side=tk.RIGHT)
 
         ttk.Label(
@@ -1549,6 +1616,12 @@ class PersonalDevelopmentTracker:
             text=f"Week of {start.strftime('%b %d')} – {end.strftime('%b %d, %Y')}",
             font=("Helvetica", 14, "bold"),
         ).pack(side=tk.TOP, anchor="w", padx=12, pady=12)
+        ttk.Label(
+            window,
+            text="Use Get AI Insight below for a local Ollama review of this week.",
+            style="Muted.TLabel",
+            wraplength=860,
+        ).pack(side=tk.TOP, anchor="w", padx=12, pady=(0, 8))
 
         text = scrolledtext.ScrolledText(window, wrap=tk.WORD, font=("Helvetica", 11))
         style_text_widget(text, self.theme)
@@ -1714,6 +1787,17 @@ class PersonalDevelopmentTracker:
             self.theme,
             journal_data=self.journal,
             fitness_settings=self.settings.get("fitness"),
+        )
+
+    def show_graphs_ai(self) -> None:
+        open_graphs(
+            self.root,
+            self.entries,
+            self.categories,
+            self.theme,
+            journal_data=self.journal,
+            fitness_settings=self.settings.get("fitness"),
+            initial_tab="ai_insight",
         )
 
     def _show_ai_insight(self, *, default_days: int = 7) -> None:

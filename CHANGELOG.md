@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.3.3 — 2026-07-08
+
+### Added
+
+- **AI Insight discoverability** — accent buttons on the dashboard, Today's Log bar, footer nav, Guidance, and Weekly Summary; dedicated Overview card for local Ollama insights
+- **Graphs & Progress** — AI Insight is now the first tab; optional deep-link via "Open in Graphs & Progress"
+
+### Fixed
+
+- **Windows toast reminders** — no longer flash a System32 PowerShell console window from the windowed exe
+
+### Build
+
+- Windows app: `dist/Integral/Integral.exe` (run `.\build.ps1`)
+- Release zip: `Integral-v0.3.3-windows.zip`
+
 ## 0.3.2 — 2026-07-08
 
 ### Added

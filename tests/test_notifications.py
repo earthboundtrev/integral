@@ -1,11 +1,14 @@
 from datetime import date, datetime
 
+import subprocess
+
 from notifications import (
     due_reminders,
     mark_logged_once,
     normalize_notification_settings,
     record_sent_reminders,
     reset_reminder_state,
+    show_windows_notification,
 )
 
 
@@ -56,3 +59,23 @@ def test_reset_reminder_state_clears_day():
     assert state["date"] == "2026-07-07"
     assert state["sent_keys"] == []
     assert state["logged_once"] is False
+
+
+def test_show_windows_notification_hides_subprocess_console(monkeypatch):
+    calls: list[tuple[list[str], dict]] = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+
+        class Result:
+            returncode = 0
+
+        return Result()
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    assert show_windows_notification("Integral", "Test message") is True
+    assert calls
+    command, kwargs = calls[0]
+    assert command[0].endswith("powershell.exe")
+    assert kwargs["creationflags"] == subprocess.CREATE_NO_WINDOW
+    assert kwargs["stdin"] == subprocess.DEVNULL

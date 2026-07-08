@@ -109,8 +109,11 @@ Integral can summarize your last **7–30 days** with a **small local model** �
 
 **Where to find it**
 
-- **Graphs & Progress → AI Insight** — pick the insight type and time window, then generate
-- **Weekly Summary → Get AI Insight** — quick weekly review from the summary screen
+- **Overview tab** — "Local AI Insight" card and **AI Insight** button on the stats row
+- **Today's Log** bar — **AI Insight** (accent button, top of the main window)
+- **Footer nav** — **AI Insight** next to Weekly Summary
+- **Graphs & Progress → AI Insight** — first tab; pick insight type and time window, then generate
+- **Weekly Summary** / **Guidance** — **Get AI Insight** or **AI Insight** in the footer
 
 **Setup (Windows)**
 

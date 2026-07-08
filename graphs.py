@@ -83,6 +83,7 @@ class GraphWindow:
         *,
         journal_data: dict | None = None,
         fitness_settings: dict | None = None,
+        initial_tab: str | None = None,
     ) -> None:
         self.entries = entries
         self.categories = categories
@@ -97,6 +98,9 @@ class GraphWindow:
 
         notebook = ttk.Notebook(self.window)
         notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        self._notebook = notebook
+
+        self._add_ai_insight_tab(notebook)
 
         if entries:
             self._add_ratings_tab(notebook)
@@ -112,7 +116,8 @@ class GraphWindow:
                 font=("Helvetica", 12),
             ).pack(anchor="w")
 
-        self._add_ai_insight_tab(notebook)
+        if initial_tab == "ai_insight":
+            notebook.select(0)
 
     def _figure(self, rows: int = 1, cols: int = 1) -> tuple[Figure, FigureCanvasTkAgg]:
         figure = Figure(figsize=(10, 5 if rows == 1 else 7), dpi=100)
@@ -344,6 +349,7 @@ def open_graphs(
     *,
     journal_data: dict | None = None,
     fitness_settings: dict | None = None,
+    initial_tab: str | None = None,
 ) -> None:
     try:
         GraphWindow(
@@ -353,6 +359,7 @@ def open_graphs(
             theme,
             journal_data=journal_data,
             fitness_settings=fitness_settings,
+            initial_tab=initial_tab,
         )
     except ImportError:
         messagebox.showerror(

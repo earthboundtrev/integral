@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from datetime import date, datetime
@@ -34,6 +35,29 @@ def _escape_xml(text: str) -> str:
     )
 
 
+def _powershell_exe() -> str:
+    system_root = os.environ.get("SystemRoot", r"C:\Windows")
+    candidates = (
+        os.path.join(system_root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
+        os.path.join(system_root, "Sysnative", "WindowsPowerShell", "v1.0", "powershell.exe"),
+    )
+    for path in candidates:
+        if os.path.isfile(path):
+            return path
+    return "powershell"
+
+
+def _run_hidden(command: list[str], **kwargs) -> subprocess.CompletedProcess[str]:
+    """Run a subprocess without flashing a System32 console window (PyInstaller windowed apps)."""
+    if sys.platform == "win32":
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        kwargs.setdefault("creationflags", subprocess.CREATE_NO_WINDOW)
+        kwargs.setdefault("startupinfo", startupinfo)
+        kwargs.setdefault("stdin", subprocess.DEVNULL)
+    return subprocess.run(command, **kwargs)
+
+
 def show_windows_notification(title: str, message: str, *, app_id: str = APP_NAME) -> bool:
     """Show a native Windows toast. Returns True when the toast was dispatched."""
     if sys.platform != "win32":
@@ -61,8 +85,16 @@ $toast = [Windows.UI.Notifications.ToastNotification]::new($doc)
 [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('{app_id}').Show($toast)
 """
     try:
-        subprocess.run(
-            ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_script],
+        _run_hidden(
+            [
+                _powershell_exe(),
+                "-NoProfile",
+                "-NonInteractive",
+                "-WindowStyle",
+                "Hidden",
+                "-Command",
+                ps_script,
+            ],
             check=True,
             capture_output=True,
             text=True,
