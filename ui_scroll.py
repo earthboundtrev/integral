@@ -7,6 +7,7 @@ from tkinter import ttk
 from typing import Callable
 
 _dialog_scroll_refs: dict[int, int] = {}
+_wheel_bound_widgets: set[int] = set()
 
 
 def _scroll_amount(event) -> int:
@@ -17,53 +18,59 @@ def _scroll_amount(event) -> int:
     return 0
 
 
-def bind_mousewheel(widget, scroll_command, *, horizontal: bool = False) -> None:
-    """Bind mouse wheel / trackpad scroll to a yview or xview command."""
+def bind_mousewheel(
+    container: tk.Misc,
+    scroll_command: Callable[..., object],
+    *,
+    watch_configure: tk.Misc | None = None,
+) -> None:
+    """
+    Bind wheel scrolling to a container and its descendants only.
+
+    Avoids bind_all/unbind_all, which causes competing handlers, text overlap
+    glitches, and crashes when multiple scroll areas exist in one window.
+    """
 
     def on_mousewheel(event):
         amount = _scroll_amount(event)
         if amount:
             scroll_command("scroll", amount, "units")
+        return "break"
 
-    def on_enter(_event):
-        widget.bind_all("<MouseWheel>", on_mousewheel)
-        widget.bind_all("<Button-4>", on_mousewheel)
-        widget.bind_all("<Button-5>", on_mousewheel)
+    def bind_widget(widget: tk.Misc) -> None:
+        widget_id = id(widget)
+        if widget_id in _wheel_bound_widgets:
+            return
+        _wheel_bound_widgets.add(widget_id)
+        widget.bind("<MouseWheel>", on_mousewheel, add="+")
+        widget.bind("<Button-4>", on_mousewheel, add="+")
+        widget.bind("<Button-5>", on_mousewheel, add="+")
+        widget.bind("<Destroy>", lambda event, wid=widget_id: _wheel_bound_widgets.discard(wid), add="+")
 
-    def on_leave(_event):
-        widget.unbind_all("<MouseWheel>")
-        widget.unbind_all("<Button-4>")
-        widget.unbind_all("<Button-5>")
+    def bind_tree(widget: tk.Misc) -> None:
+        bind_widget(widget)
+        for child in widget.winfo_children():
+            bind_tree(child)
 
-    widget.bind("<Enter>", on_enter, add="+")
-    widget.bind("<Leave>", on_leave, add="+")
-    if horizontal:
-        widget.bind("<Shift-MouseWheel>", on_mousewheel, add="+")
+    def refresh_bindings(_event=None) -> None:
+        if container.winfo_exists():
+            bind_tree(container)
+
+    refresh_bindings()
+    container.bind("<Map>", refresh_bindings, add="+")
+    if watch_configure is not None:
+        watch_configure.bind(
+            "<Configure>",
+            lambda _event: container.after_idle(refresh_bindings),
+            add="+",
+        )
 
 
 def activate_dialog_scrolling(toplevel: tk.Misc, canvas: tk.Canvas) -> None:
-    """While a dialog is open, scroll its canvas from anywhere over the window."""
+    """Bind wheel scrolling to one dialog canvas without global bind_all."""
     key = id(toplevel)
     _dialog_scroll_refs[key] = _dialog_scroll_refs.get(key, 0) + 1
-
-    def on_wheel(event):
-        if not canvas.winfo_exists():
-            return
-        amount = _scroll_amount(event)
-        if amount:
-            canvas.yview_scroll(amount, "units")
-
-    def on_key(event):
-        if not canvas.winfo_exists():
-            return
-        if event.keysym == "Up":
-            canvas.yview_scroll(-1, "units")
-        elif event.keysym == "Down":
-            canvas.yview_scroll(1, "units")
-        elif event.keysym == "Prior":  # Page Up
-            canvas.yview_scroll(-1, "pages")
-        elif event.keysym == "Next":  # Page Down
-            canvas.yview_scroll(1, "pages")
+    outer = canvas.master
 
     def on_destroy(event):
         if event.widget is not toplevel:
@@ -71,28 +78,20 @@ def activate_dialog_scrolling(toplevel: tk.Misc, canvas: tk.Canvas) -> None:
         remaining = _dialog_scroll_refs.get(key, 1) - 1
         if remaining <= 0:
             _dialog_scroll_refs.pop(key, None)
-            for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
-                try:
-                    toplevel.unbind_all(seq)
-                except tk.TclError:
-                    pass
         else:
             _dialog_scroll_refs[key] = remaining
 
     if _dialog_scroll_refs[key] == 1:
-        toplevel.bind_all("<MouseWheel>", on_wheel, add="+")
-        toplevel.bind_all("<Button-4>", on_wheel, add="+")
-        toplevel.bind_all("<Button-5>", on_wheel, add="+")
-    toplevel.bind("<Key-Up>", on_key, add="+")
-    toplevel.bind("<Key-Down>", on_key, add="+")
-    toplevel.bind("<Key-Prior>", on_key, add="+")
-    toplevel.bind("<Key-Next>", on_key, add="+")
+        bind_mousewheel(outer, canvas.yview, watch_configure=canvas)
     toplevel.bind("<Destroy>", on_destroy, add="+")
 
 
 def refresh_scroll_region(canvas: tk.Canvas, inner: tk.Misc) -> None:
     inner.update_idletasks()
-    canvas.configure(scrollregion=canvas.bbox("all"))
+    canvas.update_idletasks()
+    bbox = canvas.bbox("all")
+    if bbox:
+        canvas.configure(scrollregion=bbox)
 
 
 def configure_treeview_scroll(tree) -> None:
@@ -142,7 +141,7 @@ def make_horizontal_scroll_row(parent, *, height: int = 44, overflow_hint: str =
         update_hint()
 
     def on_canvas_configure(event):
-        canvas.itemconfigure(window_id, height=event.height)
+        canvas.itemconfigure(window_id, width=max(event.width, 1), height=event.height)
         update_hint()
 
     def on_xscroll(first, last):
@@ -153,11 +152,6 @@ def make_horizontal_scroll_row(parent, *, height: int = 44, overflow_hint: str =
     canvas.bind("<Configure>", on_canvas_configure)
     canvas.configure(xscrollcommand=on_xscroll)
 
-    def on_shift_wheel(event):
-        amount = _scroll_amount(event)
-        if amount:
-            canvas.xview_scroll(amount, "units")
-
     def on_wheel(event):
         bbox = canvas.bbox("all")
         if not bbox or bbox[2] - bbox[0] <= canvas.winfo_width() + 2:
@@ -165,14 +159,12 @@ def make_horizontal_scroll_row(parent, *, height: int = 44, overflow_hint: str =
         amount = _scroll_amount(event)
         if amount:
             canvas.xview_scroll(amount, "units")
+        return "break"
 
-    canvas.bind("<MouseWheel>", on_wheel, add="+")
-    canvas.bind("<Button-4>", on_wheel, add="+")
-    canvas.bind("<Button-5>", on_wheel, add="+")
-    canvas.bind("<Shift-MouseWheel>", on_shift_wheel, add="+")
-    inner.bind("<MouseWheel>", on_wheel, add="+")
-    inner.bind("<Button-4>", on_wheel, add="+")
-    inner.bind("<Button-5>", on_wheel, add="+")
+    bind_mousewheel(viewport, canvas.xview, watch_configure=inner)
+    for seq in ("<Shift-MouseWheel>",):
+        canvas.bind(seq, on_wheel, add="+")
+        inner.bind(seq, on_wheel, add="+")
 
     canvas.pack(side=tk.TOP, fill=tk.X, expand=True)
     update_hint()
@@ -229,7 +221,6 @@ def make_scrollable_frame(parent, *, width=None, height=None):
     """
     Return (outer_frame, inner_frame, canvas).
     Pack/grid widgets into inner_frame; outer_frame fills the parent.
-    Dialogs automatically get window-wide mouse wheel scrolling.
     """
     outer = tk.Frame(parent)
     canvas = tk.Canvas(outer, highlightthickness=0, width=width, height=height)
@@ -244,18 +235,13 @@ def make_scrollable_frame(parent, *, width=None, height=None):
     canvas.configure(yscrollcommand=scrollbar.set)
 
     def _resize_inner(event):
-        canvas.itemconfigure(window_id, width=event.width)
+        canvas.itemconfigure(window_id, width=max(event.width, 1))
 
     canvas.bind("<Configure>", _resize_inner)
-    bind_mousewheel(canvas, canvas.yview)
-    bind_mousewheel(inner, canvas.yview)
+    bind_mousewheel(outer, canvas.yview, watch_configure=inner)
 
     canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
     scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-
-    toplevel = parent.winfo_toplevel()
-    if isinstance(toplevel, tk.Toplevel):
-        activate_dialog_scrolling(toplevel, canvas)
 
     return outer, inner, canvas
 

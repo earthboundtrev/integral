@@ -1,6 +1,11 @@
 import pytest
 
-from fitness_ui import ensure_fitness_seeded, list_exercise_rows, submit_performance
+from fitness_ui import (
+    ensure_fitness_seeded,
+    format_exercise_picker_label,
+    list_exercise_rows,
+    submit_performance,
+)
 from progression.db import FitnessRepository
 from progression.seed_loader import seed_all_fitness
 from progression.sessions import create_workout_session, link_session_to_body_presence
@@ -99,3 +104,19 @@ def test_fitness_ui_has_no_matplotlib_import():
         elif isinstance(node, ast.ImportFrom) and node.module:
             imports.append(node.module)
     assert "matplotlib" not in imports
+
+
+def test_format_exercise_picker_label_includes_book_and_family():
+    label = format_exercise_picker_label(
+        {
+            "name": "Wall Push-ups",
+            "source_book": "CC1",
+            "family": "push",
+            "step": 1,
+        }
+    )
+    assert label == "Wall Push-ups (CC1 · push · step 1)"
+
+
+def test_format_exercise_picker_label_name_only():
+    assert format_exercise_picker_label({"name": "Burpees"}) == "Burpees"

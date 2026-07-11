@@ -15,9 +15,25 @@ MAX_JOURNAL_EXCERPTS = 4
 MAX_JOURNAL_CHARS = 200
 MAX_FITNESS_LINES = 6
 
-INSIGHT_KINDS: dict[str, dict[str, str]] = {
+INSIGHT_KINDS: dict[str, dict[str, str | int]] = {
+    "day_scanner": {
+        "label": "Day Scanner",
+        "default_days": 1,
+        "system": (
+            "You are a concise daily review coach for a holistic life tracker. "
+            "Scan what was logged today across life domains, journal, and fitness. "
+            "Name what is complete, what is missing, and one small action for tonight or tomorrow. "
+            "3-5 short paragraphs maximum."
+        ),
+        "user_intro": (
+            "This is a same-day scan of Integral data (18 life domains, journal, fitness). "
+            "Summarize today honestly: wins, gaps, energy, and one practical next step. "
+            "Do not invent data."
+        ),
+    },
     "weekly_review": {
         "label": "Weekly Review",
+        "default_days": 7,
         "system": (
             "You are a wise, compassionate, concise life coach. Give practical, kind insights "
             "based only on the data provided. Keep responses to 4-8 short paragraphs. "
@@ -30,6 +46,7 @@ INSIGHT_KINDS: dict[str, dict[str, str]] = {
     },
     "emotional_patterns": {
         "label": "Emotional Patterns",
+        "default_days": 7,
         "system": (
             "You are a calm, observant coach focused on emotional wellbeing and energy. "
             "Spot patterns in mood, stress, and relational notes. Be kind and specific. "
@@ -40,7 +57,59 @@ INSIGHT_KINDS: dict[str, dict[str, str]] = {
             "Name patterns you see and one gentle experiment for the coming week."
         ),
     },
+    "energy_burnout": {
+        "label": "Energy & Burnout",
+        "default_days": 7,
+        "system": (
+            "You are a burnout-aware coach. Focus on energy, sleep, boundaries, rest, and "
+            "Burnout Prevention signals. Be direct but kind. 4-6 short paragraphs."
+        ),
+        "user_intro": (
+            "Analyze energy, sleep, burnout-prevention checklists, and recovery patterns. "
+            "Flag overload or neglect of rest. Suggest one sustainable adjustment."
+        ),
+    },
+    "body_fitness": {
+        "label": "Body & Movement",
+        "default_days": 7,
+        "system": (
+            "You are a movement and recovery coach. Focus on Body & Presence, fitness sessions, "
+            "movement metrics, and physical self-care. 4-6 short paragraphs."
+        ),
+        "user_intro": (
+            "Review body, movement, exercise, sleep, and fitness session data. "
+            "Note consistency, gaps, and one realistic movement goal."
+        ),
+    },
+    "gaps_and_balance": {
+        "label": "Gaps & Life Balance",
+        "default_days": 30,
+        "system": (
+            "You are a holistic balance coach across many life domains (money, relationships, "
+            "learning, spiritual, creative, etc.). Identify neglected areas and imbalance. "
+            "4-6 short paragraphs."
+        ),
+        "user_intro": (
+            "Which life domains were logged rarely or not at all? Where is the user's attention "
+            "clustered vs missing? Suggest rebalancing without guilt-tripping."
+        ),
+    },
+    "journal_themes": {
+        "label": "Journal Themes",
+        "default_days": 7,
+        "system": (
+            "You are a reflective writing coach. Extract recurring themes from journal entries "
+            "and domain notes — what the person keeps processing. 4-6 short paragraphs."
+        ),
+        "user_intro": (
+            "Read journal entries and notes across domains. Name recurring themes, open loops, "
+            "and what seems unresolved. One prompt for the next journal entry."
+        ),
+    },
 }
+
+INSIGHT_KIND_ORDER = list(INSIGHT_KINDS.keys())
+PERIOD_DAY_OPTIONS = ("1", "7", "30")
 
 
 def ollama_installed() -> bool:
@@ -76,6 +145,32 @@ def _truncate(text: str, limit: int) -> str:
     return text[: limit - 3].rstrip() + "..."
 
 
+def _format_period_label(days: int) -> str:
+    if days == 1:
+        return "today"
+    return f"the last {days} days"
+
+
+def _summarize_entry(entry: dict) -> str:
+    parts: list[str] = []
+    checklist = entry.get("checklist") or {}
+    done = [label for label, checked in checklist.items() if checked]
+    if done:
+        parts.append(f"checklist done: {', '.join(done[:4])}")
+    metrics = entry.get("metrics") or {}
+    metric_bits = [
+        f"{name}={value}"
+        for name, value in metrics.items()
+        if value not in (None, "", 0, 0.0)
+    ]
+    if metric_bits:
+        parts.append(f"metrics: {', '.join(metric_bits[:4])}")
+    note = (entry.get("notes") or "").strip()
+    if note:
+        parts.append(f"note: {_truncate(note, MAX_NOTE_CHARS)}")
+    return "; ".join(parts)
+
+
 def collect_recent_context(
     entries: dict,
     categories: dict,
@@ -86,7 +181,13 @@ def collect_recent_context(
 ) -> str:
     """Build a compact plain-text summary for the model (no embeddings/RAG)."""
     start, end = _date_range(days)
-    lines = [f"Period: {start.isoformat()} to {end.isoformat()} ({days} days)", ""]
+    period_label = "Today only" if days == 1 else f"{start.isoformat()} to {end.isoformat()} ({days} days)"
+    lines = [f"Period: {period_label}", ""]
+
+    domain_days_logged = 0
+    total_domain_entries = 0
+    all_ratings: list[float] = []
+    checklist_wins: list[str] = []
 
     lines.append("=== LIFE DOMAINS ===")
     any_domain = False
@@ -105,28 +206,67 @@ def collect_recent_context(
             if not entry:
                 continue
             days_logged += 1
+            total_domain_entries += 1
             rating = entry.get("rating")
             if rating is not None:
                 try:
                     ratings.append(float(rating))
+                    all_ratings.append(float(rating))
                 except (TypeError, ValueError):
                     pass
-            note = (entry.get("notes") or "").strip()
-            if note:
-                note_bits.append(_truncate(note, MAX_NOTE_CHARS))
+            detail = _summarize_entry(entry)
+            if detail:
+                if days == 1:
+                    note_bits.append(detail)
+                else:
+                    note_bits.append(_truncate(detail, MAX_NOTE_CHARS))
+            checklist = entry.get("checklist") or {}
+            for label, checked in checklist.items():
+                if checked:
+                    checklist_wins.append(f"{cat_name}: {label}")
 
         if days_logged == 0:
             continue
+        domain_days_logged += 1
         any_domain = True
         chunk = f"{cat_name}: {days_logged}/{days} days logged"
         if ratings:
             chunk += f", avg rating {sum(ratings) / len(ratings):.1f}/10"
         if note_bits:
-            chunk += f"; notes: {' | '.join(note_bits[:2])}"
+            joiner = " | " if days > 1 else " — "
+            limit = 1 if days == 1 else 2
+            chunk += f"; {joiner.join(note_bits[:limit])}"
         lines.append(chunk)
 
     if not any_domain:
         lines.append("(No life-domain logs in this period.)")
+
+    lines.append("")
+    lines.append("=== PERIOD SUMMARY ===")
+    lines.append(
+        f"Domains with any logs: {domain_days_logged}/{len(categories)}; "
+        f"total domain-day entries: {total_domain_entries}"
+    )
+    if all_ratings:
+        lines.append(f"Average rating across logged entries: {sum(all_ratings) / len(all_ratings):.1f}/10")
+    if checklist_wins:
+        lines.append(f"Checklist items completed ({len(checklist_wins)}): " + "; ".join(checklist_wins[:8]))
+    else:
+        lines.append("Checklist items completed: none recorded in this period.")
+
+    logged_names = set()
+    for cat_name in categories:
+        for offset in range(days):
+            day = start + timedelta(days=offset)
+            if entries.get(day.isoformat(), {}).get(cat_name):
+                logged_names.add(cat_name)
+                break
+    skipped = [name for name in categories if name not in logged_names]
+    if skipped:
+        preview = ", ".join(skipped[:10])
+        if len(skipped) > 10:
+            preview += f", … (+{len(skipped) - 10} more)"
+        lines.append(f"Domains not logged in period: {preview}")
 
     lines.append("")
     lines.append("=== JOURNAL ===")
@@ -185,13 +325,14 @@ def _collect_fitness_lines(
 
 def build_chat_messages(context: str, *, kind: str = "weekly_review", days: int = 7) -> list[dict[str, str]]:
     spec = INSIGHT_KINDS.get(kind, INSIGHT_KINDS["weekly_review"])
+    period = _format_period_label(days)
     user_content = (
         f"{spec['user_intro']}\n\n"
-        f"Data from the last {days} days:\n\n{context}\n\n"
+        f"Data from {period}:\n\n{context}\n\n"
         "Respond in clear paragraphs. End with a short 'Next steps' section (1-2 items)."
     )
     return [
-        {"role": "system", "content": spec["system"]},
+        {"role": "system", "content": str(spec["system"])},
         {"role": "user", "content": user_content},
     ]
 
@@ -309,20 +450,28 @@ def mount_insight_panel(
     controls.pack(fill=tk.X)
 
     days_var = tk.StringVar(value=str(default_days))
-    kind_var = tk.StringVar(value=INSIGHT_KINDS["weekly_review"]["label"])
+    default_kind = "day_scanner" if default_days == 1 else "weekly_review"
+    kind_var = tk.StringVar(value=str(INSIGHT_KINDS[default_kind]["label"]))
     model_var = tk.StringVar(value=DEFAULT_MODEL)
 
-    ttk.Label(controls, text="Period (days)").pack(side=tk.LEFT)
-    days_combo = ttk.Combobox(controls, textvariable=days_var, values=["7", "30"], width=4, state="readonly")
+    ttk.Label(controls, text="Period").pack(side=tk.LEFT)
+    days_combo = ttk.Combobox(
+        controls,
+        textvariable=days_var,
+        values=list(PERIOD_DAY_OPTIONS),
+        width=4,
+        state="readonly",
+    )
     days_combo.pack(side=tk.LEFT, padx=(6, 14))
 
-    ttk.Label(controls, text="Type").pack(side=tk.LEFT)
+    ttk.Label(controls, text="Insight type").pack(side=tk.LEFT)
+    kind_labels = [str(INSIGHT_KINDS[key]["label"]) for key in INSIGHT_KIND_ORDER]
     kind_combo = ttk.Combobox(
         controls,
         textvariable=kind_var,
-        values=[spec["label"] for spec in INSIGHT_KINDS.values()],
+        values=kind_labels,
         state="readonly",
-        width=20,
+        width=22,
     )
     kind_combo.pack(side=tk.LEFT, padx=(6, 14))
 
@@ -332,6 +481,13 @@ def mount_insight_panel(
             if spec["label"] == label:
                 return key
         return "weekly_review"
+
+    def _apply_kind_defaults(*_args) -> None:
+        kind = _resolve_kind()
+        suggested = int(INSIGHT_KINDS.get(kind, {}).get("default_days", 7))
+        days_var.set(str(suggested))
+
+    kind_var.trace_add("write", _apply_kind_defaults)
 
     ttk.Label(controls, text="Model").pack(side=tk.LEFT)
     ttk.Entry(controls, textvariable=model_var, width=16).pack(side=tk.LEFT, padx=(6, 14))
@@ -349,7 +505,9 @@ def mount_insight_panel(
     style_text_widget(result, theme)
     result.insert(
         tk.END,
-        "Click Get AI Insight for a concise review of your recent logs.\n\n"
+        "Pick an insight type and period, then click Get AI Insight.\n\n"
+        "Day Scanner + Today (1) = same-day wrap-up across all logged domains.\n"
+        "Weekly Review / Emotional Patterns work well with 7 or 30 days.\n\n"
         "Setup (one time):\n"
         "  1. Install Ollama from https://ollama.com\n"
         "  2. pip install ollama\n"

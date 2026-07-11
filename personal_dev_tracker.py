@@ -91,7 +91,6 @@ class PersonalDevelopmentTracker:
         self.data_path = DATA_FILE
         self.vault_passphrase: str | None = None
         self.theme = get_theme(False)
-        self._mousewheel_binding: str | None = None
         self._insights_cache = None
         self._streak_cache: dict[str, int] = {}
         self._save_after_id: str | None = None
@@ -820,9 +819,6 @@ class PersonalDevelopmentTracker:
 
     def create_dashboard(self) -> None:
         self._dashboard_ready = False
-        if self._mousewheel_binding:
-            self.root.unbind_all(self._mousewheel_binding)
-            self._mousewheel_binding = None
 
         for widget in self.root.winfo_children():
             widget.destroy()
@@ -914,21 +910,9 @@ class PersonalDevelopmentTracker:
         self._dashboard_ready = True
 
     def _build_overview_tab(self, parent: ttk.Frame) -> None:
-        canvas = tk.Canvas(parent, highlightthickness=0)
+        outer, main, canvas = ui_scroll.make_scrollable_frame(parent)
         style_canvas(canvas, self.theme)
-        scrollbar = ttk.Scrollbar(parent, orient=tk.VERTICAL, command=canvas.yview)
-        main = ttk.Frame(canvas)
-        main.bind("<Configure>", lambda _event: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.create_window((0, 0), window=main, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
-        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-
-        def on_mousewheel(event: tk.Event) -> None:
-            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-
-        canvas.bind_all("<MouseWheel>", on_mousewheel)
-        self._mousewheel_binding = "<MouseWheel>"
+        outer.pack(fill=tk.BOTH, expand=True)
 
         main.columnconfigure(0, weight=1)
 
@@ -979,15 +963,9 @@ class PersonalDevelopmentTracker:
         self._render_guidance_panel(main, row=3)
 
     def _build_categories_tab(self, parent: ttk.Frame) -> None:
-        canvas = tk.Canvas(parent, highlightthickness=0)
+        outer, main, canvas = ui_scroll.make_scrollable_frame(parent)
         style_canvas(canvas, self.theme)
-        scrollbar = ttk.Scrollbar(parent, orient=tk.VERTICAL, command=canvas.yview)
-        main = ttk.Frame(canvas)
-        main.bind("<Configure>", lambda _event: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.create_window((0, 0), window=main, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
-        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        outer.pack(fill=tk.BOTH, expand=True)
 
         main.columnconfigure(0, weight=1)
         main.columnconfigure(1, weight=1)
@@ -1787,7 +1765,13 @@ class PersonalDevelopmentTracker:
             self.theme,
             journal_data=self.journal,
             fitness_settings=self.settings.get("fitness"),
+            app_settings=self.settings,
+            on_graph_settings_changed=self._save_graph_settings,
         )
+
+    def _save_graph_settings(self, payload: dict) -> None:
+        self.settings["graphs"] = payload.get("graphs", {})
+        self.save_data(flush=True)
 
     def show_graphs_ai(self) -> None:
         open_graphs(
@@ -1797,6 +1781,8 @@ class PersonalDevelopmentTracker:
             self.theme,
             journal_data=self.journal,
             fitness_settings=self.settings.get("fitness"),
+            app_settings=self.settings,
+            on_graph_settings_changed=self._save_graph_settings,
             initial_tab="ai_insight",
         )
 

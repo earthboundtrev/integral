@@ -73,6 +73,114 @@ def list_exercise_rows(
     return rows
 
 
+def format_exercise_picker_label(row: dict) -> str:
+    """Disambiguate exercises in search results (book, family, step)."""
+    name = row.get("name", "")
+    details: list[str] = []
+    if row.get("source_book"):
+        details.append(str(row["source_book"]))
+    if row.get("family"):
+        details.append(str(row["family"]))
+    step = row.get("step")
+    if step not in (None, ""):
+        details.append(f"step {step}")
+    if details:
+        return f"{name} ({' · '.join(details)})"
+    return name
+
+
+def mount_live_exercise_search(
+    parent,
+    rows: list[dict],
+    *,
+    height: int = 8,
+    focus: bool = True,
+) -> dict:
+    """Search-as-you-type exercise picker; filters on every keystroke."""
+    import tkinter as tk
+    from tkinter import ttk
+
+    import fitness_programs
+    import ui_scroll
+
+    container = ttk.Frame(parent)
+    search_var = tk.StringVar(value="")
+    status_var = tk.StringVar(value="")
+
+    search_row = ttk.Frame(container)
+    search_row.pack(fill=tk.X, pady=(0, 4))
+    ttk.Label(search_row, text="Search:").pack(side=tk.LEFT, padx=(0, 6))
+    search_entry = ttk.Entry(search_row, textvariable=search_var)
+    search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8))
+    ttk.Button(search_row, text="Clear", command=lambda: search_var.set("")).pack(side=tk.LEFT)
+
+    list_frame = ttk.Frame(container)
+    list_frame.pack(fill=tk.BOTH, expand=True)
+    listbox = tk.Listbox(list_frame, height=height, activestyle="dotbox", exportselection=False)
+    scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=listbox.yview)
+    listbox.configure(yscrollcommand=scrollbar.set)
+    listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+    ui_scroll.bind_mousewheel(listbox, listbox.yview)
+
+    ttk.Label(container, textvariable=status_var, style="Muted.TLabel").pack(anchor="w", pady=(4, 0))
+
+    filtered_rows: list[dict] = []
+
+    def refresh(*_args) -> None:
+        nonlocal filtered_rows
+        query = search_var.get()
+        filtered_rows = fitness_programs.filter_rows_by_search(rows, query)
+        listbox.delete(0, tk.END)
+        for row in filtered_rows:
+            listbox.insert(tk.END, format_exercise_picker_label(row))
+        total = len(rows)
+        count = len(filtered_rows)
+        if query.strip():
+            status_var.set(
+                f"{count} match{'es' if count != 1 else ''} of {total} — click a row or double-click to pick"
+            )
+        else:
+            status_var.set(f"{total} exercises — type to filter instantly")
+        if filtered_rows:
+            listbox.selection_set(0)
+            listbox.activate(0)
+            listbox.see(0)
+
+    def get_selected_row() -> dict | None:
+        selection = listbox.curselection()
+        if not selection:
+            if len(filtered_rows) == 1:
+                return filtered_rows[0]
+            return None
+        index = int(selection[0])
+        if 0 <= index < len(filtered_rows):
+            return filtered_rows[index]
+        return None
+
+    def focus_results(_event=None):
+        if filtered_rows:
+            listbox.focus_set()
+            listbox.selection_set(0)
+            listbox.activate(0)
+
+    search_var.trace_add("write", refresh)
+    search_entry.bind("<Down>", focus_results)
+    search_entry.bind("<Return>", lambda _e: focus_results())
+    refresh()
+    if focus:
+        search_entry.focus_set()
+
+    return {
+        "container": container,
+        "search_var": search_var,
+        "search_entry": search_entry,
+        "listbox": listbox,
+        "get_selected_row": get_selected_row,
+        "refresh": refresh,
+    }
+
+
 def submit_performance(
     repo: FitnessRepository,
     exercise_id: str,
@@ -275,8 +383,8 @@ def open_new_session_dialog(
 
     dialog = tk.Toplevel(parent)
     dialog.title("Log Exercise Session")
-    dialog.geometry("540x520")
-    dialog.minsize(480, 400)
+    dialog.geometry("560x620")
+    dialog.minsize(500, 480)
     dialog.transient(parent)
     dialog.grab_set()
 
@@ -290,7 +398,6 @@ def open_new_session_dialog(
     notes_var = tk.StringVar(value="")
     duration_var = tk.IntVar(value=45)
     weight_var = tk.DoubleVar(value=0.0)
-    exercise_var = tk.StringVar()
     sets_var = tk.IntVar(value=3)
     reps_var = tk.IntVar(value=10)
     hold_var = tk.DoubleVar(value=0.0)
@@ -309,36 +416,47 @@ def open_new_session_dialog(
         ttk.Label(row, text=f"{label}:", width=16).pack(side=tk.LEFT)
         ttk.Entry(row, textvariable=var, width=28).pack(side=tk.LEFT)
 
-    ttk.Label(form, text="Add sets below, then Save Session.").pack(anchor="w", pady=6)
+    ttk.Label(form, text="Search for an exercise, pick it, add sets, then Save Session.").pack(
+        anchor="w", pady=6
+    )
 
     set_frame = ttk.LabelFrame(form, text="Add Set", padding=8)
-    set_frame.pack(fill=tk.X, pady=4)
-    exercise_names = {row["name"]: row["id"] for row in list_exercise_rows(repo)}
-    ex_combo = ttk.Combobox(set_frame, textvariable=exercise_var, values=list(exercise_names.keys()), width=28)
-    ex_combo.pack(fill=tk.X, pady=2)
+    set_frame.pack(fill=tk.BOTH, expand=True, pady=4)
+
+    exercise_rows = list_exercise_rows(repo)
+    picker = mount_live_exercise_search(set_frame, exercise_rows, height=9)
+    picker["container"].pack(fill=tk.BOTH, expand=True, pady=(0, 8))
+
+    metrics = ttk.Frame(set_frame)
+    metrics.pack(fill=tk.X)
     for label, var in [("Sets", sets_var), ("Reps", reps_var)]:
-        row = ttk.Frame(set_frame)
+        row = ttk.Frame(metrics)
         row.pack(fill=tk.X, pady=2)
         ttk.Label(row, text=f"{label}:", width=10).pack(side=tk.LEFT)
         ttk.Spinbox(row, from_=0, to=999, textvariable=var, width=8).pack(side=tk.LEFT)
     for label, var in [("Hold (sec)", hold_var), ("Weight (kg)", set_weight_var)]:
-        row = ttk.Frame(set_frame)
+        row = ttk.Frame(metrics)
         row.pack(fill=tk.X, pady=2)
         ttk.Label(row, text=f"{label}:", width=10).pack(side=tk.LEFT)
         ttk.Entry(row, textvariable=var, width=10).pack(side=tk.LEFT)
 
     pending_sets: list[dict] = []
-    preview = tk.Listbox(form, height=8)
+    preview = tk.Listbox(form, height=6)
     preview.pack(fill=tk.BOTH, expand=True, pady=6)
     ui_scroll.bind_mousewheel(preview, preview.yview)
 
     def add_set():
-        name = exercise_var.get().strip()
-        if name not in exercise_names:
-            messagebox.showinfo("Exercise", "Select a valid exercise.", parent=dialog)
+        row = picker["get_selected_row"]()
+        if row is None:
+            messagebox.showinfo(
+                "Exercise",
+                "Type to search, then click an exercise in the list (or narrow to one match).",
+                parent=dialog,
+            )
             return
+        name = row["name"]
         item = {
-            "exercise_id": exercise_names[name],
+            "exercise_id": row["id"],
             "name": name,
             "sets": sets_var.get(),
             "reps": reps_var.get(),
@@ -348,7 +466,9 @@ def open_new_session_dialog(
         if set_weight_var.get() > 0:
             item["weight_kg"] = set_weight_var.get()
         pending_sets.append(item)
-        preview.insert(tk.END, f"{name}: {item.get('sets')}x{item.get('reps')}")
+        preview.insert(tk.END, f"{format_exercise_picker_label(row)}: {item.get('sets')}x{item.get('reps')}")
+
+    picker["listbox"].bind("<Double-1>", lambda _e: add_set())
 
     def save_session():
         if not pending_sets:

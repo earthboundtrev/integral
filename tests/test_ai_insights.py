@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 
 from ai_insights import (
     DEFAULT_MODEL,
+    INSIGHT_KINDS,
     build_chat_messages,
     collect_recent_context,
     ollama_installed,
@@ -56,7 +57,35 @@ def test_collect_recent_context_compact():
     assert "Emotional Wellbeing" in context
     assert "Evening reflection" in context
     assert "JOURNAL" in context
-    assert len(context) < 4000
+    assert "PERIOD SUMMARY" in context
+    assert len(context) < 5000
+
+
+def test_collect_recent_context_today_only():
+    today = datetime.now().date().strftime("%Y-%m-%d")
+    entries = {
+        today: {
+            "Body & Presence": {
+                "rating": 7,
+                "checklist": {"Completed movement or exercise": True},
+                "metrics": {"Sleep hours last night": 6},
+                "notes": "",
+            }
+        }
+    }
+    categories = {"Body & Presence": {"checklist": [], "metrics": []}}
+
+    context = collect_recent_context(entries, categories, days=1)
+
+    assert "Today only" in context
+    assert "checklist done" in context
+    assert "Sleep hours last night=6" in context
+
+
+def test_build_chat_messages_day_scanner():
+    messages = build_chat_messages("sample context", kind="day_scanner", days=1)
+    assert "daily review coach" in messages[0]["content"]
+    assert "Data from today:" in messages[1]["content"]
 
 
 def test_build_chat_messages_weekly_review():
@@ -71,3 +100,5 @@ def test_ollama_optional():
     # App must import without ollama installed in CI
     assert isinstance(ollama_installed(), bool)
     assert DEFAULT_MODEL == "llama3.2:3b"
+    assert "day_scanner" in INSIGHT_KINDS
+    assert INSIGHT_KINDS["day_scanner"]["default_days"] == 1

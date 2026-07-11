@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.3.4 — 2026-07-10
+
+### Added
+
+- **Graphs Dashboard** — default multi-panel view with 8 auto-picked rating charts; customize 4–12 domains; quick-view for hidden areas
+- **Log Exercise search** — type-to-filter exercise picker (no Enter needed); double-click to add a set
+- **AI Insight: Day Scanner** — same-day wrap-up with **Today (1 day)** period option
+- **Five new AI insight types** — Energy & Burnout, Body & Movement, Gaps & Life Balance, Journal Themes (plus richer checklist/metrics context for the model)
+
+### Fixed
+
+- **Scroll glitches** — removed competing global mousewheel handlers that caused text overlap and crashes; Overview/Categories use shared scroll helper
+
+### Build
+
+- Windows app: `dist/Integral/Integral.exe` (run `.\build.ps1`)
+- Release zip: `Integral-v0.3.4-windows.zip`
+
 ## 0.3.3 — 2026-07-08
 
 ### Added

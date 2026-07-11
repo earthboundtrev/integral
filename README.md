@@ -102,10 +102,17 @@ Integral can summarize your last **7–30 days** with a **small local model** �
 
 **Insight types**
 
-| Type | What it does |
-|------|----------------|
-| **Weekly Review** | Patterns, wins, and 1–2 concrete next steps across all life domains |
-| **Emotional Patterns** | Mood, stress, relational notes, and burnout signals from journal + domain notes |
+| Type | Best for | Default period |
+|------|----------|----------------|
+| **Day Scanner** | Same-day wrap-up — wins, gaps, one next step | Today (1 day) |
+| **Weekly Review** | Patterns, wins, and 1–2 concrete next steps | 7 days |
+| **Emotional Patterns** | Mood, stress, relational notes, burnout signals | 7 days |
+| **Energy & Burnout** | Sleep, boundaries, recovery, energy management | 7 days |
+| **Body & Movement** | Exercise, fitness sessions, physical self-care | 7 days |
+| **Gaps & Life Balance** | Neglected domains and rebalancing across 18 areas | 30 days |
+| **Journal Themes** | Recurring themes in journal and domain notes | 7 days |
+
+Period options: **1** (today), **7**, or **30** days. Choosing an insight type auto-suggests its default period; you can override.
 
 **Where to find it**
 
