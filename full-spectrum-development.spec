@@ -3,14 +3,26 @@
 
 import os
 
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+from PyInstaller.utils.hooks import collect_data_files
 
 block_cipher = None
 ROOT = os.path.dirname(os.path.abspath(SPEC))
 ICON = os.path.join(ROOT, "assets", "icon.ico")
 
 matplotlib_datas = collect_data_files("matplotlib")
-matplotlib_hidden = collect_submodules("matplotlib.backends")
+
+# Optional AI client — not bundled; keeps httpx/pydantic/anyio out of the build graph.
+OLLAMA_EXCLUDES = [
+    "ollama",
+    "httpx",
+    "httpcore",
+    "h11",
+    "anyio",
+    "sniffio",
+    "dns",
+    "rich",
+    "pygments",
+]
 
 a = Analysis(
     ["personal_dev_tracker.py"],
@@ -23,10 +35,10 @@ a = Analysis(
         *matplotlib_datas,
     ],
     hiddenimports=[
-        *matplotlib_hidden,
         "activity_grid",
         "paths",
         "theme",
+        "mpl_tk",
         "graphs",
         "fitness_graphs",
         "fitness",
@@ -65,9 +77,13 @@ a = Analysis(
         "ai_insights",
     ],
     hookspath=[],
-    hooksconfig={},
+    hooksconfig={
+        "matplotlib": {
+            "backends": "TkAgg",
+        },
+    },
     runtime_hooks=[],
-    excludes=[],
+    excludes=OLLAMA_EXCLUDES,
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,

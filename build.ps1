@@ -11,7 +11,7 @@ Write-Host "Building app icon..."
 python scripts\build_icon.py
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-Write-Host "Building executable..."
+Write-Host "Building executable (clean release build)..."
 python -m PyInstaller --noconfirm --clean full-spectrum-development.spec
 
 if ($LASTEXITCODE -ne 0) {
@@ -23,5 +23,6 @@ Write-Host ""
 Write-Host "Done. Your app is here:"
 Write-Host "  dist\Integral\Integral.exe"
 Write-Host ""
+Write-Host "For faster iterative builds during development, run: .\build-fast.ps1"
 Write-Host "Zip the whole Integral folder for GitHub Releases."
 Write-Host "User data saves to: %APPDATA%\Integral\data.json"

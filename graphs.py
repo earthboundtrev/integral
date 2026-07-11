@@ -6,13 +6,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Callable
 
-import matplotlib
-
-matplotlib.use("TkAgg")
-
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from matplotlib.figure import Figure
-import matplotlib.dates as mdates
+import mpl_tk
 import tkinter as tk
 from tkinter import messagebox, ttk
 
@@ -164,6 +158,7 @@ class GraphWindow:
         on_graph_settings_changed: Callable[[dict], None] | None = None,
         initial_tab: str | None = None,
     ) -> None:
+        mpl_tk.ensure_matplotlib()
         self.entries = entries
         self.categories = categories
         self.theme = theme
@@ -224,10 +219,11 @@ class GraphWindow:
         *,
         figsize: tuple[float, float] = (10, 5),
         title: str | None = None,
-    ) -> tuple[Figure, FigureCanvasTkAgg, bool]:
-        figure = Figure(figsize=figsize, dpi=100)
+    ) -> tuple[object, object, bool]:
+        mpl_tk.ensure_matplotlib()
+        figure = mpl_tk.Figure(figsize=figsize, dpi=100)
         figure.patch.set_facecolor(self.theme["bg"])
-        canvas = FigureCanvasTkAgg(figure, master=self.window)
+        canvas = mpl_tk.FigureCanvasTkAgg(figure, master=self.window)
         ax = figure.add_subplot(111)
         self._style_axes(ax)
         dates, values = _rating_series(self.entries, category)
@@ -237,7 +233,7 @@ class GraphWindow:
             ax.set_ylim(0, 10.5)
             ax.set_ylabel("Rating")
             ax.set_title(title or f"{category} — daily rating")
-            ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %d"))
+            ax.xaxis.set_major_formatter(mpl_tk.mdates.DateFormatter("%b %d"))
             figure.autofmt_xdate(rotation=30)
         else:
             ax.text(
@@ -539,10 +535,11 @@ class GraphWindow:
         if self._dashboard_refresh is not None:
             self._dashboard_refresh()
 
-    def _figure(self, rows: int = 1, cols: int = 1) -> tuple[Figure, FigureCanvasTkAgg]:
-        figure = Figure(figsize=(10, 5 if rows == 1 else 7), dpi=100)
+    def _figure(self, rows: int = 1, cols: int = 1) -> tuple[object, object]:
+        mpl_tk.ensure_matplotlib()
+        figure = mpl_tk.Figure(figsize=(10, 5 if rows == 1 else 7), dpi=100)
         figure.patch.set_facecolor(self.theme["bg"])
-        canvas = FigureCanvasTkAgg(figure, master=self.window)
+        canvas = mpl_tk.FigureCanvasTkAgg(figure, master=self.window)
         return figure, canvas
 
     def _style_axes(self, ax) -> None:
@@ -589,7 +586,7 @@ class GraphWindow:
                 ax.set_ylim(0, 10.5)
                 ax.set_ylabel("Rating")
                 ax.set_title(f"{category} — daily rating")
-                ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %d"))
+                ax.xaxis.set_major_formatter(mpl_tk.mdates.DateFormatter("%b %d"))
                 figure.autofmt_xdate()
             else:
                 ax.text(0.5, 0.5, "No ratings yet for this category", ha="center", va="center", color=self.theme["muted"])
@@ -650,7 +647,7 @@ class GraphWindow:
                 ax.plot(dates, values, marker="o", linewidth=2, color="#3DDB87")
                 ax.set_title(f"{category} — {metric_name}")
                 ax.set_ylabel(metric_name)
-                ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %d"))
+                ax.xaxis.set_major_formatter(mpl_tk.mdates.DateFormatter("%b %d"))
                 figure.autofmt_xdate()
             else:
                 ax.text(0.5, 0.5, "No metric data yet", ha="center", va="center", color=self.theme["muted"])

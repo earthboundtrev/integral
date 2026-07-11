@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.3.5 — 2026-07-10
+
+### Added
+
+- **`build-fast.ps1`** — incremental PyInstaller builds (~5 min) without `--clean` or pip reinstall
+- **`mpl_tk.py`** — lazy Matplotlib/TkAgg loading so charts defer NumPy until opened
+
+### Changed
+
+- **Faster app startup** — `graphs` and Matplotlib no longer import at launch
+- **Leaner frozen build** — TkAgg-only matplotlib; optional Ollama Python client excluded from the exe bundle
+
+### Build
+
+- Windows app: `dist/Integral/Integral.exe` (release: `.\build.ps1`, dev: `.\build-fast.ps1`)
+- Release zip: `Integral-v0.3.5-windows.zip`
+
 ## 0.3.4 — 2026-07-10
 
 ### Added

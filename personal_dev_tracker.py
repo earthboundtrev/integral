@@ -13,7 +13,6 @@ from activity_grid import ContributionGrid
 import day_plans
 from day_plans_ui import show_plan_comparison_window, show_plan_window
 from day_watch import DayWatch
-from graphs import open_graphs
 from fitness.engine import compute_program_state, load_program_definitions, migrate_data
 from fitness.intelligence import get_fitness_settings, weekly_fitness_summary
 from insights.engine import analyze_all, category_insight, format_guidance_report, format_insight_line, top_insights
@@ -1758,6 +1757,8 @@ class PersonalDevelopmentTracker:
         run_search()
 
     def show_graphs(self) -> None:
+        from graphs import open_graphs
+
         open_graphs(
             self.root,
             self.entries,
@@ -1774,6 +1775,8 @@ class PersonalDevelopmentTracker:
         self.save_data(flush=True)
 
     def show_graphs_ai(self) -> None:
+        from graphs import open_graphs
+
         open_graphs(
             self.root,
             self.entries,
