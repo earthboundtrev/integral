@@ -22,6 +22,7 @@ def bind_mousewheel(
     container: tk.Misc,
     scroll_command: Callable[..., object],
     *,
+    horizontal: bool = False,
     watch_configure: tk.Misc | None = None,
 ) -> None:
     """
@@ -29,6 +30,9 @@ def bind_mousewheel(
 
     Avoids bind_all/unbind_all, which causes competing handlers, text overlap
     glitches, and crashes when multiple scroll areas exist in one window.
+
+    Pass horizontal=True when scroll_command is an xview handler; Shift+wheel
+    is bound as well for trackpads that emit that sequence.
     """
 
     def on_mousewheel(event):
@@ -45,6 +49,8 @@ def bind_mousewheel(
         widget.bind("<MouseWheel>", on_mousewheel, add="+")
         widget.bind("<Button-4>", on_mousewheel, add="+")
         widget.bind("<Button-5>", on_mousewheel, add="+")
+        if horizontal:
+            widget.bind("<Shift-MouseWheel>", on_mousewheel, add="+")
         widget.bind("<Destroy>", lambda event, wid=widget_id: _wheel_bound_widgets.discard(wid), add="+")
 
     def bind_tree(widget: tk.Misc) -> None:

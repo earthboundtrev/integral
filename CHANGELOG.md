@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.5.1 — 2026-07-10
+
+### Fixed
+
+- **Launch crash on v0.3.5** — restored `horizontal=` support in `bind_mousewheel()` so the Overview activity grid initializes correctly
+
+### Build
+
+- Windows app: `dist/Integral/Integral.exe`
+- Release zip: `Integral-v0.3.5.1-windows.zip`
+
 ## 0.3.5 — 2026-07-10
 
 ### Added
