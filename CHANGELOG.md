@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.3.6.2 — 2026-07-12
+
+### Added
+
+- **Reminder residency** — minimize-to-taskbar on close and Start with Windows so portable toasts can keep firing; Data & Security controls + test notification
+
+### Fixed
+
+- **Streak on startup** — shows consecutive days ending yesterday when today is not logged yet (grace until midnight)
+- **Subtitle** — “Holistic life tracking” (no hard-coded domain count)
+
+### Build
+
+- Windows app: `dist/Integral/Integral.exe`
+- Release zip: `Integral-v0.3.6.2-windows.zip`
+
 ## 0.3.6.1 — 2026-07-12
 
 ### Fixed
