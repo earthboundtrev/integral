@@ -97,6 +97,7 @@ User data: `%APPDATA%\Integral\data.json` (encrypted optional via Data & Securit
 | **Activity** | GitHub-style contribution grid; click any day |
 | **Fitness Hub** | CC1/CC2/SS/OG/EC/FTR — nested book → program → steps |
 | **Safety net** | Export CSV, full JSON backup, optional vault encryption |
+| **Reminders** | Windows toasts while Integral is running; optional Start with Windows + minimize-on-close so reminders keep working |
 | **AI Insight (optional)** | Local Ollama review of recent logs — see below |
 
 Tests: `python -m pytest tests/ -q`
@@ -116,6 +117,15 @@ Tests: `python -m pytest tests/ -q`
 - Pick a duration; optionally open a writing project’s inspiration + manuscript
 - Non-essential nav (graphs, fitness, export, settings, …) hides for the session; Journal and Writing Projects stay available
 - Countdown banner with **+10 min** and **End Deep Work**
+
+### Reminders (Windows)
+
+Daily reminder toasts only fire **while Integral is running** — the portable zip is not a background Windows service. Under **Data & Security**:
+
+- **Enable daily reminder toasts**
+- **Minimize to taskbar on close** — closing the window keeps Integral (and reminders) alive; restore from the taskbar
+- **Start Integral with Windows** — launches at sign-in so reminders can run through the day
+- **Send test notification** / **Quit Integral completely** when you want a real exit
 
 ### Optional: Local AI insights (Ollama)
 

@@ -126,3 +126,5 @@ Creative/Mental Work integration (SPEC-304): log dialog links to Writing Project
 
 Deep Work Mode (SPEC-305): `deep_work.py` timer + `deep_work_ui.py` start dialog; tracker hides non-essential nav while a session runs.
 
+Notification residency (SPEC-306): reminders need a live process — `minimize_on_close` iconifies instead of quitting; `autostart_windows.py` toggles HKCU Run for Start with Windows. Controls live under Data & Security.
+

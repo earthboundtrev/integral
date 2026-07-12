@@ -452,6 +452,13 @@ class PersonalDevelopmentTracker:
         return self._insights_cache
 
     def _on_close(self) -> None:
+        notifications = normalize_notification_settings(self.settings)["notifications"]
+        if notifications.get("minimize_on_close"):
+            self.root.iconify()
+            return
+        self.quit_app()
+
+    def quit_app(self) -> None:
         if self._reminder_scheduler is not None:
             self._reminder_scheduler.stop()
         if self._day_watch is not None:

@@ -18,8 +18,12 @@ from integral_io import (
     write_backup,
 )
 from milestones import current_quarter_label, merge_milestones, milestone_summary
+from notifications import normalize_notification_settings, show_windows_notification
+from paths import APP_NAME
 from theme import style_listbox, style_text_widget
 from vault import CRYPTO_AVAILABLE, encrypt_payload, is_encrypted_file
+import autostart_windows
+import ui_scroll
 
 if TYPE_CHECKING:
     from personal_dev_tracker import PersonalDevelopmentTracker
@@ -228,25 +232,29 @@ def show_milestones_dialog(tracker: PersonalDevelopmentTracker) -> None:
 def show_security_dialog(tracker: PersonalDevelopmentTracker) -> None:
     window = tk.Toplevel(tracker.root)
     window.title("Data & Security")
-    window.geometry("560x400")
+    window.geometry("580x560")
+    window.minsize(520, 480)
     window.configure(bg=tracker.theme["bg"])
     window.transient(tracker.root)
 
+    outer, inner, _canvas = ui_scroll.make_scrollable_frame(window)
+    outer.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=8, pady=8)
+
     encrypted = bool(tracker.settings.get("encryption_enabled"))
-    ttk.Label(window, text="Encryption at rest", font=("Helvetica", 13, "bold")).pack(anchor="w", padx=15, pady=(15, 4))
+    ttk.Label(inner, text="Encryption at rest", font=("Helvetica", 13, "bold")).pack(anchor="w", padx=15, pady=(15, 4))
     status = "ON — journal file is encrypted" if encrypted else "OFF — journal stored as plain JSON"
-    ttk.Label(window, text=status, wraplength=500).pack(anchor="w", padx=15)
+    ttk.Label(inner, text=status, wraplength=500).pack(anchor="w", padx=15)
 
     if not CRYPTO_AVAILABLE:
         ttk.Label(
-            window,
+            inner,
             text="Install cryptography for encryption: pip install cryptography",
             foreground=tracker.theme.get("accent", "#5B8DEF"),
             wraplength=500,
         ).pack(anchor="w", padx=15, pady=8)
 
     ttk.Label(
-        window,
+        inner,
         text="Passphrase is kept in memory for this session only. "
         "If you forget it, encrypted data cannot be recovered.",
         wraplength=500,
@@ -307,14 +315,107 @@ def show_security_dialog(tracker: PersonalDevelopmentTracker) -> None:
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Failed", str(exc))
 
-    buttons = ttk.Frame(window)
-    buttons.pack(fill=tk.X, padx=15, pady=20)
+    enc_buttons = ttk.Frame(inner)
+    enc_buttons.pack(fill=tk.X, padx=15, pady=(8, 12))
     if not encrypted:
-        ttk.Button(buttons, text="Enable encryption…", command=enable_encryption).pack(side=tk.LEFT)
+        ttk.Button(enc_buttons, text="Enable encryption…", command=enable_encryption).pack(side=tk.LEFT)
     else:
-        ttk.Button(buttons, text="Change passphrase…", command=change_passphrase).pack(side=tk.LEFT, padx=4)
-        ttk.Button(buttons, text="Disable encryption…", command=disable_encryption).pack(side=tk.LEFT, padx=4)
-    ttk.Button(buttons, text="Close", command=window.destroy).pack(side=tk.RIGHT)
+        ttk.Button(enc_buttons, text="Change passphrase…", command=change_passphrase).pack(side=tk.LEFT, padx=4)
+        ttk.Button(enc_buttons, text="Disable encryption…", command=disable_encryption).pack(side=tk.LEFT, padx=4)
+
+    ttk.Separator(inner, orient=tk.HORIZONTAL).pack(fill=tk.X, padx=15, pady=8)
+    ttk.Label(inner, text="Reminders & background", font=("Helvetica", 13, "bold")).pack(
+        anchor="w", padx=15, pady=(4, 4)
+    )
+    ttk.Label(
+        inner,
+        text="Windows toasts only fire while Integral is running. The portable zip is not an "
+        "installed background service — enable the options below so reminders can keep working "
+        "after you close the window or after you sign in.",
+        wraplength=500,
+        style="Muted.TLabel",
+    ).pack(anchor="w", padx=15, pady=(0, 8))
+
+    tracker.settings = normalize_notification_settings(tracker.settings)
+    notes = tracker.settings["notifications"]
+    if autostart_windows.is_supported():
+        notes["start_with_windows"] = autostart_windows.is_enabled()
+        tracker.settings["notifications"] = notes
+    reminders_on = tk.BooleanVar(value=bool(notes.get("enabled", True)))
+    minimize_on_close = tk.BooleanVar(value=bool(notes.get("minimize_on_close", False)))
+    start_with_windows = tk.BooleanVar(value=bool(notes.get("start_with_windows", False)))
+
+    def persist_notification_flags() -> None:
+        tracker.settings = normalize_notification_settings(tracker.settings)
+        tracker.settings["notifications"]["enabled"] = bool(reminders_on.get())
+        tracker.settings["notifications"]["minimize_on_close"] = bool(minimize_on_close.get())
+        tracker.settings["notifications"]["start_with_windows"] = bool(start_with_windows.get())
+        tracker.save_data(flush=True)
+
+    def on_reminders_toggle() -> None:
+        persist_notification_flags()
+
+    def on_minimize_toggle() -> None:
+        persist_notification_flags()
+
+    def on_autostart_toggle() -> None:
+        if not autostart_windows.is_supported():
+            start_with_windows.set(False)
+            messagebox.showinfo("Start with Windows", "Only available on Windows.", parent=window)
+            return
+        try:
+            autostart_windows.set_enabled(bool(start_with_windows.get()))
+        except OSError as exc:
+            start_with_windows.set(autostart_windows.is_enabled())
+            messagebox.showerror("Start with Windows", str(exc), parent=window)
+            return
+        persist_notification_flags()
+
+    ttk.Checkbutton(
+        inner,
+        text="Enable daily reminder toasts (while Integral is running)",
+        variable=reminders_on,
+        command=on_reminders_toggle,
+    ).pack(anchor="w", padx=15, pady=2)
+    ttk.Checkbutton(
+        inner,
+        text="Minimize to taskbar on close (keep reminders running)",
+        variable=minimize_on_close,
+        command=on_minimize_toggle,
+    ).pack(anchor="w", padx=15, pady=2)
+    autostart_cb = ttk.Checkbutton(
+        inner,
+        text="Start Integral with Windows",
+        variable=start_with_windows,
+        command=on_autostart_toggle,
+    )
+    autostart_cb.pack(anchor="w", padx=15, pady=2)
+    if not autostart_windows.is_supported():
+        autostart_cb.state(["disabled"])
+
+    def send_test() -> None:
+        ok = show_windows_notification(APP_NAME, "Test notification from Integral — reminders are working.")
+        if ok:
+            messagebox.showinfo("Test notification", "Toast dispatched. If you did not see it, check Windows notification settings for Integral / PowerShell.", parent=window)
+        else:
+            messagebox.showwarning(
+                "Test notification",
+                "Could not send a Windows toast from this session (non-Windows or blocked).",
+                parent=window,
+            )
+
+    rem_buttons = ttk.Frame(inner)
+    rem_buttons.pack(fill=tk.X, padx=15, pady=(10, 8))
+    ttk.Button(rem_buttons, text="Send test notification", command=send_test).pack(side=tk.LEFT)
+    ttk.Button(
+        rem_buttons,
+        text="Quit Integral completely",
+        command=lambda: (window.destroy(), tracker.quit_app()),
+    ).pack(side=tk.LEFT, padx=8)
+
+    footer = ttk.Frame(window, padding=(15, 8, 15, 12))
+    footer.pack(side=tk.BOTTOM, fill=tk.X)
+    ttk.Button(footer, text="Close", command=window.destroy).pack(side=tk.RIGHT)
 
 
 def prompt_vault_unlock(tracker: PersonalDevelopmentTracker) -> bool:

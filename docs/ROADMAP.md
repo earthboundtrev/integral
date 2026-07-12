@@ -88,6 +88,7 @@ Known gaps vs funded competitors, tracked as intentional future work. Integral s
 - [x] Dual-window writing workspace (SPEC-303)
 - [x] Creative/Mental Work integration (SPEC-304)
 - [x] Deep Work Mode (SPEC-305)
+- [x] Portable reminder residency — minimize-on-close + Start with Windows (SPEC-306)
 
 ---
 
