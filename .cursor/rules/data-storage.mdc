@@ -33,6 +33,7 @@ Dates as `YYYY-MM-DD` keys. Categories match the 8 default domains in `docs/DATA
 - `save_data()` writes atomically (write temp → rename) when file grows large.
 - UTF-8 encoding, `ensure_ascii=False` for notes/journal.
 - Streaks: consecutive calendar days with logs ending today; category-scoped variant per card.
+- **Export/import:** schema or path changes must keep backup/restore working — see `.cursor/rules/backup-export.mdc` (always apply).
 
 ## 8 Categories
 

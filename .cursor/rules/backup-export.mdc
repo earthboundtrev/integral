@@ -1,44 +1,49 @@
 ---
-description: Backup/export integrity — keep zip archives complete when data layout changes
-globs: "backup.py,profiles.py,storage.py,progression/db.py,tracker.py"
-alwaysApply: false
+description: Export/import continuity — verify backup, restore, and CSV export whenever data or storage layout changes
+alwaysApply: true
 ---
 
-# Backup & Export Integrity
+# Export / Import Continuity
 
-## Canonical backup module
+**Local-first only matters if users can leave with their data.** Any fundamental change to persisted data or infrastructure must keep **export and import** working end-to-end.
 
-All export/import goes through `backup.py` — never duplicate zip logic in UI files.
+## When this rule applies
 
-## Required backup contents (v1)
+Treat as a **hard gate** if the change touches any of:
 
-Every valid backup zip must include:
+- Schema / keys in `data.json` (`entries`, `journal`, `sessions`, `settings`, `milestones`, `creative_projects`, `day_plans`, …)
+- New top-level payload fields in `PersonalDevelopmentTracker._payload()`
+- On-disk sidecars (`%APPDATA%\Integral\creative\`, fitness DB, encryption/vault)
+- Paths in `paths.py`, `profiles.py`, `storage.py`, `vault.py`
+- Modules: `integral_io.py`, `backup.py`, `integral_dialogs.py` (Export / Backup UI)
 
-| Path | Required |
-|------|----------|
-| `manifest.json` | Yes — `backup_version`, `profiles`, `files` list |
-| `config.json` | Yes — profile registry + active profile |
-| `profiles/{id}/data.json` | Yes per profile — daily life entries |
-| `profiles/{id}/fitness.db` | Yes when file exists — SQLite fitness progress |
+UI-only or pure display tweaks do **not** need a full export/import pass.
 
-## When changing storage
+## Canonical surfaces (do not bypass)
 
-If you add a new persisted artifact (new DB, photos dir, etc.):
+| Path | Module | Must stay working |
+|------|--------|-------------------|
+| JSON backup / restore | `integral_io.write_backup` / `load_backup` / `restore_backup_to_path` | Full payload roundtrip |
+| Profile zip backup | `backup.py` (`PROFILE_ARTIFACTS`) | Zip includes every profile artifact |
+| CSV export | `integral_io.export_*_csv` + `show_export_dialog` | New data kinds get a CSV column/file when user-visible |
 
-1. Update `PROFILE_ARTIFACTS` in `backup.py`
-2. Update `tests/test_backup.py` roundtrip test
-3. Update Settings dialog copy if user-visible
+Never invent a second backup format in UI code — extend these modules.
 
-## Verification gate
+## Checklist (before calling the work done)
 
-Before finishing any change to `profiles.py`, `storage.py`, `progression/db.py`, or profile paths:
+1. **Payload** — new persisted state is in `_payload()` / load path / `migrate_data` if needed
+2. **JSON backup** — restore replaces data cleanly; encryption still loads after restore when enabled
+3. **Sidecars** — if files live outside `data.json` (e.g. creative docs), backup/export docs or code cover them, or the gap is explicit in the PR
+4. **Zip path** — if profile artifacts changed, update `PROFILE_ARTIFACTS` in `backup.py`
+5. **CSV** — export dialog still produces usable files for the changed domain
+6. **Tests** — update/add roundtrips:
 
-```bash
-python -m pytest tests/test_backup.py tests/test_profiles.py -q
+```powershell
+python -m pytest tests/test_backup.py tests/test_integral_io.py -q
 ```
 
-Roundtrip test must pass: export → delete local files → import → data + fitness progress restored.
+7. **Docs** — `docs/DATA_MODEL.md` and README Features if user-visible export behavior changed
 
-## UI
+## Architect review
 
-Settings → **Export This Profile**, **Export All Profiles**, **Import Backup** in `tracker.py` `show_settings()`.
+On data/infra PRs, `.cursor/rules/integral-architect.mdc` must explicitly confirm: **export → restore (or import) still works**, or list that as a blocker.

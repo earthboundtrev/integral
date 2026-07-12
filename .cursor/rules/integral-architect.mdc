@@ -29,6 +29,7 @@ Cover:
 - **AC coverage** — each criterion met; call out gaps
 - **Architecture** — correct module (`insights/`, `fitness/`, `paths.py`); no UI logic in engines
 - **Local-first** — no accidental cloud calls, telemetry, or committed user data
+- **Export/import** — if schema, storage, vault, or sidecars changed: JSON backup/restore + CSV (and zip profile artifacts if touched) still work per `.cursor/rules/backup-export.mdc`; call out gaps as blockers
 - **UX friction** — logging still fast; rating + Save path preserved
 - **Fitness tables** — standards match official program JSON; no invented progression rules
 - **Docs** — `README.md` features + `docs/` updated per **`.cursor/rules/documentation.mdc`**

@@ -45,9 +45,10 @@ git checkout -b feature/short-description
 
 1. **Implement** — small, focused diff against acceptance criteria
 2. **Tests** — add/update `tests/test_*.py` for behavior changes
-3. **Review** — self-review or architect pass per `.cursor/rules/integral-architect.mdc`
-4. **Validate** — `python -m unittest discover -s tests -v` + manual smoke of affected UI
-5. **PR** — push branch; open PR to `main` when user asks
+3. **Export/import** — if data schema, storage paths, vault, or sidecars changed, follow `.cursor/rules/backup-export.mdc` (JSON backup + CSV + zip artifacts must still roundtrip)
+4. **Review** — self-review or architect pass per `.cursor/rules/integral-architect.mdc`
+5. **Validate** — `python -m unittest discover -s tests -v` + manual smoke of affected UI
+6. **PR** — push branch; open PR to `main` when user asks
 
 For risky changes (encryption, sync, AI, data migration): also follow `.cursor/rules/security-review.mdc`.
 
