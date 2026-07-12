@@ -684,22 +684,57 @@ class PersonalDevelopmentTracker:
             return
         show_journal_window(self, entry_id=entry_id)
 
+    def open_integral_link(self, link, *, parent=None) -> None:
+        """Open journal / domain / fitness / writing-project targets from an IntegralLink."""
+        import integral_links
+        from creative_ui import show_writing_projects_window
+
+        if not isinstance(link, integral_links.IntegralLink):
+            return
+        parent = parent or self.root
+        if link.kind == "journal":
+            self.open_journal_entry(link.target, parent=parent)
+        elif link.kind == "domain":
+            cat = (link.extra or "").strip()
+            if not cat or cat not in self.categories:
+                messagebox.showwarning(
+                    "Missing domain",
+                    f"No life-domain category named “{cat}”.",
+                    parent=parent,
+                )
+                return
+            self.open_log_dialog(cat, date_str=link.target)
+        elif link.kind == "fitness":
+            self.show_day_explorer(link.target)
+        elif link.kind == "project":
+            project = creative_projects.get_project(self.creative_projects, link.target)
+            if not project:
+                messagebox.showwarning(
+                    "Missing project",
+                    "That writing project link no longer exists.",
+                    parent=parent,
+                )
+                return
+            show_writing_projects_window(self, select_project_id=link.target)
+        else:
+            messagebox.showwarning("Unknown link", f"Unsupported link kind: {link.kind}", parent=parent)
+
     def handle_deep_link(self, url: str | None) -> bool:
         if not url:
             return False
-        parsed = journal.parse_deep_link_target(url)
-        if not parsed:
+        import integral_links
+
+        link = integral_links.parse_deep_link(url)
+        if not link:
             messagebox.showwarning(
                 "Unknown link",
-                "Integral only opens known integral://journal/{id} links.",
+                "Integral only opens known integral:// links "
+                "(journal, domain, fitness, project).",
                 parent=self.root,
             )
             return False
-        kind, target_id = parsed
-        if kind == "journal":
-            self.root.after(1, lambda: self.open_journal_entry(target_id))
-            return True
-        return False
+        self.root.after(1, lambda: self.open_integral_link(link))
+        return True
 
     def _poll_pending_deep_link(self) -> None:
         from deep_links import read_and_clear_pending_link
@@ -2025,11 +2060,11 @@ class PersonalDevelopmentTracker:
                 )
 
             if hits:
-                from journal_ui import apply_journal_link_tags
+                from journal_ui import apply_integral_link_tags
 
-                apply_journal_link_tags(
+                apply_integral_link_tags(
                     results,
-                    on_open=lambda eid: self.open_journal_entry(eid, parent=window),
+                    on_open=lambda link: self.open_integral_link(link, parent=window),
                     link_color=self.theme.get("accent", "#5B8DEF"),
                 )
 
