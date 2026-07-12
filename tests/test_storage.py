@@ -90,6 +90,23 @@ def test_streak_overall():
   assert streak.get_streak(entries) == 2
 
 
+def test_streak_grace_when_today_not_logged_yet():
+  today = datetime.now().date()
+  entries = {
+    (today - timedelta(days=1)).strftime("%Y-%m-%d"): {"Body & Presence": {"rating": 5}},
+    (today - timedelta(days=2)).strftime("%Y-%m-%d"): {"Body & Presence": {"rating": 5}},
+  }
+  assert streak.get_streak(entries, today=today) == 2
+
+
+def test_streak_zero_when_gap_before_today():
+  today = datetime.now().date()
+  entries = {
+    (today - timedelta(days=2)).strftime("%Y-%m-%d"): {"Body & Presence": {"rating": 5}},
+  }
+  assert streak.get_streak(entries, today=today) == 0
+
+
 def test_streak_category():
   today = datetime.now().date()
   entries = {

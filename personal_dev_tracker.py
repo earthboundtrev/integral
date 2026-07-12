@@ -865,7 +865,7 @@ class PersonalDevelopmentTracker:
         ttk.Label(title_block, text=APP_NAME, style="Title.TLabel").pack(anchor="w")
         ttk.Label(
             title_block,
-            text="Holistic life tracking across eighteen domains",
+            text="Holistic life tracking",
             style="Muted.TLabel",
         ).pack(anchor="w", pady=(2, 0))
 
