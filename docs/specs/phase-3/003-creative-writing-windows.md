@@ -2,7 +2,7 @@
 id: SPEC-303
 title: Creative writing workspace — inspiration and manuscript windows
 phase: phase-3
-status: draft
+status: done
 prd_refs: [PRD §5 Epic C — C6]
 adr_refs: [ADR-001, ADR-002, ADR-007]
 github: https://github.com/earthboundtrev/integral/issues/2
@@ -101,12 +101,12 @@ flowchart TD
 
 ## 6. Tasks
 
-- [ ] T1: Document window factory (role, project_id, load text) — AC-1, AC-6
-- [ ] T2: Registry to focus existing window per (project_id, role) — AC-5
-- [ ] T3: Save + debounced autosave wired to creative_projects I/O — AC-3
-- [ ] T4: Wire library buttons; independent close behavior — AC-2, AC-4
-- [ ] T5: Flush dirty docs on app quit — AC-3
-- [ ] T6: Docs / light tests — all ACs
+- [x] T1: Document window factory (role, project_id, load text) — AC-1, AC-6
+- [x] T2: Registry to focus existing window per (project_id, role) — AC-5
+- [x] T3: Save + debounced autosave wired to creative_projects I/O — AC-3
+- [x] T4: Wire library buttons; independent close behavior — AC-2, AC-4
+- [x] T5: Flush dirty docs on app quit — AC-3
+- [x] T6: Docs / light tests — all ACs
 
 ## 7. Loop (Agent retry rules)
 
@@ -119,3 +119,5 @@ flowchart TD
 | Date | Author | Change |
 |------|--------|--------|
 | 2026-07-12 | agent | Initial draft from GitHub #2 |
+| 2026-07-12 | human | Approved for implementation |
+| 2026-07-12 | agent | Implemented dual windows, debounce autosave, quit flush; tests |

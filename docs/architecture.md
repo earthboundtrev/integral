@@ -120,3 +120,5 @@ Do not merge into one monolithic form — link via shared date + category refere
 
 Metadata lives in `data.json` under `creative_projects`; novel-length text stays on disk beside user data so daily loads stay lean.
 
+Document windows (SPEC-303): Inspiration and Manuscript open as independent `Toplevel`s with debounced autosave; app quit flushes dirty editors via `flush_open_document_windows()`.
+
