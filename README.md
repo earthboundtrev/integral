@@ -1,6 +1,6 @@
 # Integral
 
-**Local-first holistic life tracking** — daily reflection across eighteen domains, a private journal, fitness progression across multiple training systems, and exports/backups so your history survives.
+**Local-first holistic life tracking** — daily reflection across life domains you define, a private journal, fitness progression across multiple training systems, and exports/backups so your history survives.
 
 > Previously developed as "Personal Development Tracker"; the app is **Integral**.
 
