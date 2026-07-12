@@ -5,7 +5,7 @@ from __future__ import annotations
 import tkinter as tk
 from datetime import date, datetime
 from tkinter import messagebox, scrolledtext, ttk
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 import journal
 import ui_scroll
@@ -15,11 +15,43 @@ if TYPE_CHECKING:
     from personal_dev_tracker import PersonalDevelopmentTracker
 
 
+def apply_journal_link_tags(
+    text_widget: tk.Text,
+    *,
+    on_open: Callable[[str], None],
+    link_color: str = "#5B8DEF",
+) -> None:
+    """Tag wiki/URI journal links in a Text widget and bind click-to-open."""
+    text_widget.tag_remove("journal_link", "1.0", "end")
+    content = text_widget.get("1.0", "end-1c")
+    spans = journal.find_journal_links(content)
+    text_widget.tag_configure("journal_link", foreground=link_color, underline=True)
+    for span in spans:
+        start = f"1.0+{span.start}c"
+        end = f"1.0+{span.end}c"
+        text_widget.tag_add("journal_link", start, end)
+
+    def on_click(event: tk.Event) -> str:
+        index = text_widget.index(f"@{event.x},{event.y}")
+        for span in spans:
+            start = f"1.0+{span.start}c"
+            end = f"1.0+{span.end}c"
+            if text_widget.compare(start, "<=", index) and text_widget.compare(index, "<", end):
+                on_open(span.entry_id)
+                return "break"
+        return ""
+
+    text_widget.tag_bind("journal_link", "<Button-1>", on_click)
+    text_widget.tag_bind("journal_link", "<Enter>", lambda _e: text_widget.config(cursor="hand2"))
+    text_widget.tag_bind("journal_link", "<Leave>", lambda _e: text_widget.config(cursor=""))
+
+
 def show_journal_window(
     tracker: PersonalDevelopmentTracker,
     entry_date: str | None = None,
     *,
     prompt: str | None = None,
+    entry_id: str | None = None,
 ) -> None:
     theme = tracker.theme
     win = tk.Toplevel(tracker.root)
@@ -37,9 +69,9 @@ def show_journal_window(
     ttk.Label(header, text="Journal", style="Title.TLabel").pack(anchor="w")
     ttk.Label(
         header,
-        text="Free write or use a prompt. Entries are encrypted when vault security is on. "
-        "Backdated entries require an honest reason — that is how a missed day can keep "
-        "streak continuity (no freeze tokens).",
+        text="Free write or use a prompt. Link entries with Insert link, or paste "
+        "integral://journal/{id} anywhere on Windows once the OS protocol is enabled. "
+        "Backdated entries require an honest reason.",
         style="Muted.TLabel",
         wraplength=880,
     ).pack(anchor="w", pady=(4, 0))
@@ -67,7 +99,13 @@ def show_journal_window(
     editor.columnconfigure(0, weight=1)
     editor.rowconfigure(5, weight=1)
 
-    date_var = tk.StringVar(value=entry_date or datetime.now().strftime("%Y-%m-%d"))
+    initial_date = entry_date or datetime.now().strftime("%Y-%m-%d")
+    if entry_id:
+        existing = journal.get_entry(tracker.journal, entry_id)
+        if existing:
+            initial_date = existing.get("entry_date", initial_date)
+
+    date_var = tk.StringVar(value=initial_date)
     prompt_var = tk.StringVar(value=prompt or journal.DEFAULT_PROMPTS[0])
     title_var = tk.StringVar(value="")
     backdate_var = tk.StringVar(value="")
@@ -109,6 +147,25 @@ def show_journal_window(
     body_text = scrolledtext.ScrolledText(editor, wrap=tk.WORD, height=16, borderwidth=0)
     body_text.grid(row=5, column=0, sticky="nsew", pady=(4, 0))
     style_text_widget(body_text, theme)
+
+    def open_linked_entry(target_id: str) -> None:
+        target = journal.get_entry(tracker.journal, target_id)
+        if not target:
+            messagebox.showwarning(
+                "Missing entry",
+                "That journal link no longer points to an entry (deleted or unknown id).",
+                parent=win,
+            )
+            return
+        refresh_list(select_id=target_id)
+        load_selected()
+
+    def refresh_link_tags(_event=None) -> None:
+        apply_journal_link_tags(
+            body_text,
+            on_open=open_linked_entry,
+            link_color=theme.get("accent", "#5B8DEF"),
+        )
 
     def refresh_backdate_ui(*_args: object) -> None:
         parsed = journal.parse_entry_date(date_var.get())
@@ -154,6 +211,7 @@ def show_journal_window(
         body_text.delete("1.0", tk.END)
         body_text.insert("1.0", item.get("body", ""))
         refresh_backdate_ui()
+        refresh_link_tags()
 
     def clear_editor() -> None:
         editing_id["value"] = None
@@ -164,24 +222,87 @@ def show_journal_window(
         body_text.delete("1.0", tk.END)
         entry_list.selection_clear(0, tk.END)
         refresh_backdate_ui()
+        refresh_link_tags()
+
+    def current_entry_for_link() -> dict | None:
+        if editing_id["value"]:
+            return journal.get_entry(tracker.journal, editing_id["value"])
+        selection = entry_list.curselection()
+        if selection:
+            return indexed_entries[selection[0]]
+        return None
+
+    def copy_link() -> None:
+        item = current_entry_for_link()
+        if not item:
+            messagebox.showinfo("Copy link", "Select or save an entry first.", parent=win)
+            return
+        uri = journal.format_journal_uri(item["id"])
+        wiki = journal.format_journal_wiki_link(item["id"], journal.entry_label(item))
+        payload = f"{uri}\n{wiki}"
+        win.clipboard_clear()
+        win.clipboard_append(payload)
+        messagebox.showinfo(
+            "Copied",
+            "OS link and wiki link copied to the clipboard.\n\nPaste the integral:// line outside Integral.",
+            parent=win,
+        )
+
+    def insert_link() -> None:
+        picker = tk.Toplevel(win)
+        picker.title("Insert journal link")
+        picker.geometry("520x420")
+        picker.transient(win)
+        picker.configure(bg=theme["bg"])
+        ttk.Label(picker, text="Choose an entry to reference:", style="Muted.TLabel").pack(
+            anchor="w", padx=12, pady=(12, 6)
+        )
+        listbox = tk.Listbox(picker, font=FONTS["body"])
+        listbox.pack(fill=tk.BOTH, expand=True, padx=12, pady=4)
+        style_listbox(listbox, theme)
+        choices = [
+            e
+            for e in journal.list_entries(tracker.journal)
+            if e.get("id") != editing_id["value"]
+        ]
+        for item in choices:
+            listbox.insert(tk.END, f"{item['entry_date']} — {journal.entry_label(item)}")
+
+        def do_insert() -> None:
+            sel = listbox.curselection()
+            if not sel:
+                return
+            item = choices[sel[0]]
+            ref = journal.format_journal_wiki_link(item["id"], journal.entry_label(item))
+            body_text.insert(tk.INSERT, ref)
+            refresh_link_tags()
+            picker.destroy()
+
+        btns = ttk.Frame(picker, padding=12)
+        btns.pack(fill=tk.X)
+        ttk.Button(btns, text="Insert", style="Accent.TButton", command=do_insert).pack(side=tk.LEFT)
+        ttk.Button(btns, text="Cancel", command=picker.destroy).pack(side=tk.LEFT, padx=8)
+        if not choices:
+            messagebox.showinfo("Insert link", "No other journal entries to link yet.", parent=win)
+            picker.destroy()
 
     def save_entry() -> None:
-        entry_date = date_var.get().strip()
+        entry_date_value = date_var.get().strip()
         reason = backdate_var.get().strip()
-        error = journal.validate_backdate(entry_date, reason=reason)
+        error = journal.validate_backdate(entry_date_value, reason=reason)
         if error:
             messagebox.showwarning("Date", error, parent=win)
             return
 
-        body = body_text.get("1.0", tk.END).strip()
-        if not body:
+        body_value = body_text.get("1.0", tk.END).strip()
+        if not body_value:
             messagebox.showinfo("Journal", "Write something before saving.", parent=win)
             return
 
         try:
             item = journal.create_entry(
-                entry_date,
-                body,
+                entry_date_value,
+                body_value,
                 prompt=prompt_var.get(),
                 title=title_var.get(),
                 backdate_reason=reason or None,
@@ -200,13 +321,14 @@ def show_journal_window(
 
         journal.upsert_entry(tracker.journal, item)
         tracker._invalidate_caches()
-        if entry_date == tracker.today_str() and tracker._reminder_scheduler is not None:
+        if entry_date_value == tracker.today_str() and tracker._reminder_scheduler is not None:
             tracker._reminder_scheduler.notify_logged_today()
         tracker.refresh_dashboard()
         tracker.save_data()
         saved_id = item["id"]
         clear_editor()
         refresh_list(select_id=saved_id)
+        load_selected()
 
     def delete_selected() -> None:
         selection = entry_list.curselection()
@@ -223,6 +345,7 @@ def show_journal_window(
         refresh_list()
 
     entry_list.bind("<<ListboxSelect>>", load_selected)
+    body_text.bind("<KeyRelease>", refresh_link_tags)
 
     list_btns = ttk.Frame(list_panel)
     list_btns.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(8, 0))
@@ -233,6 +356,12 @@ def show_journal_window(
     editor_btns.grid(row=6, column=0, sticky="ew", pady=(10, 0))
     ttk.Button(editor_btns, text="Save Entry", style="Accent.TButton", command=save_entry).pack(side=tk.LEFT)
     ttk.Button(editor_btns, text="Clear", command=clear_editor).pack(side=tk.LEFT, padx=8)
+    ttk.Button(editor_btns, text="Copy link", command=copy_link).pack(side=tk.LEFT, padx=8)
+    ttk.Button(editor_btns, text="Insert link…", command=insert_link).pack(side=tk.LEFT)
 
-    refresh_list()
-    body_text.focus_set()
+    refresh_list(select_id=entry_id)
+    if entry_id and journal.get_entry(tracker.journal, entry_id):
+        load_selected()
+    else:
+        refresh_link_tags()
+        body_text.focus_set()

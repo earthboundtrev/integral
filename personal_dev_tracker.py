@@ -134,6 +134,11 @@ class PersonalDevelopmentTracker:
         if not self.settings.get("onboarding_complete"):
             show_onboarding(self)
 
+        self.root.after(1500, self._poll_pending_deep_link)
+        pending_url = getattr(self, "_startup_deep_link", None)
+        if pending_url:
+            self.root.after(400, lambda: self.handle_deep_link(pending_url))
+
     def _apply_window_icon(self) -> None:
         path = icon_path()
         if not path:
@@ -667,6 +672,43 @@ class PersonalDevelopmentTracker:
     def open_gap_repair_journal(self) -> None:
         yesterday = (datetime.now().date() - timedelta(days=1)).strftime("%Y-%m-%d")
         show_journal_window(self, yesterday, prompt=journal.GAP_PROMPT)
+
+    def open_journal_entry(self, entry_id: str, *, parent=None) -> None:
+        target = journal.get_entry(self.journal, entry_id)
+        if not target:
+            messagebox.showwarning(
+                "Missing entry",
+                "That journal link no longer points to an entry (deleted or unknown id).",
+                parent=parent or self.root,
+            )
+            return
+        show_journal_window(self, entry_id=entry_id)
+
+    def handle_deep_link(self, url: str | None) -> bool:
+        if not url:
+            return False
+        parsed = journal.parse_deep_link_target(url)
+        if not parsed:
+            messagebox.showwarning(
+                "Unknown link",
+                "Integral only opens known integral://journal/{id} links.",
+                parent=self.root,
+            )
+            return False
+        kind, target_id = parsed
+        if kind == "journal":
+            self.root.after(1, lambda: self.open_journal_entry(target_id))
+            return True
+        return False
+
+    def _poll_pending_deep_link(self) -> None:
+        from deep_links import read_and_clear_pending_link
+
+        pending = read_and_clear_pending_link()
+        if pending:
+            self.handle_deep_link(pending)
+        if self.root.winfo_exists():
+            self.root.after(1500, self._poll_pending_deep_link)
 
     def count_today_logged(self) -> tuple[int, int]:
         logged = len(self.entries.get(self.today_str(), {}))
@@ -1334,6 +1376,11 @@ class PersonalDevelopmentTracker:
                         style="Muted.TLabel",
                         wraplength=620,
                     ).pack(anchor="w", pady=(4, 0))
+                ttk.Button(
+                    card,
+                    text="Open entry",
+                    command=lambda eid=item.get("id", ""): self.open_journal_entry(eid, parent=window),
+                ).pack(anchor="w", pady=(6, 0))
                 row += 1
 
         if day_fitness_summaries:
@@ -1965,7 +2012,26 @@ class PersonalDevelopmentTracker:
                 if item.get("backdate_reason"):
                     results.insert(tk.END, f"Backdated: {item['backdate_reason']}\n")
                 results.insert(tk.END, f"{item.get('body', '')}\n")
+                open_mark = results.index(tk.END)
+                results.insert(tk.END, "[Open entry]\n")
                 results.insert(tk.END, "-" * 40 + "\n")
+                tag = f"open_journal_{item.get('id')}"
+                results.tag_add(tag, open_mark, f"{open_mark} lineend")
+                results.tag_config(tag, foreground=self.theme.get("accent", "#5B8DEF"), underline=True)
+                results.tag_bind(
+                    tag,
+                    "<Button-1>",
+                    lambda _e, eid=item.get("id", ""): self.open_journal_entry(eid, parent=window),
+                )
+
+            if hits:
+                from journal_ui import apply_journal_link_tags
+
+                apply_journal_link_tags(
+                    results,
+                    on_open=lambda eid: self.open_journal_entry(eid, parent=window),
+                    link_color=self.theme.get("accent", "#5B8DEF"),
+                )
 
             if self.entries:
                 for date in sorted(self.entries.keys(), reverse=True):
@@ -2333,8 +2399,25 @@ class PersonalDevelopmentTracker:
 
 
 def main() -> None:
+    import atexit
+    import sys
+
+    import deep_links
+
+    protocol_url = deep_links.extract_protocol_arg(sys.argv)
+    owns_lock = deep_links.acquire_instance_lock()
+    if protocol_url and not owns_lock:
+        # Another Integral is running — hand off the link and exit.
+        deep_links.write_pending_link(protocol_url)
+        return
+
+    if owns_lock:
+        atexit.register(deep_links.release_instance_lock)
+
     root = tk.Tk()
     app = PersonalDevelopmentTracker(root)
+    if protocol_url:
+        app._startup_deep_link = protocol_url
     if root.winfo_exists():
         root.mainloop()
 

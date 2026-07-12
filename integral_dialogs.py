@@ -23,6 +23,7 @@ from paths import APP_NAME
 from theme import style_listbox, style_text_widget
 from vault import CRYPTO_AVAILABLE, encrypt_payload, is_encrypted_file
 import autostart_windows
+import protocol_windows
 import ui_scroll
 
 if TYPE_CHECKING:
@@ -392,6 +393,48 @@ def show_security_dialog(tracker: PersonalDevelopmentTracker) -> None:
     autostart_cb.pack(anchor="w", padx=15, pady=2)
     if not autostart_windows.is_supported():
         autostart_cb.state(["disabled"])
+
+    ttk.Separator(inner, orient=tk.HORIZONTAL).pack(fill=tk.X, padx=15, pady=12)
+    ttk.Label(inner, text="OS deep links", font=("Helvetica", 13, "bold")).pack(
+        anchor="w", padx=15, pady=(4, 4)
+    )
+    ttk.Label(
+        inner,
+        text="Register integral:// so links like integral://journal/{id} pasted in a browser, "
+        "chat, or notes app open Integral to that journal entry. Uses your user account only (HKCU).",
+        wraplength=500,
+        style="Muted.TLabel",
+    ).pack(anchor="w", padx=15, pady=(0, 8))
+
+    protocol_on = tk.BooleanVar(
+        value=bool(tracker.settings.get("os_protocol_enabled", protocol_windows.is_registered()))
+    )
+    if protocol_windows.is_supported():
+        protocol_on.set(protocol_windows.is_registered())
+
+    def on_protocol_toggle() -> None:
+        if not protocol_windows.is_supported():
+            protocol_on.set(False)
+            messagebox.showinfo("OS deep links", "Only available on Windows.", parent=window)
+            return
+        try:
+            protocol_windows.set_registered(bool(protocol_on.get()))
+        except OSError as exc:
+            protocol_on.set(protocol_windows.is_registered())
+            messagebox.showerror("OS deep links", str(exc), parent=window)
+            return
+        tracker.settings["os_protocol_enabled"] = bool(protocol_on.get())
+        tracker.save_data(flush=True)
+
+    protocol_cb = ttk.Checkbutton(
+        inner,
+        text="Register integral:// protocol with Windows",
+        variable=protocol_on,
+        command=on_protocol_toggle,
+    )
+    protocol_cb.pack(anchor="w", padx=15, pady=2)
+    if not protocol_windows.is_supported():
+        protocol_cb.state(["disabled"])
 
     def send_test() -> None:
         ok = show_windows_notification(APP_NAME, "Test notification from Integral — reminders are working.")

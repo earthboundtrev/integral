@@ -36,6 +36,7 @@
 - **Category streak**: consecutive days with that specific life-domain category logged (journal/fitness do not count).
 - Missing today breaks the streak only after the day ends (grace until midnight local).
 - **Gap repair (human, not gamified):** a silent miss breaks continuity; writing a **backdated journal** for the missed day (with the existing honesty reason) makes that day engaged again so consecutive days can reconnect. No freeze tokens.
+- **Cross-links:** journal bodies may contain `[[journal:{id}|label]]` or `integral://journal/{id}`; clicking opens that entry. Optional Windows protocol registration (Data & Security) lets those `integral://` URLs open Integral from other apps.
 
 ---
 
