@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.3.7 — 2026-07-12
+
+### Added
+
+- **Honest-presence streak** — life log, journal, or fitness counts; pill updates on save; mid-day grace; human gap repair via backdated journal (no freeze tokens)
+- **Journal cross-links** — `[[journal:id]]` / `integral://journal/id`; Copy / Insert link; open on click
+- **Rich journal formatting** — markdown-lite toolbar (bold, italic, code, headings, quotes, lists)
+- **Cross-entity links** — domain days, fitness days, writing projects (`[[domain:…]]`, `[[fitness:…]]`, `[[project:…]]`)
+- **Backlinks** — “Linked from” panel in Journal
+- **OS deep links** — optional Windows `integral://` protocol registration (Data & Security)
+- **Export/import gate** — Cursor rules require backup/restore verification on data/storage changes; stronger JSON backup tests
+
+### Build
+
+- Windows app: `dist/Integral/Integral.exe`
+- Release zip: `Integral-v0.3.7-windows.zip`
+- User data: `%APPDATA%\Integral\data.json`
+
 ## 0.3.6.2 — 2026-07-12
 
 ### Added
