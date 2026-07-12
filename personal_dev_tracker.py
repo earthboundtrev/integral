@@ -661,23 +661,23 @@ class PersonalDevelopmentTracker:
         self._log_bar = log_bar
         log_bar.pack(fill=tk.X, padx=16, pady=(0, 10))
 
-        top = ttk.Frame(log_bar, style="Surface.TFrame")
-        top.pack(fill=tk.X)
-        left = ttk.Frame(top, style="Surface.TFrame")
-        left.pack(side=tk.LEFT, fill=tk.X, expand=True)
         ttk.Label(
-            left,
+            log_bar,
             text=f"{logged_count} of {total} life areas logged",
             style="OnSurfaceSubheading.TLabel",
         ).pack(anchor="w")
         ttk.Label(
-            left,
+            log_bar,
             text="Log as you go, or reflect at end of day — pick any area below.",
             style="OnSurfaceMuted.TLabel",
-        ).pack(anchor="w", pady=(2, 0))
+        ).pack(anchor="w", pady=(4, 10))
 
-        actions = ttk.Frame(top, style="Surface.TFrame")
-        actions.pack(side=tk.RIGHT)
+        actions_host, actions, _actions_canvas = ui_scroll.make_horizontal_scroll_row(
+            log_bar,
+            height=40,
+            overflow_hint="Scroll for more →",
+        )
+        actions_host.pack(fill=tk.X, pady=(0, 4))
         next_cat = self.first_unlogged_category()
         if next_cat:
             ttk.Button(
@@ -741,11 +741,12 @@ class PersonalDevelopmentTracker:
         )
         progress.pack(fill=tk.X, pady=(10, 0))
 
+        # ~3 rows of category buttons visible by default; mousewheel scrolls the rest
         cat_scroll_host = ttk.Frame(log_bar, style="Surface.TFrame")
         cat_scroll_host.pack(fill=tk.X, pady=(12, 0))
         _cat_wrap, btn_row, _cat_canvas = ui_scroll.make_bounded_vertical_scroll(
             cat_scroll_host,
-            max_height=168,
+            max_height=252,
             overflow_hint="↓ Scroll for more categories",
         )
         _cat_wrap.pack(fill=tk.X)
@@ -957,7 +958,7 @@ class PersonalDevelopmentTracker:
 
         main.columnconfigure(0, weight=1)
 
-        grid_panel = ttk.LabelFrame(main, text="Activity", padding=12, style="Card.TLabelframe")
+        grid_panel = ttk.Frame(main, padding=8)
         grid_panel.grid(row=0, column=0, sticky="ew", padx=4, pady=4)
         self._activity_grid = ContributionGrid(
             grid_panel,
