@@ -39,7 +39,7 @@ Implement **in order** unless a spec declares otherwise. Human sets `approved` â
 |------|--------|-------|
 | [001-radar-recommendations](phase-3/001-radar-recommendations.md) | done | Life balance radar + recommendations |
 | [002-creative-projects-library](phase-3/002-creative-projects-library.md) | done | Creative writing projects library + storage ([#1](https://github.com/earthboundtrev/integral/issues/1)) |
-| [003-creative-writing-windows](phase-3/003-creative-writing-windows.md) | draft | Inspiration + manuscript windows ([#2](https://github.com/earthboundtrev/integral/issues/2)) |
+| [003-creative-writing-windows](phase-3/003-creative-writing-windows.md) | done | Inspiration + manuscript windows ([#2](https://github.com/earthboundtrev/integral/issues/2)) |
 | [004-creativity-writing-integration](phase-3/004-creativity-writing-integration.md) | draft | Tie writing to Creative/Mental Work ([#3](https://github.com/earthboundtrev/integral/issues/3)) |
 | [005-deep-work-mode](phase-3/005-deep-work-mode.md) | draft | Deep Work Mode timer + focus UI ([#4](https://github.com/earthboundtrev/integral/issues/4)) |
 

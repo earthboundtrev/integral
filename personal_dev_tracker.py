@@ -451,6 +451,9 @@ class PersonalDevelopmentTracker:
         if self._save_after_id:
             self.root.after_cancel(self._save_after_id)
             self._save_after_id = None
+        from creative_ui import flush_open_document_windows
+
+        flush_open_document_windows()
         self._flush_save(sync=True)
         self.root.destroy()
 

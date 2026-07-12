@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import tkinter as tk
 from tkinter import messagebox, simpledialog, ttk
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import creative_projects as cp
 from paths import creative_projects_dir
@@ -13,8 +13,76 @@ from theme import FONTS, style_listbox, style_text_widget
 if TYPE_CHECKING:
     from personal_dev_tracker import PersonalDevelopmentTracker
 
-# Registry for SPEC-303: (project_id, role) -> Toplevel
-_open_doc_windows: dict[tuple[str, str], tk.Toplevel] = {}
+AUTOSAVE_DEBOUNCE_MS = 1500
+
+# Registry: (project_id, role) -> window state
+_open_doc_windows: dict[tuple[str, str], dict[str, Any]] = {}
+
+
+def document_window_key(project_id: str, role: str) -> tuple[str, str]:
+    return (project_id, role)
+
+
+def count_words_and_chars(text: str) -> tuple[int, int]:
+    chars = len(text)
+    words = len(text.split()) if text.strip() else 0
+    return words, chars
+
+
+def format_doc_status(prefix: str, text: str) -> str:
+    words, chars = count_words_and_chars(text)
+    return f"{prefix} · {words} words · {chars} characters"
+
+
+def role_label(role: str) -> str:
+    return "Inspiration" if role == cp.DOC_INSPIRATION else "Manuscript"
+
+
+def focus_existing_document_window(project_id: str, role: str) -> bool:
+    """Focus an open document window if present. Returns True if focused."""
+    key = document_window_key(project_id, role)
+    state = _open_doc_windows.get(key)
+    if not state:
+        return False
+    win = state.get("window")
+    if win is None:
+        _open_doc_windows.pop(key, None)
+        return False
+    try:
+        if win.winfo_exists():
+            win.lift()
+            win.focus_force()
+            return True
+    except tk.TclError:
+        pass
+    _open_doc_windows.pop(key, None)
+    return False
+
+
+def flush_open_document_windows() -> int:
+    """Save all dirty open document windows. Returns number of saves performed."""
+    saved = 0
+    for state in list(_open_doc_windows.values()):
+        save_fn = state.get("save")
+        dirty = state.get("dirty")
+        if callable(save_fn) and dirty and dirty.get("value"):
+            save_fn()
+            saved += 1
+    return saved
+
+
+def open_document_windows_count() -> int:
+    alive = 0
+    for key, state in list(_open_doc_windows.items()):
+        win = state.get("window")
+        try:
+            if win is not None and win.winfo_exists():
+                alive += 1
+            else:
+                _open_doc_windows.pop(key, None)
+        except tk.TclError:
+            _open_doc_windows.pop(key, None)
+    return alive
 
 
 def show_writing_projects_window(tracker: PersonalDevelopmentTracker) -> None:
@@ -22,6 +90,7 @@ def show_writing_projects_window(tracker: PersonalDevelopmentTracker) -> None:
     win = tk.Toplevel(tracker.root)
     win.title("Writing Projects")
     win.geometry("780x560")
+    win.minsize(640, 420)
     win.configure(bg=theme["bg"])
     win.transient(tracker.root)
 
@@ -39,7 +108,7 @@ def show_writing_projects_window(tracker: PersonalDevelopmentTracker) -> None:
     ttk.Label(
         header,
         text="Novels, scripts, and ideas — each with an inspiration document and a manuscript. "
-        "Text is stored locally on this machine.",
+        "Open both windows at once to keep your premise beside the draft.",
         style="Muted.TLabel",
         wraplength=720,
     ).pack(anchor="w", pady=(4, 0))
@@ -225,6 +294,14 @@ def show_writing_projects_window(tracker: PersonalDevelopmentTracker) -> None:
             return
         open_document_window(tracker, project_id, cp.DOC_MANUSCRIPT)
 
+    def on_open_both() -> None:
+        project_id = selected_id()
+        if not project_id:
+            messagebox.showinfo("Open both", "Select a project first.", parent=win)
+            return
+        open_document_window(tracker, project_id, cp.DOC_INSPIRATION)
+        open_document_window(tracker, project_id, cp.DOC_MANUSCRIPT)
+
     ttk.Button(actions, text="New", command=on_new).pack(side=tk.LEFT)
     ttk.Button(actions, text="Rename", command=on_rename).pack(side=tk.LEFT, padx=6)
     ttk.Button(actions, text="Status", command=on_set_status).pack(side=tk.LEFT, padx=6)
@@ -232,6 +309,7 @@ def show_writing_projects_window(tracker: PersonalDevelopmentTracker) -> None:
     ttk.Button(actions, text="Delete", command=on_delete).pack(side=tk.LEFT, padx=6)
     ttk.Button(actions, text="Open Inspiration", command=on_open_inspiration).pack(side=tk.LEFT, padx=(16, 6))
     ttk.Button(actions, text="Open Manuscript", command=on_open_manuscript).pack(side=tk.LEFT, padx=6)
+    ttk.Button(actions, text="Open Both", command=on_open_both).pack(side=tk.LEFT, padx=6)
 
     refresh_list()
 
@@ -240,65 +318,66 @@ def open_document_window(
     tracker: PersonalDevelopmentTracker,
     project_id: str,
     role: str,
-) -> None:
-    """Thin placeholder editor; SPEC-303 will expand dual-window polish."""
-    key = (project_id, role)
-    existing = _open_doc_windows.get(key)
-    if existing is not None:
-        try:
-            if existing.winfo_exists():
-                existing.lift()
-                existing.focus_force()
-                return
-        except tk.TclError:
-            pass
-        _open_doc_windows.pop(key, None)
+) -> tk.Toplevel | None:
+    """Open or focus Inspiration/Manuscript window for a project (SPEC-303)."""
+    if focus_existing_document_window(project_id, role):
+        state = _open_doc_windows.get(document_window_key(project_id, role))
+        return state.get("window") if state else None
 
     project = cp.get_project(tracker.creative_projects, project_id)
     if project is None:
         messagebox.showerror("Writing", "Project not found.")
-        return
+        return None
 
     root_docs = creative_projects_dir()
-    role_label = "Inspiration" if role == cp.DOC_INSPIRATION else "Manuscript"
+    label = role_label(role)
     theme = tracker.theme
+    key = document_window_key(project_id, role)
 
     win = tk.Toplevel(tracker.root)
-    win.title(f"{role_label} · {project['title']}")
-    win.geometry("720x880" if role == cp.DOC_MANUSCRIPT else "640x800")
+    win.title(f"{label} · {project['title']}")
+    win.geometry("720x900" if role == cp.DOC_MANUSCRIPT else "640x800")
+    win.minsize(480, 360)
     win.configure(bg=theme["bg"])
-    _open_doc_windows[key] = win
 
-    def on_close() -> None:
-        _open_doc_windows.pop(key, None)
-        win.destroy()
-
-    win.protocol("WM_DELETE_WINDOW", on_close)
+    dirty = {"value": False}
+    debounce_id: dict[str, str | None] = {"value": None}
 
     header = ttk.Frame(win, padding=(12, 10, 12, 6))
     header.pack(side=tk.TOP, fill=tk.X)
-    ttk.Label(header, text=f"{role_label} — {project['title']}", style="Title.TLabel").pack(anchor="w")
+    ttk.Label(header, text=f"{label} · {project['title']}", style="Title.TLabel").pack(anchor="w")
     status = ttk.Label(header, text="", style="Muted.TLabel")
     status.pack(anchor="w", pady=(4, 0))
 
     footer = ttk.Frame(win, padding=(12, 8, 12, 12))
     footer.pack(side=tk.BOTTOM, fill=tk.X)
 
-    text = tk.Text(win, wrap=tk.WORD, undo=True, font=FONTS.get("body", ("Segoe UI", 11)))
-    text.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=12, pady=(0, 4))
+    editor_host = ttk.Frame(win)
+    editor_host.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=12, pady=(0, 4))
+    editor_host.columnconfigure(0, weight=1)
+    editor_host.rowconfigure(0, weight=1)
+
+    text = tk.Text(
+        editor_host,
+        wrap=tk.WORD,
+        undo=True,
+        font=FONTS.get("mono", FONTS.get("body", ("Consolas", 11))),
+    )
+    text.grid(row=0, column=0, sticky="nsew")
+    scroll = ttk.Scrollbar(editor_host, orient=tk.VERTICAL, command=text.yview)
+    scroll.grid(row=0, column=1, sticky="ns")
+    text.configure(yscrollcommand=scroll.set)
     style_text_widget(text, theme)
     text.insert("1.0", cp.read_document(root_docs, project_id, role))
 
-    dirty = {"value": False}
+    def current_body() -> str:
+        return text.get("1.0", "end-1c")
 
-    def mark_dirty(_event=None) -> None:
-        dirty["value"] = True
-        status.config(text="Unsaved changes")
-
-    text.bind("<<Modified>>", lambda _e: (text.edit_modified(False), mark_dirty()))
+    def refresh_status(prefix: str) -> None:
+        status.config(text=format_doc_status(prefix, current_body()))
 
     def do_save() -> None:
-        body = text.get("1.0", "end-1c")
+        body = current_body()
         cp.write_document(root_docs, project_id, role, body)
         try:
             cp.touch_project(tracker.creative_projects, project_id)
@@ -306,21 +385,55 @@ def open_document_window(
         except KeyError:
             pass
         dirty["value"] = False
-        chars = len(body)
-        words = len(body.split()) if body.strip() else 0
-        status.config(text=f"Saved · {words} words · {chars} characters")
+        refresh_status("Saved")
 
-    def autosave() -> None:
-        if dirty["value"] and win.winfo_exists():
+    def cancel_debounce() -> None:
+        after_id = debounce_id["value"]
+        if after_id is not None:
+            try:
+                win.after_cancel(after_id)
+            except tk.TclError:
+                pass
+            debounce_id["value"] = None
+
+    def schedule_autosave(_event=None) -> None:
+        dirty["value"] = True
+        status.config(text=format_doc_status("Unsaved", current_body()))
+        cancel_debounce()
+
+        def fire() -> None:
+            debounce_id["value"] = None
+            if dirty["value"] and win.winfo_exists():
+                do_save()
+
+        debounce_id["value"] = win.after(AUTOSAVE_DEBOUNCE_MS, fire)
+
+    def on_modified(_event=None) -> None:
+        if text.edit_modified():
+            text.edit_modified(False)
+            schedule_autosave()
+
+    def on_close() -> None:
+        cancel_debounce()
+        if dirty["value"]:
             do_save()
-        if win.winfo_exists():
-            win.after(5000, autosave)
+        _open_doc_windows.pop(key, None)
+        win.destroy()
+
+    text.bind("<<Modified>>", on_modified)
+    win.protocol("WM_DELETE_WINDOW", on_close)
 
     ttk.Button(footer, text="Save", command=do_save).pack(side=tk.LEFT)
     ttk.Button(footer, text="Close", command=on_close).pack(side=tk.RIGHT)
-    win.after(5000, autosave)
-    body = text.get("1.0", "end-1c")
-    chars = len(body)
-    words = len(body.split()) if body.strip() else 0
-    status.config(text=f"{words} words · {chars} characters")
+
+    _open_doc_windows[key] = {
+        "window": win,
+        "dirty": dirty,
+        "save": do_save,
+        "role": role,
+        "project_id": project_id,
+    }
+
+    refresh_status(label)
     dirty["value"] = False
+    return win
