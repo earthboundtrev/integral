@@ -45,6 +45,8 @@ Implement **in order** unless a spec declares otherwise. Human sets `approved` �
 | [006-notification-residency](phase-3/006-notification-residency.md) | done | Portable reminder residency ([#15](https://github.com/earthboundtrev/integral/issues/15)) |
 | [007-streak-any-engagement](phase-3/007-streak-any-engagement.md) | done | Engagement streak: life + journal + fitness ([#18](https://github.com/earthboundtrev/integral/issues/18)) |
 | [008-journal-gap-repair](phase-3/008-journal-gap-repair.md) | done | Human gap repair via backdated journal ([#19](https://github.com/earthboundtrev/integral/issues/19)) |
+| [009-journal-cross-links](phase-3/009-journal-cross-links.md) | done | Journal entry cross-links ([#21](https://github.com/earthboundtrev/integral/issues/21)) |
+| [013-os-protocol-handler](phase-3/013-os-protocol-handler.md) | done | Windows `integral://` OS deep links ([#22](https://github.com/earthboundtrev/integral/issues/22)) |
 
 Implement writing stack in order **302 → 303 → 304**. **305** may proceed in parallel (soft dependency on 302/303 for optional writing launch).
 

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import re
 import uuid
+from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any
 
@@ -220,3 +222,108 @@ def export_rows(journal: dict[str, Any]) -> list[dict[str, str]]:
             }
         )
     return rows
+
+
+# --- Cross-links (SPEC-309) ---
+
+JOURNAL_ID_RE = re.compile(r"^[a-f0-9]{12}$", re.IGNORECASE)
+WIKI_JOURNAL_RE = re.compile(
+    r"\[\[journal:([a-f0-9]{12})(?:\|([^\]]+))?\]\]",
+    re.IGNORECASE,
+)
+URI_JOURNAL_RE = re.compile(
+    r"integral://journal/([a-f0-9]{12})",
+    re.IGNORECASE,
+)
+
+
+def get_entry(journal_data: dict[str, Any], entry_id: str) -> dict[str, Any] | None:
+    needle = (entry_id or "").strip().lower()
+    if not JOURNAL_ID_RE.match(needle):
+        return None
+    for entry in journal_data.get("entries") or []:
+        if str(entry.get("id", "")).lower() == needle:
+            return entry
+    return None
+
+
+def entry_label(entry: dict[str, Any]) -> str:
+    return (entry.get("title") or entry.get("prompt") or entry.get("entry_date") or "Journal").strip()
+
+
+def format_journal_wiki_link(entry_id: str, label: str | None = None) -> str:
+    eid = entry_id.strip().lower()
+    if label and label.strip():
+        return f"[[journal:{eid}|{label.strip()}]]"
+    return f"[[journal:{eid}]]"
+
+
+def format_journal_uri(entry_id: str) -> str:
+    return f"integral://journal/{entry_id.strip().lower()}"
+
+
+@dataclass(frozen=True)
+class JournalLinkSpan:
+    start: int
+    end: int
+    entry_id: str
+    label: str | None
+    raw: str
+
+
+def find_journal_links(text: str) -> list[JournalLinkSpan]:
+    """Find wiki and URI journal links; overlapping URI inside wiki is skipped."""
+    spans: list[JournalLinkSpan] = []
+    occupied: list[tuple[int, int]] = []
+
+    def overlaps(start: int, end: int) -> bool:
+        return any(not (end <= a or start >= b) for a, b in occupied)
+
+    for match in WIKI_JOURNAL_RE.finditer(text or ""):
+        start, end = match.span()
+        occupied.append((start, end))
+        spans.append(
+            JournalLinkSpan(
+                start=start,
+                end=end,
+                entry_id=match.group(1).lower(),
+                label=(match.group(2) or "").strip() or None,
+                raw=match.group(0),
+            )
+        )
+
+    for match in URI_JOURNAL_RE.finditer(text or ""):
+        start, end = match.span()
+        if overlaps(start, end):
+            continue
+        spans.append(
+            JournalLinkSpan(
+                start=start,
+                end=end,
+                entry_id=match.group(1).lower(),
+                label=None,
+                raw=match.group(0),
+            )
+        )
+
+    spans.sort(key=lambda item: item.start)
+    return spans
+
+
+def parse_deep_link_target(url: str) -> tuple[str, str] | None:
+    """
+    Parse integral://journal/{id} (and ignore unknown shapes).
+    Returns (kind, id) or None.
+    """
+    raw = (url or "").strip().strip('"').strip("'")
+    if not raw:
+        return None
+    match = re.match(r"^integral://journal/([a-f0-9]{12})/?$", raw, re.IGNORECASE)
+    if match:
+        return ("journal", match.group(1).lower())
+    # Also accept wiki pasted as argv edge case
+    wiki = WIKI_JOURNAL_RE.fullmatch(raw)
+    if wiki:
+        return ("journal", wiki.group(1).lower())
+    return None
+

@@ -90,12 +90,13 @@ User data: `%APPDATA%\Integral\data.json` (encrypted optional via Data & Securit
 | Area | Features |
 |------|----------|
 | **Life domains (18)** | Ratings, checklists, metrics, notes, streaks, guidance |
-| **Journal** | Prompts or free write; backdate with reason; gap days can keep streak continuity via honest journal (no freeze tokens) |
+| **Journal** | Prompts or free write; backdate with reason; gap days can keep streak continuity via honest journal (no freeze tokens); **cross-links** (`[[journal:id]]` / `integral://journal/id`) open the entry on click |
 | **Writing Projects** | Novels/scripts library — inspiration + manuscript in separate windows; debounced autosave; stored under `%APPDATA%\Integral\creative\` |
 | **Creative/Mental Work** | Open Writing Projects from the category log; **Log writing session** marks creative progress for the day |
 | **Deep Work** | Focus timer (25 / 50 / 90 / custom); quieter nav; optional open a writing project; +10 min or end early |
 | **Activity** | GitHub-style contribution grid; click any day |
 | **Streak** | Overall streak counts life log, journal, or fitness for the day; updates as soon as you save; mid-day grace if today is still empty |
+| **OS deep links** | Optional Windows `integral://` protocol — paste a journal link outside Integral and open straight to that entry (Data & Security) |
 | **Fitness Hub** | CC1/CC2/SS/OG/EC/FTR — nested book → program → steps |
 | **Safety net** | Export CSV, full JSON backup, optional vault encryption |
 | **Reminders** | Windows toasts while Integral is running; optional Start with Windows + minimize-on-close so reminders keep working |
@@ -127,6 +128,16 @@ Daily reminder toasts only fire **while Integral is running** — the portable z
 - **Minimize to taskbar on close** — closing the window keeps Integral (and reminders) alive; restore from the taskbar
 - **Start Integral with Windows** — launches at sign-in so reminders can run through the day
 - **Send test notification** / **Quit Integral completely** when you want a real exit
+
+### OS deep links (Windows)
+
+Under **Data & Security**, enable **Register integral:// protocol with Windows**. Then:
+
+1. Open a journal entry → **Copy link** (clipboard gets `integral://journal/{id}` plus a wiki form)
+2. Paste that `integral://` URL in a browser address bar, chat, or notes app and open it
+3. Windows launches Integral (or hands off to a running instance) and focuses that journal entry
+
+Links only accept `integral://journal/{12-character-id}` — unknown shapes are ignored.
 
 ### Optional: Local AI insights (Ollama)
 
