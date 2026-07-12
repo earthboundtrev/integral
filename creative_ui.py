@@ -85,7 +85,11 @@ def open_document_windows_count() -> int:
     return alive
 
 
-def show_writing_projects_window(tracker: PersonalDevelopmentTracker) -> None:
+def show_writing_projects_window(
+    tracker: PersonalDevelopmentTracker,
+    *,
+    select_project_id: str | None = None,
+) -> None:
     theme = tracker.theme
     win = tk.Toplevel(tracker.root)
     win.title("Writing Projects")
@@ -331,6 +335,11 @@ def show_writing_projects_window(tracker: PersonalDevelopmentTracker) -> None:
     ).pack(side=tk.LEFT, padx=(12, 0))
 
     refresh_list()
+    if select_project_id and select_project_id in listed_ids:
+        idx = listed_ids.index(select_project_id)
+        project_list.selection_set(idx)
+        project_list.see(idx)
+        project_list.event_generate("<<ListboxSelect>>")
 
 
 def open_document_window(

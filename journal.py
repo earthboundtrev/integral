@@ -272,58 +272,42 @@ class JournalLinkSpan:
 
 
 def find_journal_links(text: str) -> list[JournalLinkSpan]:
-    """Find wiki and URI journal links; overlapping URI inside wiki is skipped."""
+    """Find wiki and URI journal links (compat wrapper over integral_links)."""
+    import integral_links
+
     spans: list[JournalLinkSpan] = []
-    occupied: list[tuple[int, int]] = []
-
-    def overlaps(start: int, end: int) -> bool:
-        return any(not (end <= a or start >= b) for a, b in occupied)
-
-    for match in WIKI_JOURNAL_RE.finditer(text or ""):
-        start, end = match.span()
-        occupied.append((start, end))
-        spans.append(
-            JournalLinkSpan(
-                start=start,
-                end=end,
-                entry_id=match.group(1).lower(),
-                label=(match.group(2) or "").strip() or None,
-                raw=match.group(0),
-            )
-        )
-
-    for match in URI_JOURNAL_RE.finditer(text or ""):
-        start, end = match.span()
-        if overlaps(start, end):
+    for link in integral_links.find_all_links(text):
+        if link.kind != "journal":
             continue
         spans.append(
             JournalLinkSpan(
-                start=start,
-                end=end,
-                entry_id=match.group(1).lower(),
-                label=None,
-                raw=match.group(0),
+                start=link.start,
+                end=link.end,
+                entry_id=link.target,
+                label=link.label,
+                raw=link.raw,
             )
         )
-
-    spans.sort(key=lambda item: item.start)
     return spans
 
 
 def parse_deep_link_target(url: str) -> tuple[str, str] | None:
     """
-    Parse integral://journal/{id} (and ignore unknown shapes).
-    Returns (kind, id) or None.
+    Parse integral://… deep links.
+    Returns (kind, target) where kind is journal|domain|fitness|project.
+    For domain, target is 'YYYY-MM-DD\\tCategory'.
     """
-    raw = (url or "").strip().strip('"').strip("'")
-    if not raw:
-        return None
-    match = re.match(r"^integral://journal/([a-f0-9]{12})/?$", raw, re.IGNORECASE)
-    if match:
-        return ("journal", match.group(1).lower())
-    # Also accept wiki pasted as argv edge case
-    wiki = WIKI_JOURNAL_RE.fullmatch(raw)
-    if wiki:
-        return ("journal", wiki.group(1).lower())
-    return None
+    import integral_links
 
+    link = integral_links.parse_deep_link(url)
+    if not link:
+        return None
+    if link.kind == "domain":
+        return ("domain", f"{link.target}\t{link.extra or ''}")
+    return (link.kind, link.target)
+
+
+def find_backlinks(journal_data: dict[str, Any], entry_id: str) -> list[dict[str, Any]]:
+    import integral_links
+
+    return integral_links.find_backlinks(journal_data, entry_id)

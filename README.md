@@ -90,7 +90,7 @@ User data: `%APPDATA%\Integral\data.json` (encrypted optional via Data & Securit
 | Area | Features |
 |------|----------|
 | **Life domains (18)** | Ratings, checklists, metrics, notes, streaks, guidance |
-| **Journal** | Prompts or free write; backdate with reason; gap days can keep streak continuity via honest journal (no freeze tokens); **cross-links** (`[[journal:id]]` / `integral://journal/id`) open the entry on click |
+| **Journal** | Prompts or free write; markdown-lite toolbar (bold/italic/headings/lists); backlinks; cross-links to journal/domain/fitness/writing; gap-day continuity; OS `integral://` paste |
 | **Writing Projects** | Novels/scripts library — inspiration + manuscript in separate windows; debounced autosave; stored under `%APPDATA%\Integral\creative\` |
 | **Creative/Mental Work** | Open Writing Projects from the category log; **Log writing session** marks creative progress for the day |
 | **Deep Work** | Focus timer (25 / 50 / 90 / custom); quieter nav; optional open a writing project; +10 min or end early |
@@ -137,7 +137,7 @@ Under **Data & Security**, enable **Register integral:// protocol with Windows**
 2. Paste that `integral://` URL in a browser address bar, chat, or notes app and open it
 3. Windows launches Integral (or hands off to a running instance) and focuses that journal entry
 
-Links only accept `integral://journal/{12-character-id}` — unknown shapes are ignored.
+Links accept `integral://journal/{id}`, `integral://domain/{date}/{category}`, `integral://fitness/{date}`, and `integral://project/{id}`.
 
 ### Optional: Local AI insights (Ollama)
 
