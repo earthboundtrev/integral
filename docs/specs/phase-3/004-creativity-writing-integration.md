@@ -2,7 +2,7 @@
 id: SPEC-304
 title: Tie creative writing projects to Creative/Mental Work
 phase: phase-3
-status: draft
+status: done
 prd_refs: [PRD §5 Epic C — C7]
 adr_refs: [ADR-001, ADR-005, ADR-007]
 github: https://github.com/earthboundtrev/integral/issues/3
@@ -38,6 +38,7 @@ Creative writing projects are discoverable from the **Creative/Mental Work** lif
 - `storage.py` / seed defaults — only if adding an **optional** checklist string to default Creative/Mental Work (migration-safe append for new installs; existing user categories unchanged unless soft-merge pattern already used)
 - `tests/test_creative_integration.py`
 - `README.md` Features bullet when shipping
+- `full-spectrum-development.spec` — hiddenimports when needed
 - This spec file
 
 ### Files forbidden
@@ -96,10 +97,10 @@ Alternative if checklist key missing on older profiles: show messagebox offering
 
 ## 6. Tasks
 
-- [ ] T1: Add Writing Projects button on Creative/Mental Work log dialog — AC-1, AC-4
-- [ ] T2: Implement explicit Log writing session → checklist upsert — AC-2
-- [ ] T3: Wire button from manuscript window if SPEC-303 present — AC-1, AC-2
-- [ ] T4: Tests + README — AC-3, AC-5
+- [x] T1: Add Writing Projects button on Creative/Mental Work log dialog — AC-1, AC-4
+- [x] T2: Implement explicit Log writing session → checklist upsert — AC-2
+- [x] T3: Wire button from manuscript window if SPEC-303 present — AC-1, AC-2
+- [x] T4: Tests + README — AC-3, AC-5
 
 ## 7. Loop (Agent retry rules)
 
@@ -112,3 +113,5 @@ Alternative if checklist key missing on older profiles: show messagebox offering
 | Date | Author | Change |
 |------|--------|--------|
 | 2026-07-12 | agent | Initial draft from GitHub #3 |
+| 2026-07-12 | human | Approved via implement-tickets request |
+| 2026-07-12 | agent | Implemented; AC verified via pytest + wiring |
