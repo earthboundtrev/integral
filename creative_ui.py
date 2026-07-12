@@ -89,8 +89,8 @@ def show_writing_projects_window(tracker: PersonalDevelopmentTracker) -> None:
     theme = tracker.theme
     win = tk.Toplevel(tracker.root)
     win.title("Writing Projects")
-    win.geometry("780x560")
-    win.minsize(640, 420)
+    win.geometry("820x600")
+    win.minsize(700, 480)
     win.configure(bg=theme["bg"])
     win.transient(tracker.root)
 
@@ -107,10 +107,10 @@ def show_writing_projects_window(tracker: PersonalDevelopmentTracker) -> None:
     ttk.Label(header, text="Writing Projects", style="Title.TLabel").pack(anchor="w")
     ttk.Label(
         header,
-        text="Novels, scripts, and ideas — each with an inspiration document and a manuscript. "
-        "Open both windows at once to keep your premise beside the draft.",
+        text="Select a project, then Continue Writing to open the manuscript. "
+        "Open Inspiration for premise/notes, or Open Both to keep them side by side.",
         style="Muted.TLabel",
-        wraplength=720,
+        wraplength=760,
     ).pack(anchor="w", pady=(4, 0))
 
     toolbar = ttk.Frame(win, padding=(16, 0, 16, 8))
@@ -151,8 +151,10 @@ def show_writing_projects_window(tracker: PersonalDevelopmentTracker) -> None:
 
     listed_ids: list[str] = []
 
-    actions = ttk.Frame(body)
-    actions.grid(row=1, column=0, sticky="ew", pady=(10, 0))
+    manage = ttk.Frame(body)
+    manage.grid(row=1, column=0, sticky="ew", pady=(10, 0))
+    write = ttk.Frame(body)
+    write.grid(row=2, column=0, sticky="ew", pady=(8, 0))
 
     def selected_id() -> str | None:
         selection = project_list.curselection()
@@ -290,7 +292,7 @@ def show_writing_projects_window(tracker: PersonalDevelopmentTracker) -> None:
     def on_open_manuscript() -> None:
         project_id = selected_id()
         if not project_id:
-            messagebox.showinfo("Manuscript", "Select a project first.", parent=win)
+            messagebox.showinfo("Continue Writing", "Select a project first.", parent=win)
             return
         open_document_window(tracker, project_id, cp.DOC_MANUSCRIPT)
 
@@ -302,14 +304,31 @@ def show_writing_projects_window(tracker: PersonalDevelopmentTracker) -> None:
         open_document_window(tracker, project_id, cp.DOC_INSPIRATION)
         open_document_window(tracker, project_id, cp.DOC_MANUSCRIPT)
 
-    ttk.Button(actions, text="New", command=on_new).pack(side=tk.LEFT)
-    ttk.Button(actions, text="Rename", command=on_rename).pack(side=tk.LEFT, padx=6)
-    ttk.Button(actions, text="Status", command=on_set_status).pack(side=tk.LEFT, padx=6)
-    ttk.Button(actions, text="Archive", command=on_archive).pack(side=tk.LEFT, padx=6)
-    ttk.Button(actions, text="Delete", command=on_delete).pack(side=tk.LEFT, padx=6)
-    ttk.Button(actions, text="Open Inspiration", command=on_open_inspiration).pack(side=tk.LEFT, padx=(16, 6))
-    ttk.Button(actions, text="Open Manuscript", command=on_open_manuscript).pack(side=tk.LEFT, padx=6)
-    ttk.Button(actions, text="Open Both", command=on_open_both).pack(side=tk.LEFT, padx=6)
+    def on_double_click(_event=None) -> None:
+        if selected_id():
+            on_open_manuscript()
+
+    project_list.bind("<Double-Button-1>", on_double_click)
+
+    ttk.Button(manage, text="New", command=on_new).pack(side=tk.LEFT)
+    ttk.Button(manage, text="Rename", command=on_rename).pack(side=tk.LEFT, padx=6)
+    ttk.Button(manage, text="Status", command=on_set_status).pack(side=tk.LEFT, padx=6)
+    ttk.Button(manage, text="Archive", command=on_archive).pack(side=tk.LEFT, padx=6)
+    ttk.Button(manage, text="Delete", command=on_delete).pack(side=tk.LEFT, padx=6)
+
+    ttk.Button(
+        write,
+        text="Continue Writing",
+        style="Accent.TButton",
+        command=on_open_manuscript,
+    ).pack(side=tk.LEFT)
+    ttk.Button(write, text="Open Inspiration", command=on_open_inspiration).pack(side=tk.LEFT, padx=(10, 6))
+    ttk.Button(write, text="Open Both", command=on_open_both).pack(side=tk.LEFT, padx=6)
+    ttk.Label(
+        write,
+        text="Double-click a project to continue writing",
+        style="Muted.TLabel",
+    ).pack(side=tk.LEFT, padx=(12, 0))
 
     refresh_list()
 
