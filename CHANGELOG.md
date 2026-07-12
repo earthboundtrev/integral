@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.6 — 2026-07-12
+
+### Added
+
+- **Writing Projects** — local library for novels/scripts with inspiration + manuscript documents (separate windows, debounced autosave)
+- **Creative/Mental Work integration** — open Writing Projects from the category log; explicit “Log writing session” checklist credit
+- **Deep Work Mode** — focus timer (25/50/90/custom) that quiets nav chrome; optional open a writing project; +10 min / End early
+
+### Build
+
+- Windows app: `dist/Integral/Integral.exe`
+- Release zip: `Integral-v0.3.6-windows.zip`
+
 ## 0.3.5.1 — 2026-07-10
 
 ### Fixed
