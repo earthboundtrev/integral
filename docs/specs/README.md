@@ -43,6 +43,8 @@ Implement **in order** unless a spec declares otherwise. Human sets `approved` �
 | [004-creativity-writing-integration](phase-3/004-creativity-writing-integration.md) | done | Tie writing to Creative/Mental Work ([#3](https://github.com/earthboundtrev/integral/issues/3)) |
 | [005-deep-work-mode](phase-3/005-deep-work-mode.md) | done | Deep Work Mode timer + focus UI ([#4](https://github.com/earthboundtrev/integral/issues/4)) |
 | [006-notification-residency](phase-3/006-notification-residency.md) | done | Portable reminder residency ([#15](https://github.com/earthboundtrev/integral/issues/15)) |
+| [007-streak-any-engagement](phase-3/007-streak-any-engagement.md) | done | Engagement streak: life + journal + fitness ([#18](https://github.com/earthboundtrev/integral/issues/18)) |
+| [008-journal-gap-repair](phase-3/008-journal-gap-repair.md) | done | Human gap repair via backdated journal ([#19](https://github.com/earthboundtrev/integral/issues/19)) |
 
 Implement writing stack in order **302 → 303 → 304**. **305** may proceed in parallel (soft dependency on 302/303 for optional writing launch).
 

@@ -6,12 +6,15 @@ import uuid
 from datetime import date, datetime
 from typing import Any
 
+GAP_PROMPT = "What got in the way of logging?"
+
 DEFAULT_PROMPTS = [
     "Free write — no prompt",
     "What am I noticing right now?",
     "What challenged me today?",
     "What am I grateful for?",
     "End-of-day reflection",
+    GAP_PROMPT,
     "Fitness / CC training notes",
     "Search practice — what's alive?",
     "What do I want to remember?",

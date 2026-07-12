@@ -15,7 +15,12 @@ if TYPE_CHECKING:
     from personal_dev_tracker import PersonalDevelopmentTracker
 
 
-def show_journal_window(tracker: PersonalDevelopmentTracker, entry_date: str | None = None) -> None:
+def show_journal_window(
+    tracker: PersonalDevelopmentTracker,
+    entry_date: str | None = None,
+    *,
+    prompt: str | None = None,
+) -> None:
     theme = tracker.theme
     win = tk.Toplevel(tracker.root)
     win.title("Journal")
@@ -33,7 +38,8 @@ def show_journal_window(tracker: PersonalDevelopmentTracker, entry_date: str | N
     ttk.Label(
         header,
         text="Free write or use a prompt. Entries are encrypted when vault security is on. "
-        "Backdated entries require an honest reason.",
+        "Backdated entries require an honest reason — that is how a missed day can keep "
+        "streak continuity (no freeze tokens).",
         style="Muted.TLabel",
         wraplength=880,
     ).pack(anchor="w", pady=(4, 0))
@@ -62,7 +68,7 @@ def show_journal_window(tracker: PersonalDevelopmentTracker, entry_date: str | N
     editor.rowconfigure(5, weight=1)
 
     date_var = tk.StringVar(value=entry_date or datetime.now().strftime("%Y-%m-%d"))
-    prompt_var = tk.StringVar(value=journal.DEFAULT_PROMPTS[0])
+    prompt_var = tk.StringVar(value=prompt or journal.DEFAULT_PROMPTS[0])
     title_var = tk.StringVar(value="")
     backdate_var = tk.StringVar(value="")
     editing_id: dict[str, str | None] = {"value": None}
@@ -194,6 +200,8 @@ def show_journal_window(tracker: PersonalDevelopmentTracker, entry_date: str | N
 
         journal.upsert_entry(tracker.journal, item)
         tracker._invalidate_caches()
+        if entry_date == tracker.today_str() and tracker._reminder_scheduler is not None:
+            tracker._reminder_scheduler.notify_logged_today()
         tracker.refresh_dashboard()
         tracker.save_data()
         saved_id = item["id"]

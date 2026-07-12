@@ -32,9 +32,10 @@
 
 ### Streak Logic
 
-- **Overall streak**: consecutive calendar days with ≥1 category logged, ending today.
-- **Category streak**: consecutive days with that specific category logged.
-- Missing today breaks streak only after the day ends (grace until midnight local).
+- **Overall streak**: consecutive calendar days with honest presence — ≥1 life-domain category logged, **or** ≥1 non-empty journal entry, **or** ≥1 fitness session — ending today (with mid-day grace if today is still empty).
+- **Category streak**: consecutive days with that specific life-domain category logged (journal/fitness do not count).
+- Missing today breaks the streak only after the day ends (grace until midnight local).
+- **Gap repair (human, not gamified):** a silent miss breaks continuity; writing a **backdated journal** for the missed day (with the existing honesty reason) makes that day engaged again so consecutive days can reconnect. No freeze tokens.
 
 ---
 
