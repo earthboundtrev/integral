@@ -38,8 +38,12 @@ Implement **in order** unless a spec declares otherwise. Human sets `approved` �
 | Spec | Status | Title |
 |------|--------|-------|
 | [001-radar-recommendations](phase-3/001-radar-recommendations.md) | done | Life balance radar + recommendations |
+| [002-creative-projects-library](phase-3/002-creative-projects-library.md) | done | Creative writing projects library + storage ([#1](https://github.com/earthboundtrev/integral/issues/1)) |
+| [003-creative-writing-windows](phase-3/003-creative-writing-windows.md) | draft | Inspiration + manuscript windows ([#2](https://github.com/earthboundtrev/integral/issues/2)) |
+| [004-creativity-writing-integration](phase-3/004-creativity-writing-integration.md) | draft | Tie writing to Creative/Mental Work ([#3](https://github.com/earthboundtrev/integral/issues/3)) |
+| [005-deep-work-mode](phase-3/005-deep-work-mode.md) | draft | Deep Work Mode timer + focus UI ([#4](https://github.com/earthboundtrev/integral/issues/4)) |
 
-More Phase 3 specs listed in `docs/PRD.md` §6 — create from template when ready.
+Implement writing stack in order **302 → 303 → 304**. **305** may proceed in parallel (soft dependency on 302/303 for optional writing launch).
 
 ## How to Add a Feature
 

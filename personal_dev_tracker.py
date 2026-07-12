@@ -26,6 +26,8 @@ from integral_dialogs import (
 )
 import journal
 from journal_ui import show_journal_window
+import creative_projects
+from creative_ui import show_writing_projects_window
 from milestones import merge_milestones, milestone_summary
 from notifications import ReminderScheduler, normalize_notification_settings
 from paths import APP_NAME, APP_VERSION, data_file, ensure_data_file, icon_path
@@ -84,6 +86,7 @@ class PersonalDevelopmentTracker:
         self.sessions: list = []
         self.milestones: list = []
         self.journal: dict = journal.empty_journal()
+        self.creative_projects: dict = creative_projects.empty_creative_projects()
         self.day_plans: dict = day_plans.empty_day_plans()
         self.program_state: dict = {}
         self.programs: dict = load_program_definitions()
@@ -532,6 +535,9 @@ class PersonalDevelopmentTracker:
             self.sessions = migrated.get("sessions", [])
             self.milestones = merge_milestones(migrated.get("milestones"))
             self.journal = journal.normalize_journal(migrated.get("journal"))
+            self.creative_projects = creative_projects.normalize_creative_projects(
+                migrated.get("creative_projects")
+            )
             self.day_plans = day_plans.normalize_day_plans(migrated.get("day_plans"))
             self.program_state = migrated.get("program_state", {})
             if sync_fitness_sessions_to_entries(self.entries, self.settings.get("fitness")):
@@ -546,6 +552,7 @@ class PersonalDevelopmentTracker:
             self.sessions = []
             self.milestones = merge_milestones(None)
             self.journal = journal.empty_journal()
+            self.creative_projects = creative_projects.empty_creative_projects()
             self.day_plans = day_plans.empty_day_plans()
             self.program_state = compute_program_state(self.programs, self.sessions, self.settings)
             self.save_data(flush=True)
@@ -562,6 +569,7 @@ class PersonalDevelopmentTracker:
             "sessions": self.sessions,
             "milestones": self.milestones,
             "journal": self.journal,
+            "creative_projects": self.creative_projects,
             "day_plans": self.day_plans,
             "program_state": self.program_state,
             "user_levels": {},
@@ -666,6 +674,9 @@ class PersonalDevelopmentTracker:
             ).pack(side=tk.LEFT, padx=(0, 8))
         ttk.Button(
             actions, text="Journal", style="Accent.TButton", command=self.show_journal
+        ).pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Button(
+            actions, text="Writing Projects", command=self.show_writing_projects
         ).pack(side=tk.LEFT, padx=(0, 8))
         ttk.Button(
             actions,
@@ -892,6 +903,9 @@ class PersonalDevelopmentTracker:
         ttk.Button(nav, text="Search Notes", command=self.show_search).pack(side=tk.LEFT, padx=6)
         ttk.Button(nav, text="Graphs & Progress", command=self.show_graphs).pack(side=tk.LEFT, padx=6)
         ttk.Button(nav, text="Journal", style="Accent.TButton", command=self.show_journal).pack(
+            side=tk.LEFT, padx=6
+        )
+        ttk.Button(nav, text="Writing Projects", command=self.show_writing_projects).pack(
             side=tk.LEFT, padx=6
         )
         ttk.Button(nav, text="Plan Tomorrow", command=self.show_plan_tomorrow).pack(side=tk.LEFT, padx=6)
@@ -1661,6 +1675,9 @@ class PersonalDevelopmentTracker:
 
     def show_journal(self) -> None:
         show_journal_window(self)
+
+    def show_writing_projects(self) -> None:
+        show_writing_projects_window(self)
 
     def show_plan_tomorrow(self) -> None:
         show_plan_window(self)

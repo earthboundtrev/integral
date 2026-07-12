@@ -53,6 +53,13 @@ def icon_path() -> str | None:
     return path if os.path.exists(path) else None
 
 
+def creative_projects_dir() -> str:
+    """On-disk folder for inspiration/manuscript text files (not in data.json)."""
+    path = os.path.join(user_data_dir(), "creative")
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
 def ensure_data_file() -> str:
     path = data_file()
     os.makedirs(os.path.dirname(path), exist_ok=True)
