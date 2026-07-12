@@ -109,3 +109,14 @@ Daily category logging remains the **habit layer**. Fitness deep-tracking adds:
 - Dashboard "Body & Presence" card shows summary; fitness view shows skill tree detail
 
 Do not merge into one monolithic form — link via shared date + category reference.
+
+## Creative Writing (Phase 3)
+
+| Module | Responsibility |
+|--------|----------------|
+| `creative_projects.py` | Library index normalize/CRUD; inspiration/manuscript file I/O |
+| `creative_ui.py` | Writing Projects library window + document editors |
+| `paths.creative_projects_dir()` | `%APPDATA%\Integral\creative\` (or platform equivalent) |
+
+Metadata lives in `data.json` under `creative_projects`; novel-length text stays on disk beside user data so daily loads stay lean.
+

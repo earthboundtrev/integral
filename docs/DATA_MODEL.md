@@ -87,3 +87,37 @@ See [PROGRESSION_MODEL.md](./PROGRESSION_MODEL.md) for full graph spec.
 | `FTR` | Five Tibetan Rites |
 
 Seed files versioned as `progression/seed/v1/`. Bump version when adding exercises; migrate user progress forward.
+
+---
+
+## Creative Writing Projects (Phase 3)
+
+Index key in `data.json`: `creative_projects`
+
+```json
+{
+  "schema_version": 1,
+  "projects": [
+    {
+      "id": "a1b2c3d4e5f6",
+      "title": "Working title",
+      "status": "idea|drafting|revising|done",
+      "tags": ["novel"],
+      "notes": "Optional short blurb",
+      "created_at": "ISO-8601",
+      "updated_at": "ISO-8601",
+      "archived": false
+    }
+  ]
+}
+```
+
+Document bodies are **not** stored in `data.json`. Files live under:
+
+```
+{user_data_dir}/creative/{project_id}/inspiration.txt
+{user_data_dir}/creative/{project_id}/manuscript.txt
+```
+
+On Windows (frozen or typical): `%APPDATA%\Integral\creative\...`
+

@@ -56,6 +56,8 @@ a = Analysis(
         "backup",
         "journal",
         "journal_ui",
+        "creative_projects",
+        "creative_ui",
         "ui_scroll",
         "ui_theme",
         "integral_io",

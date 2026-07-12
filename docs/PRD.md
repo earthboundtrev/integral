@@ -74,9 +74,13 @@ People tracking personal development across many life areas need:
 | ID | Feature | Spec |
 |----|---------|------|
 | C1 | Progression graph pattern for 1 non-fitness category | TBD |
-| C2 | Life-balance radar chart (8 axes) | TBD |
-| C3 | Local rule-based "what's next" recommendations | TBD |
-| C4 | Optional LLM coach (opt-in) | TBD |
+| C2 | Life-balance radar chart (8 axes) | `specs/phase-3/001-radar-recommendations.md` (done) |
+| C3 | Local rule-based "what's next" recommendations | `specs/phase-3/001-radar-recommendations.md` (done) |
+| C4 | Optional LLM coach (opt-in) | TBD (partially shipped outside this table) |
+| C5 | Creative writing projects library + local storage | `specs/phase-3/002-creative-projects-library.md` (done) — [GitHub #1](https://github.com/earthboundtrev/integral/issues/1) |
+| C6 | Inspiration + manuscript writing windows | `specs/phase-3/003-creative-writing-windows.md` (draft) — [GitHub #2](https://github.com/earthboundtrev/integral/issues/2) |
+| C7 | Tie writing projects to Creative/Mental Work | `specs/phase-3/004-creativity-writing-integration.md` (draft) — [GitHub #3](https://github.com/earthboundtrev/integral/issues/3) |
+| C8 | Deep Work Mode (focus timer + reduced chrome) | `specs/phase-3/005-deep-work-mode.md` (draft) — [GitHub #4](https://github.com/earthboundtrev/integral/issues/4) |
 
 ## 6. Life Domains (8 Categories)
 
