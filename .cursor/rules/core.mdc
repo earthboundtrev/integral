@@ -73,6 +73,7 @@ On every release push to `main`, keep **only the latest** artifact and tag:
 1. `git rm` older `Integral-v*-windows.zip` files; add only the new zip matching `APP_VERSION` in `paths.py`
 2. Tag `v{VERSION}` on the release commit; delete all older `v*` tags locally and on `origin`
 3. Push `main` and the new tag; `git push origin --delete` each stale remote tag
+4. **Validate README** — compare CHANGELOG / commits since last tag; if any user-facing feature shipped, `README.md` Features (“What you get”) must already mention it before the release commit is pushed. See `.cursor/rules/build-release.mdc` → **README Features gate**.
 
 Full checklist and PowerShell examples: `.cursor/rules/build-release.mdc` → **Release hygiene**.
 

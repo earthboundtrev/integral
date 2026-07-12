@@ -63,6 +63,8 @@ I care enough to use it. I just wasn’t going to hand-write all of this code my
 - **Backups and CSV export** — zip your full life data + fitness progress; keep copies like you wish you had for that notebook
 - **Backdated entries with a reason** — catch up honestly without pretending you logged on the day (accountability, not cheating the tool)
 - **Fitness Hub** — CC and other programs as structured progressions, not scattered notes
+- **Writing Projects** — novels and scripts with an inspiration document beside the manuscript (autosave, local files)
+- **Deep Work Mode** — a focus timer that quiets the rest of the app so you can write or log without chrome noise
 
 Integral is for the lightweight daily check-in *and* the detailed stream-of-consciousness reflection — the kind of record you would want to read back years later, without digging through paper, hoping the cloud still works, or wondering where you left off.
 
@@ -89,14 +91,31 @@ User data: `%APPDATA%\Integral\data.json` (encrypted optional via Data & Securit
 |------|----------|
 | **Life domains (18)** | Ratings, checklists, metrics, notes, streaks, guidance |
 | **Journal** | Prompts or free write; backdate with reason |
-| **Writing Projects** | Novels/scripts — inspiration + manuscript windows; log sessions to Creative/Mental Work |
-| **Deep Work** | Focus timer that quiets nav chrome; optional open writing project |
+| **Writing Projects** | Novels/scripts library — inspiration + manuscript in separate windows; debounced autosave; stored under `%APPDATA%\Integral\creative\` |
+| **Creative/Mental Work** | Open Writing Projects from the category log; **Log writing session** marks creative progress for the day |
+| **Deep Work** | Focus timer (25 / 50 / 90 / custom); quieter nav; optional open a writing project; +10 min or end early |
 | **Activity** | GitHub-style contribution grid; click any day |
 | **Fitness Hub** | CC1/CC2/SS/OG/EC/FTR — nested book → program → steps |
 | **Safety net** | Export CSV, full JSON backup, optional vault encryption |
 | **AI Insight (optional)** | Local Ollama review of recent logs — see below |
 
 Tests: `python -m pytest tests/ -q`
+
+### Writing Projects & Deep Work
+
+**Writing Projects** keep long-form creative work inside Integral without bloating daily logs:
+
+- Each project has an **inspiration** document (premise, research, vibe) and a **manuscript** (the draft itself)
+- Open one or **Open Both** so the premise stays visible while you write
+- Text autosaves after a short pause; Save and app quit also flush
+- From **Creative/Mental Work** logging, jump to Writing Projects or explicitly **Log writing session** for the day
+
+**Deep Work Mode** is app-wide focus:
+
+- Start from Overview or the footer (**Deep Work**)
+- Pick a duration; optionally open a writing project’s inspiration + manuscript
+- Non-essential nav (graphs, fitness, export, settings, …) hides for the session; Journal and Writing Projects stay available
+- Countdown banner with **+10 min** and **End Deep Work**
 
 ### Optional: Local AI insights (Ollama)
 

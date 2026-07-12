@@ -30,10 +30,16 @@ User-writable data → `data_file()` / `user_data_dir()` only — never beside e
 ## Release checklist
 
 - [ ] `python -m pytest` passes
-- [ ] `.\scripts\build_exe.ps1` succeeds
+- [ ] `.\scripts\build_exe.ps1` / `.\build.ps1` succeeds
 - [ ] Zip `dist\Integral\` → `Integral-v{VERSION}-windows.zip` (match `APP_VERSION` in `paths.py`)
 - [ ] Release notes mention `%APPDATA%\Integral\data.json` backup path
 - [ ] Do not attach user `data/` to release artifacts
+- [ ] **README Features gate (required)** — before committing the release zip/tag:
+  1. Diff this version vs the previous tag (`git log vPREV..HEAD --oneline` and/or CHANGELOG section)
+  2. Ask: did anything user-visible ship (new tab, dialog, mode, logging flow, download path)?
+  3. If **yes** → update root `README.md` **What you get** table and/or short feature section in the **same** release commit (or the feature PR before release)
+  4. If **no** (hotfix / internal only) → note “README unchanged — no user-facing delta” in the release commit message or PR body
+  5. Never ship a version that adds capability without a README mention (see `.cursor/rules/documentation.mdc`)
 
 ## Release hygiene (required on every version push)
 

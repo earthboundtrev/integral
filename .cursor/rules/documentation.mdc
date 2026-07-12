@@ -43,8 +43,16 @@ Update docs when the change affects **what users see or do**:
 
 ## Agent checklist before calling work done
 
-- [ ] User-visible? → README Features bullet
+- [ ] User-visible? → README Features bullet / “What you get” row
 - [ ] Schema or module layout changed? → `docs/architecture.md`
 - [ ] Roadmap item shipped? → `docs/ROADMAP.md` checkbox
 - [ ] New program? → `programs/` JSON + fitness tests
 - [ ] No secrets or `data/` in the commit
+
+## Release rebuild / push gate
+
+When the human asks to **rebuild, version, and push** a release:
+
+1. Run the README Features gate in `.cursor/rules/build-release.mdc` **before** tagging
+2. Do not treat CHANGELOG alone as enough — GitHub visitors read `README.md` first
+3. Hotfix-only releases may skip README edits only when there is truly no user-visible delta (state that explicitly)
