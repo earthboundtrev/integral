@@ -20,8 +20,7 @@ def show_deep_work_start_dialog(tracker: PersonalDevelopmentTracker) -> None:
 
     win = tk.Toplevel(tracker.root)
     win.title("Deep Work")
-    win.geometry("440x360")
-    win.minsize(400, 320)
+    win.minsize(420, 380)
     win.configure(bg=theme["bg"])
     win.transient(tracker.root)
     win.grab_set()
@@ -33,6 +32,10 @@ def show_deep_work_start_dialog(tracker: PersonalDevelopmentTracker) -> None:
     projects = cp.list_projects(tracker.creative_projects, include_archived=False)
     project_labels = [f"{p['title']} ({p['id']})" for p in projects]
     id_by_label = {f"{p['title']} ({p['id']})": p["id"] for p in projects}
+
+    # Pack footer first so Start/Cancel stay fully visible (body must not clip them).
+    footer = ttk.Frame(win, padding=(16, 10, 16, 16))
+    footer.pack(side=tk.BOTTOM, fill=tk.X)
 
     header = ttk.Frame(win, padding=(16, 14, 16, 8))
     header.pack(side=tk.TOP, fill=tk.X)
@@ -88,9 +91,6 @@ def show_deep_work_start_dialog(tracker: PersonalDevelopmentTracker) -> None:
             wraplength=380,
         ).pack(anchor="w")
 
-    footer = ttk.Frame(win, padding=(16, 8, 16, 14))
-    footer.pack(side=tk.BOTTOM, fill=tk.X)
-
     def on_start() -> None:
         try:
             minutes = int(minutes_var.get())
@@ -116,6 +116,11 @@ def show_deep_work_start_dialog(tracker: PersonalDevelopmentTracker) -> None:
 
     ttk.Button(footer, text="Start", style="Accent.TButton", command=on_start).pack(side=tk.LEFT)
     ttk.Button(footer, text="Cancel", command=win.destroy).pack(side=tk.RIGHT)
+
+    win.update_idletasks()
+    req_w = max(440, win.winfo_reqwidth())
+    req_h = max(400, win.winfo_reqheight() + 8)
+    win.geometry(f"{req_w}x{req_h}")
 
 
 def open_writing_pair(tracker: PersonalDevelopmentTracker, project_id: str) -> None:
