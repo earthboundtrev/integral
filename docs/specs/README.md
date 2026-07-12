@@ -42,6 +42,7 @@ Implement **in order** unless a spec declares otherwise. Human sets `approved` �
 | [003-creative-writing-windows](phase-3/003-creative-writing-windows.md) | done | Inspiration + manuscript windows ([#2](https://github.com/earthboundtrev/integral/issues/2)) |
 | [004-creativity-writing-integration](phase-3/004-creativity-writing-integration.md) | done | Tie writing to Creative/Mental Work ([#3](https://github.com/earthboundtrev/integral/issues/3)) |
 | [005-deep-work-mode](phase-3/005-deep-work-mode.md) | done | Deep Work Mode timer + focus UI ([#4](https://github.com/earthboundtrev/integral/issues/4)) |
+| [006-notification-residency](phase-3/006-notification-residency.md) | done | Portable reminder residency ([#15](https://github.com/earthboundtrev/integral/issues/15)) |
 
 Implement writing stack in order **302 → 303 → 304**. **305** may proceed in parallel (soft dependency on 302/303 for optional writing launch).
 

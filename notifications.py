@@ -111,6 +111,8 @@ def default_notification_settings() -> dict:
         "reminder_times": list(DEFAULT_REMINDER_TIMES),
         "end_of_day_reminder": DEFAULT_END_OF_DAY_REMINDER,
         "reminder_state": {},
+        "start_with_windows": False,
+        "minimize_on_close": False,
     }
 
 
@@ -125,6 +127,9 @@ def normalize_notification_settings(settings: dict | None) -> dict:
         merged["end_of_day_reminder"] = str(stored["end_of_day_reminder"])
     if isinstance(stored.get("reminder_state"), dict):
         merged["reminder_state"] = dict(stored["reminder_state"])
+    merged["enabled"] = bool(merged.get("enabled", True))
+    merged["start_with_windows"] = bool(merged.get("start_with_windows", False))
+    merged["minimize_on_close"] = bool(merged.get("minimize_on_close", False))
     base["notifications"] = merged
     return base
 
