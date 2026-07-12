@@ -43,9 +43,10 @@ def test_future_date_rejected():
 
 def test_search_entries_matches_body():
     data = journal.empty_journal()
+    today = date.today().strftime("%Y-%m-%d")
     journal.upsert_entry(
         data,
-        journal.create_entry("2026-07-05", "Human flag progress felt shaky today."),
+        journal.create_entry(today, "Human flag progress felt shaky today."),
     )
     hits = journal.search_entries(data, "human flag")
     assert len(hits) == 1
@@ -54,3 +55,8 @@ def test_search_entries_matches_body():
 def test_normalize_journal_keeps_default_prompts():
     data = journal.normalize_journal({"entries": []})
     assert journal.DEFAULT_PROMPTS[0] in data["prompts"]
+
+
+def test_normalize_journal_includes_gap_prompt():
+    data = journal.normalize_journal({"entries": [], "prompts": ["Free write — no prompt"]})
+    assert journal.GAP_PROMPT in data["prompts"]

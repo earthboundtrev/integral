@@ -484,7 +484,7 @@ class PersonalDevelopmentTracker:
             self.root,
             get_settings=lambda: self.settings,
             set_settings=self._apply_notification_settings,
-            has_logged_today=lambda: bool(self.entries.get(self.today_str())),
+            has_logged_today=self.has_logged_today,
             persist_settings=lambda: self.save_data(flush=True),
         )
 
@@ -643,11 +643,30 @@ class PersonalDevelopmentTracker:
     def get_streak(self, category: str | None = None) -> int:
         cache_key = category or "__all__"
         if cache_key not in self._streak_cache:
-            self._streak_cache[cache_key] = streak.get_streak(self.entries, category)
+            if category is None:
+                self._streak_cache[cache_key] = streak.get_streak(
+                    self.entries,
+                    journal=self.journal,
+                    sessions=self.sessions,
+                )
+            else:
+                self._streak_cache[cache_key] = streak.get_streak(self.entries, category)
         return self._streak_cache[cache_key]
+
+    def has_logged_today(self) -> bool:
+        return streak.day_has_engagement(
+            self.entries,
+            datetime.now().date(),
+            journal=self.journal,
+            sessions=self.sessions,
+        )
 
     def today_str(self) -> str:
         return datetime.now().strftime("%Y-%m-%d")
+
+    def open_gap_repair_journal(self) -> None:
+        yesterday = (datetime.now().date() - timedelta(days=1)).strftime("%Y-%m-%d")
+        show_journal_window(self, yesterday, prompt=journal.GAP_PROMPT)
 
     def count_today_logged(self) -> tuple[int, int]:
         logged = len(self.entries.get(self.today_str(), {}))
@@ -1071,6 +1090,25 @@ class PersonalDevelopmentTracker:
         self._fill_guidance_panel(panel)
 
     def _fill_guidance_panel(self, panel: ttk.LabelFrame) -> None:
+        gap_hint = streak.gap_repair_hint(
+            entries=self.entries,
+            journal=self.journal,
+            sessions=self.sessions,
+        )
+        if gap_hint:
+            ttk.Label(
+                panel,
+                text=gap_hint,
+                wraplength=900,
+                style="Accent.TLabel",
+            ).pack(anchor="w", pady=(4, 0))
+            ttk.Button(
+                panel,
+                text="Journal for yesterday",
+                style="Accent.TButton",
+                command=self.open_gap_repair_journal,
+            ).pack(anchor="w", pady=(6, 8))
+
         highlights = top_insights(self.insights, limit=3)
         if not highlights:
             ttk.Label(

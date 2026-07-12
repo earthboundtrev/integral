@@ -43,7 +43,7 @@ User data (runtime):
 
 | Surface | Purpose |
 |---------|---------|
-| Dashboard | 8 category cards, streaks, today's status |
+| Dashboard | Category cards, engagement streak (life/journal/fitness), today's status |
 | Log dialog | Rating, checklist, metrics, notes per category |
 | Graphs & Summaries | Today / week / month stats + embedded charts |
 | Full History | Chronological notes dump |
