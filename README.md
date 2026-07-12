@@ -89,7 +89,8 @@ User data: `%APPDATA%\Integral\data.json` (encrypted optional via Data & Securit
 |------|----------|
 | **Life domains (18)** | Ratings, checklists, metrics, notes, streaks, guidance |
 | **Journal** | Prompts or free write; backdate with reason |
-| **Writing Projects** | Novels/scripts library — inspiration + manuscript in separate windows, stored locally |
+| **Writing Projects** | Novels/scripts — inspiration + manuscript windows; log sessions to Creative/Mental Work |
+| **Deep Work** | Focus timer that quiets nav chrome; optional open writing project |
 | **Activity** | GitHub-style contribution grid; click any day |
 | **Fitness Hub** | CC1/CC2/SS/OG/EC/FTR — nested book → program → steps |
 | **Safety net** | Export CSV, full JSON backup, optional vault encryption |

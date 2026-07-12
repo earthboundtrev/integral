@@ -122,3 +122,7 @@ Metadata lives in `data.json` under `creative_projects`; novel-length text stays
 
 Document windows (SPEC-303): Inspiration and Manuscript open as independent `Toplevel`s with debounced autosave; app quit flushes dirty editors via `flush_open_document_windows()`.
 
+Creative/Mental Work integration (SPEC-304): log dialog links to Writing Projects; explicit “Log writing session” marks checklist item `Made progress on a creative project`.
+
+Deep Work Mode (SPEC-305): `deep_work.py` timer + `deep_work_ui.py` start dialog; tracker hides non-essential nav while a session runs.
+

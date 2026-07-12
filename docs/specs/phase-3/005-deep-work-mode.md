@@ -2,7 +2,7 @@
 id: SPEC-305
 title: Deep Work Mode — focus timer and distraction-reduced UI
 phase: phase-3
-status: draft
+status: done
 prd_refs: [PRD §5 Epic C — C8]
 adr_refs: [ADR-001, ADR-002, ADR-007]
 github: https://github.com/earthboundtrev/integral/issues/4
@@ -42,6 +42,7 @@ Integral gains an app-wide **Deep Work Mode**: a configurable focus timer that r
 - `creative_ui.py` — optional hook only (open project windows)
 - `tests/test_deep_work.py`
 - `README.md`, `docs/architecture.md`, `docs/ROADMAP.md` when shipping
+- `full-spectrum-development.spec` — hiddenimports
 - This spec file
 
 ### Files forbidden
@@ -114,12 +115,12 @@ No separate database.
 
 ## 6. Tasks
 
-- [ ] T1: `deep_work.py` timer state (start/tick/complete/cancel/extend) — AC-1
-- [ ] T2: Start dialog + settings persistence — AC-7
-- [ ] T3: Apply/remove chrome policy on tracker — AC-2, AC-3, AC-4
-- [ ] T4: Completion signal via UI + optional notification — AC-4
-- [ ] T5: Soft integration with creative open — AC-5, AC-6
-- [ ] T6: Tests + docs — all ACs
+- [x] T1: `deep_work.py` timer state (start/tick/complete/cancel/extend) — AC-1
+- [x] T2: Start dialog + settings persistence — AC-7
+- [x] T3: Apply/remove chrome policy on tracker — AC-2, AC-3, AC-4
+- [x] T4: Completion signal via UI + optional notification — AC-4
+- [x] T5: Soft integration with creative open — AC-5, AC-6
+- [x] T6: Tests + docs — all ACs
 
 ## 7. Loop (Agent retry rules)
 
@@ -132,3 +133,5 @@ No separate database.
 | Date | Author | Change |
 |------|--------|--------|
 | 2026-07-12 | agent | Initial draft from GitHub #4 |
+| 2026-07-12 | human | Approved via implement-tickets request |
+| 2026-07-12 | agent | Implemented timer, chrome policy, writing open option |

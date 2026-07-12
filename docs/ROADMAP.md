@@ -86,8 +86,8 @@ Known gaps vs funded competitors, tracked as intentional future work. Integral s
 
 - [x] Writing Projects library + local inspiration/manuscript storage (SPEC-302)
 - [x] Dual-window writing workspace (SPEC-303)
-- [ ] Creative/Mental Work integration (SPEC-304)
-- [ ] Deep Work Mode (SPEC-305)
+- [x] Creative/Mental Work integration (SPEC-304)
+- [x] Deep Work Mode (SPEC-305)
 
 ---
 

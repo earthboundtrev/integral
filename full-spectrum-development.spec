@@ -58,6 +58,8 @@ a = Analysis(
         "journal_ui",
         "creative_projects",
         "creative_ui",
+        "deep_work",
+        "deep_work_ui",
         "ui_scroll",
         "ui_theme",
         "integral_io",

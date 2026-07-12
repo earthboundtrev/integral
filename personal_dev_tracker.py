@@ -28,8 +28,10 @@ import journal
 from journal_ui import show_journal_window
 import creative_projects
 from creative_ui import show_writing_projects_window
+import deep_work
+from deep_work_ui import open_writing_pair, show_deep_work_start_dialog
 from milestones import merge_milestones, milestone_summary
-from notifications import ReminderScheduler, normalize_notification_settings
+from notifications import ReminderScheduler, normalize_notification_settings, show_windows_notification
 from paths import APP_NAME, APP_VERSION, data_file, ensure_data_file, icon_path
 from progression.sessions import bridge_fitness_to_daily_entries, sync_fitness_sessions_to_entries
 import streak
@@ -111,6 +113,12 @@ class PersonalDevelopmentTracker:
         self._day_watch: DayWatch | None = None
         self._categories_tab_frame: ttk.Frame | None = None
         self._notebook: ttk.Notebook | None = None
+        self._deep_work_session: deep_work.DeepWorkSession | None = None
+        self._deep_work_after_id: str | None = None
+        self._deep_work_banner: ttk.Frame | None = None
+        self._deep_work_timer_label: ttk.Label | None = None
+        self._nav_buttons: dict[str, ttk.Widget] = {}
+        self._nav_frame: ttk.Frame | None = None
 
         if is_encrypted_file(DATA_FILE) and not prompt_vault_unlock(self):
             messagebox.showerror("Locked", "Cannot open encrypted journal without passphrase.")
@@ -448,6 +456,9 @@ class PersonalDevelopmentTracker:
             self._reminder_scheduler.stop()
         if self._day_watch is not None:
             self._day_watch.stop()
+        if self._deep_work_after_id:
+            self.root.after_cancel(self._deep_work_after_id)
+            self._deep_work_after_id = None
         if self._save_after_id:
             self.root.after_cancel(self._save_after_id)
             self._save_after_id = None
@@ -682,6 +693,9 @@ class PersonalDevelopmentTracker:
             actions, text="Writing Projects", command=self.show_writing_projects
         ).pack(side=tk.LEFT, padx=(0, 8))
         ttk.Button(
+            actions, text="Deep Work", style="Accent.TButton", command=self.show_deep_work
+        ).pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Button(
             actions,
             text="AI Insight",
             style="Accent.TButton",
@@ -832,6 +846,10 @@ class PersonalDevelopmentTracker:
 
     def create_dashboard(self) -> None:
         self._dashboard_ready = False
+        self._deep_work_banner = None
+        self._deep_work_timer_label = None
+        self._nav_buttons = {}
+        self._nav_frame = None
 
         for widget in self.root.winfo_children():
             widget.destroy()
@@ -911,6 +929,9 @@ class PersonalDevelopmentTracker:
         ttk.Button(nav, text="Writing Projects", command=self.show_writing_projects).pack(
             side=tk.LEFT, padx=6
         )
+        ttk.Button(nav, text="Deep Work", style="Accent.TButton", command=self.show_deep_work).pack(
+            side=tk.LEFT, padx=6
+        )
         ttk.Button(nav, text="Plan Tomorrow", command=self.show_plan_tomorrow).pack(side=tk.LEFT, padx=6)
         ttk.Button(nav, text="Log Exercise", style="Accent.TButton", command=self.show_log_exercise).pack(
             side=tk.LEFT, padx=6
@@ -923,6 +944,10 @@ class PersonalDevelopmentTracker:
         ttk.Button(nav, text="Data & Security", command=self.show_security).pack(side=tk.LEFT, padx=6)
         mode_label = "Light Mode" if self.settings.get("dark_mode") else "Dark Mode"
         ttk.Button(nav, text=mode_label, command=self.toggle_dark_mode).pack(side=tk.RIGHT)
+        self._nav_frame = nav
+        self._register_nav_buttons(nav)
+        self._ensure_deep_work_banner(footer)
+        self._apply_deep_work_chrome()
         self._dashboard_ready = True
 
     def _build_overview_tab(self, parent: ttk.Frame) -> None:
@@ -1456,6 +1481,17 @@ class PersonalDevelopmentTracker:
                 notes_text,
             ),
         ).pack(side=tk.LEFT, padx=(0, 8))
+        if cat_name == creative_projects.CREATIVE_CATEGORY:
+            ttk.Button(
+                footer_btns,
+                text="Writing Projects",
+                command=lambda: (dialog.destroy(), self.show_writing_projects()),
+            ).pack(side=tk.LEFT, padx=(0, 8))
+            ttk.Button(
+                footer_btns,
+                text="Log writing session",
+                command=lambda: self.log_writing_session_for_day(date_var.get().strip(), parent=dialog),
+            ).pack(side=tk.LEFT, padx=(0, 8))
         ttk.Button(footer_btns, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT)
         ttk.Label(
             footer,
@@ -1681,6 +1717,159 @@ class PersonalDevelopmentTracker:
 
     def show_writing_projects(self) -> None:
         show_writing_projects_window(self)
+
+    def log_writing_session_for_day(self, day: str | None = None, *, parent=None) -> bool:
+        day_str = (day or self.today_str()).strip()
+        ok, message = creative_projects.mark_writing_session(
+            self.entries,
+            self.categories,
+            day_str,
+        )
+        if ok:
+            self.save_data(flush=True)
+            self.refresh_dashboard(full=False)
+            messagebox.showinfo("Writing session", message, parent=parent or self.root)
+        else:
+            messagebox.showinfo("Writing session", message, parent=parent or self.root)
+        return ok
+
+    def show_deep_work(self) -> None:
+        if self._deep_work_session and self._deep_work_session.running:
+            messagebox.showinfo(
+                "Deep Work",
+                f"Already in session — {self._deep_work_session.format_mmss()} remaining.",
+            )
+            return
+        show_deep_work_start_dialog(self)
+
+    def start_deep_work(self, minutes: int, *, writing_project_id: str | None = None) -> None:
+        if self._deep_work_after_id:
+            self.root.after_cancel(self._deep_work_after_id)
+            self._deep_work_after_id = None
+        self._deep_work_session = deep_work.start_session(minutes)
+        self._ensure_deep_work_banner()
+        self._apply_deep_work_chrome()
+        self._update_deep_work_banner()
+        self._schedule_deep_work_tick()
+        if writing_project_id:
+            try:
+                open_writing_pair(self, writing_project_id)
+            except Exception:
+                messagebox.showwarning(
+                    "Deep Work",
+                    "Session started, but the writing project windows could not be opened.",
+                )
+
+    def end_deep_work(self, *, completed: bool = False) -> None:
+        if self._deep_work_after_id:
+            self.root.after_cancel(self._deep_work_after_id)
+            self._deep_work_after_id = None
+        if self._deep_work_session is not None:
+            self._deep_work_session.cancel()
+        self._deep_work_session = None
+        self._deep_work_banner = None
+        self._deep_work_timer_label = None
+        self.create_dashboard()
+        if completed:
+            show_windows_notification("Deep Work", "Session complete. Nice focus.")
+            messagebox.showinfo("Deep Work", "Session complete. Chrome restored.")
+
+    def extend_deep_work(self, minutes: int = deep_work.EXTEND_MINUTES) -> None:
+        if not self._deep_work_session:
+            return
+        self._deep_work_session.extend(minutes)
+        if not self._deep_work_after_id:
+            self._schedule_deep_work_tick()
+        self._apply_deep_work_chrome()
+        self._update_deep_work_banner()
+
+    def _register_nav_buttons(self, nav: ttk.Frame) -> None:
+        self._nav_buttons = {}
+        for child in nav.winfo_children():
+            try:
+                label = str(child.cget("text"))
+            except tk.TclError:
+                continue
+            if label:
+                self._nav_buttons[label] = child
+
+    def _ensure_deep_work_banner(self, footer: ttk.Frame | None = None) -> None:
+        if self._deep_work_banner is not None:
+            try:
+                if self._deep_work_banner.winfo_exists():
+                    return
+            except tk.TclError:
+                self._deep_work_banner = None
+        host = footer
+        if host is None:
+            host = ttk.Frame(self.root)
+            host.pack(side=tk.BOTTOM, fill=tk.X, padx=16, pady=(0, 4))
+        banner = ttk.Frame(host)
+        self._deep_work_banner = banner
+        self._deep_work_timer_label = ttk.Label(banner, text="", style="Subheading.TLabel")
+        self._deep_work_timer_label.pack(side=tk.LEFT)
+        ttk.Button(banner, text="+10 min", command=lambda: self.extend_deep_work()).pack(
+            side=tk.LEFT, padx=(12, 6)
+        )
+        ttk.Button(banner, text="End Deep Work", command=lambda: self.end_deep_work(completed=False)).pack(
+            side=tk.LEFT
+        )
+
+    def _apply_deep_work_chrome(self) -> None:
+        active = bool(self._deep_work_session and self._deep_work_session.running)
+        for label, widget in list(self._nav_buttons.items()):
+            try:
+                if not widget.winfo_exists():
+                    continue
+            except tk.TclError:
+                continue
+            if label in deep_work.DEEP_WORK_KEEP_NAV_LABELS:
+                continue
+            if active and (
+                label in deep_work.DEEP_WORK_HIDDEN_NAV_LABELS
+                or label not in deep_work.DEEP_WORK_KEEP_NAV_LABELS
+            ):
+                widget.pack_forget()
+        if self._deep_work_banner is not None:
+            try:
+                if active:
+                    self._deep_work_banner.pack(fill=tk.X, pady=(0, 8))
+                else:
+                    self._deep_work_banner.pack_forget()
+            except tk.TclError:
+                pass
+
+    def _update_deep_work_banner(self) -> None:
+        label = self._deep_work_timer_label
+        session = self._deep_work_session
+        if label is None:
+            return
+        try:
+            if not label.winfo_exists():
+                return
+        except tk.TclError:
+            return
+        if session and session.running:
+            label.config(text=f"Deep Work · {session.format_mmss()}")
+        else:
+            label.config(text="")
+
+    def _schedule_deep_work_tick(self) -> None:
+        if self._deep_work_after_id:
+            self.root.after_cancel(self._deep_work_after_id)
+        self._deep_work_after_id = self.root.after(1000, self._on_deep_work_tick)
+
+    def _on_deep_work_tick(self) -> None:
+        self._deep_work_after_id = None
+        session = self._deep_work_session
+        if not session or not session.running:
+            return
+        just_done = session.tick(1)
+        self._update_deep_work_banner()
+        if just_done:
+            self.end_deep_work(completed=True)
+            return
+        self._schedule_deep_work_tick()
 
     def show_plan_tomorrow(self) -> None:
         show_plan_window(self)

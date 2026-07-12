@@ -16,6 +16,9 @@ DOC_INSPIRATION = "inspiration"
 DOC_MANUSCRIPT = "manuscript"
 DOC_ROLES = (DOC_INSPIRATION, DOC_MANUSCRIPT)
 
+CREATIVE_CATEGORY = "Creative/Mental Work"
+CREATIVE_PROGRESS_ITEM = "Made progress on a creative project"
+
 _DOC_FILENAMES = {
     DOC_INSPIRATION: "inspiration.txt",
     DOC_MANUSCRIPT: "manuscript.txt",
@@ -200,3 +203,41 @@ def delete_project(store: dict[str, Any], root: str, project_id: str) -> None:
     directory = project_dir(root, project_id)
     if os.path.isdir(directory):
         shutil.rmtree(directory)
+
+
+def mark_writing_session(
+    entries: dict[str, Any],
+    categories: dict[str, Any],
+    day: str,
+    *,
+    category: str = CREATIVE_CATEGORY,
+    checklist_item: str = CREATIVE_PROGRESS_ITEM,
+) -> tuple[bool, str]:
+    """
+    Mark today's Creative/Mental Work checklist item for writing progress.
+
+    Returns (ok, message). Does not invent category names or checklist items.
+    """
+    cat_def = categories.get(category)
+    if not isinstance(cat_def, dict):
+        return False, f"Category “{category}” is not in your profile."
+    checklist_defs = cat_def.get("checklist") or []
+    if checklist_item not in checklist_defs:
+        return (
+            False,
+            f"Checklist item “{checklist_item}” is not in {category}. "
+            "Open Writing Projects anytime; log the day manually if you want credit.",
+        )
+
+    day_entries = entries.setdefault(day, {})
+    entry = day_entries.setdefault(category, {})
+    if "rating" not in entry:
+        entry["rating"] = 5
+    checks = entry.setdefault("checklist", {})
+    if not isinstance(checks, dict):
+        checks = {}
+        entry["checklist"] = checks
+    checks[checklist_item] = True
+    entry.setdefault("metrics", entry.get("metrics") or {})
+    entry.setdefault("notes", entry.get("notes") or "")
+    return True, f"Logged writing progress under {category} for {day}."

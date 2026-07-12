@@ -424,6 +424,12 @@ def open_document_window(
     win.protocol("WM_DELETE_WINDOW", on_close)
 
     ttk.Button(footer, text="Save", command=do_save).pack(side=tk.LEFT)
+    if role == cp.DOC_MANUSCRIPT:
+        ttk.Button(
+            footer,
+            text="Log session for today",
+            command=lambda: tracker.log_writing_session_for_day(parent=win),
+        ).pack(side=tk.LEFT, padx=(10, 0))
     ttk.Button(footer, text="Close", command=on_close).pack(side=tk.RIGHT)
 
     _open_doc_windows[key] = {
