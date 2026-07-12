@@ -105,8 +105,8 @@ Tests: `python -m pytest tests/ -q`
 
 **Writing Projects** keep long-form creative work inside Integral without bloating daily logs:
 
-- Each project has an **inspiration** document (premise, research, vibe) and a **manuscript** (the draft itself)
-- Open one or **Open Both** so the premise stays visible while you write
+- Select a project, then **Continue Writing** to open the manuscript (double-click works too)
+- Open Inspiration for premise/notes, or **Open Both** so the premise stays visible while you write
 - Text autosaves after a short pause; Save and app quit also flush
 - From **Creative/Mental Work** logging, jump to Writing Projects or explicitly **Log writing session** for the day
 
