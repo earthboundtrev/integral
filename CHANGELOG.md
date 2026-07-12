@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.6.1 — 2026-07-12
+
+### Fixed
+
+- **Today's Log default layout** — status text no longer collides with Continue; taller category grid with mousewheel scroll
+- **Duplicate Activity heading** — Overview keeps a single “Activity — click a day to explore” label above the grid
+- **Deep Work dialog** — Start / Cancel buttons fully visible
+- **Writing Projects** — **Continue Writing** (and Open Both) visible on their own row; double-click opens the manuscript
+
+### Build
+
+- Windows app: `dist/Integral/Integral.exe`
+- Release zip: `Integral-v0.3.6.1-windows.zip`
+
 ## 0.3.6 — 2026-07-12
 
 ### Added
