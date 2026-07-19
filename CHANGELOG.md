@@ -4,7 +4,8 @@
 
 ### Added
 
-- **Full CC2 skill-tree seeds** — hangs, calves, fingertip push-ups, clutch/press flags, neck bridges, and Trifecta ladders from official Hub tables (66 steps; 152 total seeded exercises)
+- **Full CC2 skill-tree seeds** — hangs, calves, fingertip push-ups, clutch/press flags, neck bridges, and Trifecta ladders from official Hub tables (66 steps; was 152 total)
+- **Strong Medicine skill-tree seeds** — King Squat→barbell, sumo DL, DB bench/press, statue row, plank core from official Hub tables (25 steps; 177 total seeded exercises)
 
 ## 0.3.7 — 2026-07-12
 

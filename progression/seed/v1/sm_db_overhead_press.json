@@ -1,0 +1,55 @@
+{
+  "source_book": "SM",
+  "family": "db_overhead_press",
+  "step_progression": "sequential",
+  "version": "v1",
+  "source": "programs/strong-medicine.json",
+  "hub_movement_id": "sm-overhead-press",
+  "exercises": [
+    {
+      "key": "sm_db_overhead_press_01",
+      "name": "Seated Dumbbell Press (learn path)",
+      "step": 1,
+      "mastery_criteria": {
+        "sets": 3,
+        "reps": 10
+      }
+    },
+    {
+      "key": "sm_db_overhead_press_02",
+      "name": "Standing Dumbbell Press",
+      "step": 2,
+      "mastery_criteria": {
+        "sets": 3,
+        "reps": 10
+      }
+    },
+    {
+      "key": "sm_db_overhead_press_03",
+      "name": "Standing Double Press (explosive up, slow down)",
+      "step": 3,
+      "mastery_criteria": {
+        "sets": 3,
+        "reps": 10
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "sm_db_overhead_press_01",
+      "to": "sm_db_overhead_press_02",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "sm_db_overhead_press_02",
+      "to": "sm_db_overhead_press_03",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    }
+  ]
+}

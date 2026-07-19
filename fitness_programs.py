@@ -18,6 +18,7 @@ BOOK_LABELS = {
     "SS": "Starting Strength",
     "EC": "Explosive Calisthenics",
     "FTR": "Five Tibetan Rites",
+    "SM": "Strong Medicine",
 }
 
 FAMILY_LABELS = {
@@ -30,6 +31,11 @@ FAMILY_LABELS = {
     "main": "Main Lifts",
     "explosive": "Explosive Push",
     "rites": "Daily Rites",
+    "sumo_deadlift": "Sumo Deadlift",
+    "db_bench": "Dumbbell Bench",
+    "db_overhead_press": "Dumbbell Overhead Press",
+    "statue_row": "Statue Row",
+    "plank_core": "Plank Core",
 }
 
 

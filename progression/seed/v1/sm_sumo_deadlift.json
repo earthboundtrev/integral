@@ -1,0 +1,76 @@
+{
+  "source_book": "SM",
+  "family": "sumo_deadlift",
+  "step_progression": "sequential",
+  "version": "v1",
+  "source": "programs/strong-medicine.json",
+  "hub_movement_id": "sm-deadlift",
+  "exercises": [
+    {
+      "key": "sm_sumo_deadlift_01",
+      "name": "Sumo Deadlift \u2014 technique (empty bar / light)",
+      "step": 1,
+      "mastery_criteria": {
+        "sets": 3,
+        "reps": 10
+      },
+      "hub_progression_note": "silent touch-down"
+    },
+    {
+      "key": "sm_sumo_deadlift_02",
+      "name": "Single Kettlebell Sumo Deadlift",
+      "step": 2,
+      "mastery_criteria": {
+        "sets": 3,
+        "reps": 10
+      },
+      "hub_progression_note": "3x10 grind"
+    },
+    {
+      "key": "sm_sumo_deadlift_03",
+      "name": "Double Kettlebell Sumo Deadlift",
+      "step": 3,
+      "mastery_criteria": {
+        "sets": 3,
+        "reps": 10
+      },
+      "hub_progression_note": "3x10 grind"
+    },
+    {
+      "key": "sm_sumo_deadlift_04",
+      "name": "Barbell Sumo Deadlift",
+      "step": 4,
+      "mastery_criteria": {
+        "sets": 3,
+        "reps": 10
+      },
+      "hub_progression_note": "3x10 grind"
+    }
+  ],
+  "edges": [
+    {
+      "from": "sm_sumo_deadlift_01",
+      "to": "sm_sumo_deadlift_02",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "sm_sumo_deadlift_02",
+      "to": "sm_sumo_deadlift_03",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "sm_sumo_deadlift_03",
+      "to": "sm_sumo_deadlift_04",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    }
+  ]
+}

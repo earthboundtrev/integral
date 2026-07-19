@@ -14,7 +14,7 @@ def test_skill_tree_seeds_empty_db_and_builds_full_model(tmp_path):
     repo = make_repo(tmp_path)
     model = build_skill_tree_model(repo)
 
-    assert len(model["nodes"]) == 152
+    assert len(model["nodes"]) == 177
     assert len(model["edges"]) > 50
     push_nodes = [n for n in model["nodes"] if "Wall Push-ups" in n["label"]]
     assert len(push_nodes) == 1

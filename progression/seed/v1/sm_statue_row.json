@@ -1,0 +1,72 @@
+{
+  "source_book": "SM",
+  "family": "statue_row",
+  "step_progression": "sequential",
+  "version": "v1",
+  "source": "programs/strong-medicine.json",
+  "hub_movement_id": "sm-row",
+  "exercises": [
+    {
+      "key": "sm_statue_row_01",
+      "name": "Single-Arm Supported Row",
+      "step": 1,
+      "mastery_criteria": {
+        "sets": 3,
+        "reps": 12
+      }
+    },
+    {
+      "key": "sm_statue_row_02",
+      "name": "Single-Arm Row (no bench support)",
+      "step": 2,
+      "mastery_criteria": {
+        "sets": 3,
+        "reps": 12
+      }
+    },
+    {
+      "key": "sm_statue_row_03",
+      "name": "Frozen Statue Row (double DB)",
+      "step": 3,
+      "mastery_criteria": {
+        "sets": 3,
+        "reps": 10
+      }
+    },
+    {
+      "key": "sm_statue_row_04",
+      "name": "Plank Row",
+      "step": 4,
+      "mastery_criteria": {
+        "sets": 3,
+        "reps": 10
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "sm_statue_row_01",
+      "to": "sm_statue_row_02",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "sm_statue_row_02",
+      "to": "sm_statue_row_03",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "sm_statue_row_03",
+      "to": "sm_statue_row_04",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    }
+  ]
+}

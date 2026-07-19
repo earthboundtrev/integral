@@ -1,0 +1,56 @@
+{
+  "source_book": "SM",
+  "family": "db_bench",
+  "step_progression": "sequential",
+  "version": "v1",
+  "source": "programs/strong-medicine.json",
+  "hub_movement_id": "sm-bench-press",
+  "exercises": [
+    {
+      "key": "sm_db_bench_01",
+      "name": "Pause-Relax-Grind Dumbbell Bench",
+      "step": 1,
+      "mastery_criteria": {
+        "sets": 3,
+        "reps": 10
+      },
+      "hub_progression_note": "3x10 grind"
+    },
+    {
+      "key": "sm_db_bench_02",
+      "name": "Beyond Pause-Relax-Grind (deeper pause)",
+      "step": 2,
+      "mastery_criteria": {
+        "sets": 3,
+        "reps": 10
+      }
+    },
+    {
+      "key": "sm_db_bench_03",
+      "name": "Explosive Touch-and-Go Dumbbell Bench",
+      "step": 3,
+      "mastery_criteria": {
+        "sets": 3,
+        "reps": 10
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "sm_db_bench_01",
+      "to": "sm_db_bench_02",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "sm_db_bench_02",
+      "to": "sm_db_bench_03",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    }
+  ]
+}

@@ -1,0 +1,72 @@
+{
+  "source_book": "SM",
+  "family": "plank_core",
+  "step_progression": "sequential",
+  "version": "v1",
+  "source": "programs/strong-medicine.json",
+  "hub_movement_id": "sm-ab-training",
+  "exercises": [
+    {
+      "key": "sm_plank_core_01",
+      "name": "Basic Plank (forearms)",
+      "step": 1,
+      "mastery_criteria": {
+        "sets": 1,
+        "hold_seconds": 60
+      }
+    },
+    {
+      "key": "sm_plank_core_02",
+      "name": "High Plank (hands)",
+      "step": 2,
+      "mastery_criteria": {
+        "sets": 1,
+        "hold_seconds": 60
+      }
+    },
+    {
+      "key": "sm_plank_core_03",
+      "name": "One-Hand Plank",
+      "step": 3,
+      "mastery_criteria": {
+        "sets": 1,
+        "hold_seconds": 45
+      }
+    },
+    {
+      "key": "sm_plank_core_04",
+      "name": "Plank Row",
+      "step": 4,
+      "mastery_criteria": {
+        "sets": 3,
+        "reps": 10
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "sm_plank_core_01",
+      "to": "sm_plank_core_02",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "sm_plank_core_02",
+      "to": "sm_plank_core_03",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "sm_plank_core_03",
+      "to": "sm_plank_core_04",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    }
+  ]
+}
