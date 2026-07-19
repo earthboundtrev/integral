@@ -1,11 +1,18 @@
 # Changelog
 
-## Unreleased
+## 0.3.8 — 2026-07-19
 
 ### Added
 
-- **Full CC2 skill-tree seeds** — hangs, calves, fingertip push-ups, clutch/press flags, neck bridges, and Trifecta ladders from official Hub tables (66 steps; was 152 total)
-- **Strong Medicine skill-tree seeds** — King Squat→barbell, sumo DL, DB bench/press, statue row, plank core from official Hub tables (25 steps; 177 total seeded exercises)
+- **Full CC2 skill-tree seeds** — hangs, calves, fingertip push-ups, clutch/press flags, neck bridges, and Trifecta ladders from official Hub tables (66 steps)
+- **Strong Medicine skill-tree seeds** — King Squat→barbell, sumo DL, DB bench/press, statue row, plank core from official Hub tables (25 steps; **177** total seeded exercises)
+- Faster fitness seeding (single-connection batch load)
+
+### Build
+
+- Windows app: `dist/Integral/Integral.exe`
+- Release zip: `Integral-v0.3.8-windows.zip`
+- User data: `%APPDATA%\Integral\data.json`
 
 ## 0.3.7 — 2026-07-12
 

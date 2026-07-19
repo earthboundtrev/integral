@@ -8,7 +8,7 @@ import sys
 
 APP_NAME = "Integral"
 APP_SLUG = "Integral"
-APP_VERSION = "0.3.7"
+APP_VERSION = "0.3.8"
 
 
 def is_frozen() -> bool:
