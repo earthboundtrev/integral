@@ -18,7 +18,7 @@ def make_repo(tmp_path):
 def test_ensure_fitness_seeded_loads_all_books_when_empty(tmp_path):
     repo = make_repo(tmp_path)
     assert ensure_fitness_seeded(repo) is True
-    assert len(repo.list_exercises()) == 91
+    assert len(repo.list_exercises()) == 152
     assert ensure_fitness_seeded(repo) is False
 
 

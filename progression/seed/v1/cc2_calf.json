@@ -1,0 +1,106 @@
+{
+  "source_book": "CC2",
+  "family": "calf",
+  "step_progression": "sequential",
+  "version": "v1",
+  "source": "programs/convict-conditioning-2.json",
+  "hub_movement_id": "cc2-calf-training",
+  "exercises": [
+    {
+      "key": "cc2_calf_01",
+      "name": "Double-Leg Calf Raise",
+      "step": 1,
+      "mastery_criteria": {
+        "sets": 3,
+        "reps": 50
+      }
+    },
+    {
+      "key": "cc2_calf_02",
+      "name": "Single-Leg Calf Raise",
+      "step": 2,
+      "mastery_criteria": {
+        "sets": 3,
+        "reps": 30
+      }
+    },
+    {
+      "key": "cc2_calf_03",
+      "name": "Stair Calf Raise",
+      "step": 3,
+      "mastery_criteria": {
+        "sets": 3,
+        "reps": 30
+      }
+    },
+    {
+      "key": "cc2_calf_04",
+      "name": "Single-Leg Stair Calf Raise",
+      "step": 4,
+      "mastery_criteria": {
+        "sets": 2,
+        "reps": 25
+      }
+    },
+    {
+      "key": "cc2_calf_05",
+      "name": "Bent-Knee Calf Raise",
+      "step": 5,
+      "mastery_criteria": {
+        "sets": 3,
+        "reps": 30
+      }
+    },
+    {
+      "key": "cc2_calf_06",
+      "name": "Single-Leg Donkey Calf Raise",
+      "step": 6,
+      "mastery_criteria": {
+        "sets": 2,
+        "reps": 25
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "cc2_calf_01",
+      "to": "cc2_calf_02",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_calf_02",
+      "to": "cc2_calf_03",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_calf_03",
+      "to": "cc2_calf_04",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_calf_04",
+      "to": "cc2_calf_05",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_calf_05",
+      "to": "cc2_calf_06",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    }
+  ]
+}

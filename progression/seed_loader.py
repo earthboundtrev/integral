@@ -1,9 +1,9 @@
 import json
-from pathlib import Path
 
 import paths
 from progression.db import FitnessRepository
-from progression.models import Exercise, ProgressionEdge
+from progression.models import ProgressionEdge
+from progression.validate import ProgressionCycleError, would_create_cycle
 
 SEED_DIR = paths.app_resource("progression", "seed", "v1")
 STEP_PROGRESSION_SEQUENTIAL = "sequential"
@@ -66,49 +66,111 @@ def seed_from_file(
     filename: str,
     force: bool = False,
 ) -> dict[str, str]:
-    """Load one seed file. Returns map of seed key -> exercise id."""
+    """Load one seed file. Returns map of seed key -> exercise id.
+
+    Uses one SQLite connection/transaction so seeding many ladders stays fast.
+    """
     payload = load_seed_file(filename)
     key_to_id: dict[str, str] = {}
     step_progression = seed_step_progression(payload)
+    repo.initialize()
 
-    for item in payload.get("exercises", []):
-        key = item["key"]
-        metadata = _exercise_metadata(payload, item, filename)
-        existing = repo.get_exercise(key)
-        if existing and not force:
-            repo.update_exercise_metadata(key, metadata)
-            key_to_id[key] = existing.id
-            continue
+    with repo.connect() as conn:
+        for item in payload.get("exercises", []):
+            key = item["key"]
+            metadata = _exercise_metadata(payload, item, filename)
+            row = conn.execute(
+                """
+                SELECT id FROM exercises
+                WHERE id = ? AND deleted_at IS NULL
+                """,
+                (key,),
+            ).fetchone()
+            if row and not force:
+                conn.execute(
+                    """
+                    UPDATE exercises
+                    SET metadata = ?
+                    WHERE id = ? AND deleted_at IS NULL
+                    """,
+                    (json.dumps(metadata), key),
+                )
+                key_to_id[key] = row["id"]
+                continue
 
-        exercise = repo.add_exercise(
-            Exercise(
-                id=key,
-                name=item["name"],
-                source_book=payload["source_book"],
-                family=payload["family"],
-                mastery_criteria=item["mastery_criteria"],
-                metadata=metadata,
+            conn.execute(
+                """
+                INSERT INTO exercises (
+                    id, name, source_book, family, mastery_criteria, metadata
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    key,
+                    item["name"],
+                    payload["source_book"],
+                    payload["family"],
+                    json.dumps(item["mastery_criteria"]),
+                    json.dumps(metadata),
+                ),
             )
-        )
-        key_to_id[key] = exercise.id
+            key_to_id[key] = key
 
-    if step_progression == STEP_PROGRESSION_SEQUENTIAL:
-        for edge in payload.get("edges", []):
-            from_id = _resolve_exercise_id(repo, edge["from"], key_to_id)
-            to_id = _resolve_exercise_id(repo, edge["to"], key_to_id)
-            if from_id is None or to_id is None:
-                continue
-            edge_type = edge.get("edge_type", "prerequisite")
-            if repo.edge_exists(from_id, to_id, edge_type):
-                continue
-            repo.add_edge(
-                ProgressionEdge(
+        if step_progression == STEP_PROGRESSION_SEQUENTIAL:
+            for edge in payload.get("edges", []):
+                from_key = edge["from"]
+                to_key = edge["to"]
+                from_id = key_to_id.get(from_key)
+                to_id = key_to_id.get(to_key)
+                if from_id is None or to_id is None:
+                    # Cross-file keys (e.g. recommended edges): resolve from DB
+                    if from_id is None:
+                        row = conn.execute(
+                            "SELECT id FROM exercises WHERE id = ? AND deleted_at IS NULL",
+                            (from_key,),
+                        ).fetchone()
+                        from_id = row["id"] if row else None
+                    if to_id is None:
+                        row = conn.execute(
+                            "SELECT id FROM exercises WHERE id = ? AND deleted_at IS NULL",
+                            (to_key,),
+                        ).fetchone()
+                        to_id = row["id"] if row else None
+                if from_id is None or to_id is None:
+                    continue
+                edge_type = edge.get("edge_type", "prerequisite")
+                exists = conn.execute(
+                    """
+                    SELECT 1 FROM progression_edges
+                    WHERE from_exercise_id = ? AND to_exercise_id = ? AND edge_type = ?
+                    """,
+                    (from_id, to_id, edge_type),
+                ).fetchone()
+                if exists:
+                    continue
+                if edge_type == "prerequisite" and would_create_cycle(conn, from_id, to_id):
+                    raise ProgressionCycleError(
+                        f"Adding {from_id} -> {to_id} would create a cycle"
+                    )
+                edge_model = ProgressionEdge(
                     from_exercise_id=from_id,
                     to_exercise_id=to_id,
                     edge_type=edge_type,
                     unlock_condition=edge["unlock_condition"],
                 )
-            )
+                conn.execute(
+                    """
+                    INSERT INTO progression_edges (
+                        id, from_exercise_id, to_exercise_id, edge_type, unlock_condition
+                    ) VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        edge_model.id,
+                        edge_model.from_exercise_id,
+                        edge_model.to_exercise_id,
+                        edge_model.edge_type,
+                        json.dumps(edge_model.unlock_condition),
+                    ),
+                )
 
     apply_step_progression_policy(repo, payload, key_to_id)
     return key_to_id

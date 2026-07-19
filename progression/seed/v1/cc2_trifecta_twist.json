@@ -1,0 +1,106 @@
+{
+  "source_book": "CC2",
+  "family": "trifecta_twist",
+  "step_progression": "sequential",
+  "version": "v1",
+  "source": "programs/convict-conditioning-2.json",
+  "hub_movement_id": "cc2-twist",
+  "exercises": [
+    {
+      "key": "cc2_trifecta_twist_01",
+      "name": "Seated Torso Turn",
+      "step": 1,
+      "mastery_criteria": {
+        "sets": 1,
+        "reps": 30
+      }
+    },
+    {
+      "key": "cc2_trifecta_twist_02",
+      "name": "Kneeling Twist",
+      "step": 2,
+      "mastery_criteria": {
+        "sets": 1,
+        "reps": 30
+      }
+    },
+    {
+      "key": "cc2_trifecta_twist_03",
+      "name": "Lunge Twist",
+      "step": 3,
+      "mastery_criteria": {
+        "sets": 1,
+        "reps": 30
+      }
+    },
+    {
+      "key": "cc2_trifecta_twist_04",
+      "name": "Standing Twist Hold",
+      "step": 4,
+      "mastery_criteria": {
+        "sets": 1,
+        "hold_seconds": 60
+      }
+    },
+    {
+      "key": "cc2_trifecta_twist_05",
+      "name": "Seated Spinal Rotation",
+      "step": 5,
+      "mastery_criteria": {
+        "sets": 1,
+        "hold_seconds": 60
+      }
+    },
+    {
+      "key": "cc2_trifecta_twist_06",
+      "name": "Full Spinal Twist Hold",
+      "step": 6,
+      "mastery_criteria": {
+        "sets": 1,
+        "hold_seconds": 90
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "cc2_trifecta_twist_01",
+      "to": "cc2_trifecta_twist_02",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_trifecta_twist_02",
+      "to": "cc2_trifecta_twist_03",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_trifecta_twist_03",
+      "to": "cc2_trifecta_twist_04",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_trifecta_twist_04",
+      "to": "cc2_trifecta_twist_05",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_trifecta_twist_05",
+      "to": "cc2_trifecta_twist_06",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    }
+  ]
+}

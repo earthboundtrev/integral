@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Full CC2 skill-tree seeds** — hangs, calves, fingertip push-ups, clutch/press flags, neck bridges, and Trifecta ladders from official Hub tables (66 steps; 152 total seeded exercises)
+
 ## 0.3.7 — 2026-07-12
 
 ### Added

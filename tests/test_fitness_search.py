@@ -65,7 +65,7 @@ def test_search_fitness_rows_integration(tmp_path):
     seed_all_fitness(repo)
     rows = list_exercise_rows(repo, source_book="CC2")
     hierarchy = build_program_hierarchy(rows)
-    filtered = filter_program_hierarchy(hierarchy, "human flag")
+    filtered = filter_program_hierarchy(hierarchy, "towel hang")
     assert len(filtered) == 1
     steps = filtered[0]["programs"][0]["steps"]
-    assert any("Human Flag" in step["name"] for step in steps)
+    assert any("Towel Hang" in step["name"] for step in steps)

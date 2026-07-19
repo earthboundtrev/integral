@@ -363,31 +363,6 @@
       "source": "Official \u2014 Paul Wade / Dragon Door (CC Vol 2: Squat)",
       "title": "Step 10: One-Leg Squats (Pistol Squats)"
     },
-    "cc2_hspu_wall": {
-      "url": "https://direct.dragondoor.com/collections/convict-conditioning",
-      "source": "Official \u2014 Paul Wade / Dragon Door (CC2)",
-      "title": "Step 1: Handstand Push-up (Wall)"
-    },
-    "cc2_stand_to_stand_bridge": {
-      "url": "https://direct.dragondoor.com/collections/convict-conditioning",
-      "source": "Official \u2014 Paul Wade / Dragon Door (CC2)",
-      "title": "Step 2: Stand-to-Stand Bridge"
-    },
-    "cc2_l_sit": {
-      "url": "https://direct.dragondoor.com/collections/convict-conditioning",
-      "source": "Official \u2014 Paul Wade / Dragon Door (CC2)",
-      "title": "Step 3: L-Sit"
-    },
-    "cc2_v_sit": {
-      "url": "https://direct.dragondoor.com/collections/convict-conditioning",
-      "source": "Official \u2014 Paul Wade / Dragon Door (CC2)",
-      "title": "Step 4: V-Sit"
-    },
-    "cc2_human_flag_tuck": {
-      "url": "https://direct.dragondoor.com/collections/convict-conditioning",
-      "source": "Official \u2014 Paul Wade / Dragon Door (CC2)",
-      "title": "Step 5: Human Flag (Tuck)"
-    },
     "ec_knee_pushup": {
       "url": "https://www.youtube.com/watch?v=2n4UqRIJyk4",
       "source": "Al Kavadlo",
@@ -517,6 +492,31 @@
       "url": "https://www.youtube.com/@startingstrength",
       "source": "Official \u2014 Starting Strength",
       "title": "Step 5: Power Clean"
+    },
+    "cc2_hang_01": {
+      "url": "https://direct.dragondoor.com/collections/convict-conditioning",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC2)",
+      "title": "Horizontal Hang"
+    },
+    "cc2_calf_01": {
+      "url": "https://direct.dragondoor.com/collections/convict-conditioning",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC2)",
+      "title": "Double-Leg Calf Raise"
+    },
+    "cc2_trifecta_bridge_08": {
+      "url": "https://direct.dragondoor.com/collections/convict-conditioning",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC2)",
+      "title": "Stand-to-Stand Bridge Hold"
+    },
+    "cc2_trifecta_l_hold_06": {
+      "url": "https://direct.dragondoor.com/collections/convict-conditioning",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC2)",
+      "title": "Full L-Hold"
+    },
+    "cc2_clutch_flag_08": {
+      "url": "https://direct.dragondoor.com/collections/convict-conditioning",
+      "source": "Official \u2014 Paul Wade / Dragon Door (CC2)",
+      "title": "Clutch Flag"
     }
   }
 }

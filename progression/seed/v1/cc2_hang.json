@@ -1,0 +1,140 @@
+{
+  "source_book": "CC2",
+  "family": "hang",
+  "step_progression": "sequential",
+  "version": "v1",
+  "source": "programs/convict-conditioning-2.json",
+  "hub_movement_id": "cc2-hang-progressions",
+  "exercises": [
+    {
+      "key": "cc2_hang_01",
+      "name": "Horizontal Hang",
+      "step": 1,
+      "mastery_criteria": {
+        "sets": 3,
+        "hold_seconds": 30
+      }
+    },
+    {
+      "key": "cc2_hang_02",
+      "name": "Bar Hang",
+      "step": 2,
+      "mastery_criteria": {
+        "sets": 3,
+        "hold_seconds": 30
+      }
+    },
+    {
+      "key": "cc2_hang_03",
+      "name": "Uneven Hang",
+      "step": 3,
+      "mastery_criteria": {
+        "sets": 3,
+        "hold_seconds": 30
+      }
+    },
+    {
+      "key": "cc2_hang_04",
+      "name": "One-Arm Bar Hang",
+      "step": 4,
+      "mastery_criteria": {
+        "sets": 3,
+        "hold_seconds": 60
+      }
+    },
+    {
+      "key": "cc2_hang_05",
+      "name": "Towel Hang",
+      "step": 5,
+      "mastery_criteria": {
+        "sets": 3,
+        "hold_seconds": 30
+      }
+    },
+    {
+      "key": "cc2_hang_06",
+      "name": "Twin Towel Hang",
+      "step": 6,
+      "mastery_criteria": {
+        "sets": 3,
+        "hold_seconds": 30
+      }
+    },
+    {
+      "key": "cc2_hang_07",
+      "name": "Uneven Towel Hang",
+      "step": 7,
+      "mastery_criteria": {
+        "sets": 3,
+        "hold_seconds": 60
+      }
+    },
+    {
+      "key": "cc2_hang_08",
+      "name": "One-Arm Towel Hang",
+      "step": 8,
+      "mastery_criteria": {
+        "sets": 1,
+        "hold_seconds": 300
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "cc2_hang_01",
+      "to": "cc2_hang_02",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_hang_02",
+      "to": "cc2_hang_03",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_hang_03",
+      "to": "cc2_hang_04",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_hang_04",
+      "to": "cc2_hang_05",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_hang_05",
+      "to": "cc2_hang_06",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_hang_06",
+      "to": "cc2_hang_07",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_hang_07",
+      "to": "cc2_hang_08",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    }
+  ]
+}

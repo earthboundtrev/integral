@@ -39,10 +39,50 @@ SERIES_VIDEOS: dict[str, dict[str, str]] = {
         "source": "Official — Paul Wade / Dragon Door (CC push/HSPU progressions)",
         "title": "Convict Conditioning Handstand Push-up progressions",
     },
-    "CC2:sample": {
+    "CC2:hang": {
         "url": "https://direct.dragondoor.com/collections/convict-conditioning",
         "source": "Official — Paul Wade / Dragon Door (CC2)",
-        "title": "Convict Conditioning 2",
+        "title": "Convict Conditioning 2 — Hang progressions",
+    },
+    "CC2:fingertip_pushup": {
+        "url": "https://direct.dragondoor.com/collections/convict-conditioning",
+        "source": "Official — Paul Wade / Dragon Door (CC2)",
+        "title": "Convict Conditioning 2 — Fingertip push-ups",
+    },
+    "CC2:clutch_flag": {
+        "url": "https://direct.dragondoor.com/collections/convict-conditioning",
+        "source": "Official — Paul Wade / Dragon Door (CC2)",
+        "title": "Convict Conditioning 2 — Clutch flag",
+    },
+    "CC2:press_flag": {
+        "url": "https://direct.dragondoor.com/collections/convict-conditioning",
+        "source": "Official — Paul Wade / Dragon Door (CC2)",
+        "title": "Convict Conditioning 2 — Press flag",
+    },
+    "CC2:neck_bridge": {
+        "url": "https://direct.dragondoor.com/collections/convict-conditioning",
+        "source": "Official — Paul Wade / Dragon Door (CC2)",
+        "title": "Convict Conditioning 2 — Neck bridges",
+    },
+    "CC2:calf": {
+        "url": "https://direct.dragondoor.com/collections/convict-conditioning",
+        "source": "Official — Paul Wade / Dragon Door (CC2)",
+        "title": "Convict Conditioning 2 — Calf training",
+    },
+    "CC2:trifecta_bridge": {
+        "url": "https://direct.dragondoor.com/collections/convict-conditioning",
+        "source": "Official — Paul Wade / Dragon Door (CC2)",
+        "title": "Convict Conditioning 2 — Trifecta bridge hold",
+    },
+    "CC2:trifecta_l_hold": {
+        "url": "https://direct.dragondoor.com/collections/convict-conditioning",
+        "source": "Official — Paul Wade / Dragon Door (CC2)",
+        "title": "Convict Conditioning 2 — Trifecta L-hold",
+    },
+    "CC2:trifecta_twist": {
+        "url": "https://direct.dragondoor.com/collections/convict-conditioning",
+        "source": "Official — Paul Wade / Dragon Door (CC2)",
+        "title": "Convict Conditioning 2 — Trifecta twist",
     },
     "OG:push": {
         "url": "https://www.youtube.com/watch?v=UoPRqPvF4AQ",
@@ -172,28 +212,23 @@ EXERCISE_VIDEOS: dict[str, dict[str, str]] = {
         "source": "Chris Kilham",
         "title": "Rite 5 — Pendulum",
     },
-    # Convict Conditioning 2 — advanced skills (book + respected calisthenics coaches)
-    "cc2_hspu_wall": {
-        "url": "https://www.youtube.com/watch?v=FaRge9WFzWg",
-        "source": "Chris Heria / THENX (wall handstand push-up progressions)",
-        "title": "Handstand Push-up (Wall)",
-    },
-    "cc2_stand_to_stand_bridge": {
-        "url": "https://direct.dragondoor.com/products/ddv087",
-        "source": "Official — Paul Wade / Dragon Door (CC bridge series, incl. stand-to-stand)",
-        "title": "Stand-to-Stand Bridge",
-    },
-    "cc2_l_sit": {
+    # Convict Conditioning 2 — book ladders + respected calisthenics coaches
+    "cc2_trifecta_l_hold_04": {
         "url": "https://www.youtube.com/watch?v=cu0fHp8HCDo",
         "source": "FitnessFAQs (Daniel Vadnal)",
         "title": "L-Sit — progressions & hip flexor strength",
     },
-    "cc2_v_sit": {
+    "cc2_trifecta_l_hold_06": {
         "url": "https://www.youtube.com/watch?v=wzaJ9lhetmk",
         "source": "Calisthenics progression (L-sit → V-sit path)",
         "title": "V-Sit — compression progressions",
     },
-    "cc2_human_flag_tuck": {
+    "cc2_clutch_flag_03": {
+        "url": "https://www.youtube.com/watch?v=bG0h7bSfxQI",
+        "source": "Chris Heria / THENX (human flag progressions)",
+        "title": "Human Flag — tuck to full",
+    },
+    "cc2_press_flag_03": {
         "url": "https://www.youtube.com/watch?v=bG0h7bSfxQI",
         "source": "Chris Heria / THENX (human flag progressions)",
         "title": "Human Flag — tuck to full",
