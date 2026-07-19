@@ -33,6 +33,7 @@ Implement **in order** unless a spec declares otherwise. Human sets `approved` â
 | [008-workout-sessions](phase-2/008-workout-sessions.md) | done | Workout session history |
 | [009-skill-tree-v2](phase-2/009-skill-tree-v2.md) | done | Skill tree filters + click-to-log |
 | [010-expand-cc2-seeds](phase-2/010-expand-cc2-seeds.md) | done | Full CC2 progression seeds ([#28](https://github.com/earthboundtrev/integral/issues/28)) |
+| [011-strong-medicine-seeds](phase-2/011-strong-medicine-seeds.md) | done | Strong Medicine progression seeds ([#30](https://github.com/earthboundtrev/integral/issues/30)) |
 
 ## Phase 3 (Cross-domain)
 

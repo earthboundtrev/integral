@@ -73,8 +73,9 @@ Output: `dist/PersonalDevelopmentTracker.exe`
 | 008 | Workout sessions | `progression/sessions.py`, `fitness_ui.py` |
 | 009 | Skill tree v2 (filters, click-to-log) | `skill_tree.py` |
 | 210 | Full CC2 Hub ladders (66 steps) | `progression/seed/v1/cc2_*.json` ([#28](https://github.com/earthboundtrev/integral/issues/28)) |
+| 211 | Strong Medicine Hub ladders (25 steps) | `progression/seed/v1/sm_*.json` ([#30](https://github.com/earthboundtrev/integral/issues/30)) |
 
-### Seed data (152 exercises)
+### Seed data (177 exercises)
 
 | Book | Content |
 |------|---------|
@@ -84,6 +85,7 @@ Output: `dist/PersonalDevelopmentTracker.exe`
 | EC | Knee push-up → explosive one-arm push-up |
 | FTR | Five Tibetan Rites |
 | CC2 | Hang (8), fingertip push-up (10), clutch/press flag (8 each), neck bridge (6), calf (6), Trifecta bridge/L-hold/twist |
+| SM | King Squat (7), sumo DL (4), DB bench (3), DB OHP (3), statue row (4), plank core (4) |
 | Cross-links | 4 recommended edges between books |
 
 **Fitness UI entry points** (dashboard → Fitness Progress):
@@ -119,7 +121,7 @@ Opening Fitness Progress auto-seeds missing exercises for existing profiles (inc
 4. **Doc cleanup** — `docs/ARCHITECTURE.md`, `docs/DATA_MODEL.md`, `docs/PROGRESSION_MODEL.md` are stale (missing profiles, fitness tables, current modules)
 5. **PRD sync** — `docs/PRD.md` §5 still lists old B6/B7 spec names; actual work lives in specs 006–010
 6. **EXE rebuild** — last build may predate Phase 2 expansion; rebuild if distributing
-7. **Strong Medicine DAG** — Hub tables exist; skill-tree logging still TBD (follow-up after SPEC-210)
+7. **Strong Medicine DAG** — **Done** (SPEC-211 / #30); Burst Cardio session tooling still TBD
 
 ---
 
@@ -167,7 +169,7 @@ progression/
   engine.py / mastery.py
   seed_loader.py        seed_all_fitness()
   sessions.py           Workout session helpers
-  seed/v1/*.json        CC1–CC2/SS/OG/EC/FTR seeds (152 exercises) + cross_links
+  seed/v1/*.json        CC1–CC2/SM/SS/OG/EC/FTR seeds (177 exercises) + cross_links
 ```
 
 ---

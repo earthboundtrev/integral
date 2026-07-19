@@ -84,6 +84,36 @@ SERIES_VIDEOS: dict[str, dict[str, str]] = {
         "source": "Official — Paul Wade / Dragon Door (CC2)",
         "title": "Convict Conditioning 2 — Trifecta twist",
     },
+    "SM:squat": {
+        "url": "https://www.dragondoor.com/b81/",
+        "source": "Official — Chris Hardy & Marty Gallagher / Dragon Door (Strong Medicine)",
+        "title": "Strong Medicine — King Squat progressions",
+    },
+    "SM:sumo_deadlift": {
+        "url": "https://www.dragondoor.com/b81/",
+        "source": "Official — Chris Hardy & Marty Gallagher / Dragon Door (Strong Medicine)",
+        "title": "Strong Medicine — Sumo deadlift",
+    },
+    "SM:db_bench": {
+        "url": "https://www.dragondoor.com/b81/",
+        "source": "Official — Chris Hardy & Marty Gallagher / Dragon Door (Strong Medicine)",
+        "title": "Strong Medicine — Dumbbell bench",
+    },
+    "SM:db_overhead_press": {
+        "url": "https://www.dragondoor.com/b81/",
+        "source": "Official — Chris Hardy & Marty Gallagher / Dragon Door (Strong Medicine)",
+        "title": "Strong Medicine — Overhead press",
+    },
+    "SM:statue_row": {
+        "url": "https://www.dragondoor.com/b81/",
+        "source": "Official — Chris Hardy & Marty Gallagher / Dragon Door (Strong Medicine)",
+        "title": "Strong Medicine — Statue row",
+    },
+    "SM:plank_core": {
+        "url": "https://www.dragondoor.com/b81/",
+        "source": "Official — Chris Hardy & Marty Gallagher / Dragon Door (Strong Medicine)",
+        "title": "Strong Medicine — Plank core",
+    },
     "OG:push": {
         "url": "https://www.youtube.com/watch?v=UoPRqPvF4AQ",
         "source": "Tom Merrick (Bodyweight Warrior) — planche progression",

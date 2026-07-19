@@ -41,13 +41,18 @@ def _resolve_exercise_id(repo: FitnessRepository, key: str, key_to_id: dict[str,
 
 
 def _exercise_metadata(payload: dict, item: dict, filename: str) -> dict:
-    return {
+    metadata = {
         "seed_key": item["key"],
         "step": item.get("step"),
         "seed_version": payload["version"],
         "seed_file": filename,
         "step_progression": seed_step_progression(payload),
     }
+    if item.get("hub_progression_note"):
+        metadata["hub_progression_note"] = item["hub_progression_note"]
+    if payload.get("hub_movement_id"):
+        metadata["hub_movement_id"] = payload["hub_movement_id"]
+    return metadata
 
 
 def apply_step_progression_policy(

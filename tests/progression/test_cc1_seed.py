@@ -29,10 +29,10 @@ def test_seed_cc1_push_loads_exercises_and_edges(tmp_path):
     assert "cc1_push_01" in key_map
 
 
-def test_seed_all_fitness_loads_152_exercises(tmp_path):
+def test_seed_all_fitness_loads_177_exercises(tmp_path):
     repo = make_repo(tmp_path)
     seed_all_fitness(repo)
-    assert len(repo.list_exercises()) == 152
+    assert len(repo.list_exercises()) == 177
     assert len(repo.list_edges("recommended")) == 4
 
 
@@ -48,7 +48,7 @@ def test_seed_all_is_idempotent(tmp_path):
     repo = make_repo(tmp_path)
     seed_all_fitness(repo)
     seed_all_fitness(repo)
-    assert len(repo.list_exercises()) == 152
+    assert len(repo.list_exercises()) == 177
 
 
 def test_mastering_wall_pushup_unlocks_incline(tmp_path):

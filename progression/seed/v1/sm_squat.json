@@ -1,0 +1,130 @@
+{
+  "source_book": "SM",
+  "family": "squat",
+  "step_progression": "sequential",
+  "version": "v1",
+  "source": "programs/strong-medicine.json",
+  "hub_movement_id": "sm-squat",
+  "exercises": [
+    {
+      "key": "sm_squat_01",
+      "name": "Assisted Squat \u2014 Shortened Rep Stroke",
+      "step": 1,
+      "mastery_criteria": {
+        "sets": 3,
+        "reps": 10
+      },
+      "hub_progression_note": "parallel depth"
+    },
+    {
+      "key": "sm_squat_02",
+      "name": "Assisted Squat \u2014 Doorway/Pole",
+      "step": 2,
+      "mastery_criteria": {
+        "sets": 3,
+        "reps": 10
+      },
+      "hub_progression_note": "ultra-deep"
+    },
+    {
+      "key": "sm_squat_03",
+      "name": "Assisted Squat \u2014 Towel/Rope",
+      "step": 3,
+      "mastery_criteria": {
+        "sets": 3,
+        "reps": 10
+      },
+      "hub_progression_note": "minimal assist"
+    },
+    {
+      "key": "sm_squat_04",
+      "name": "Bodyweight Squat (pause at bottom)",
+      "step": 4,
+      "mastery_criteria": {
+        "sets": 3,
+        "reps": 10
+      },
+      "hub_progression_note": "3x10 perfect"
+    },
+    {
+      "key": "sm_squat_05",
+      "name": "Goblet Squat",
+      "step": 5,
+      "mastery_criteria": {
+        "sets": 3,
+        "reps": 10
+      },
+      "hub_progression_note": "3x10 grind"
+    },
+    {
+      "key": "sm_squat_06",
+      "name": "Front Squat (dual KB/DB at shoulders)",
+      "step": 6,
+      "mastery_criteria": {
+        "sets": 3,
+        "reps": 10
+      },
+      "hub_progression_note": "3x10 grind"
+    },
+    {
+      "key": "sm_squat_07",
+      "name": "Barbell Back Squat",
+      "step": 7,
+      "mastery_criteria": {
+        "sets": 3,
+        "reps": 10
+      },
+      "hub_progression_note": "3x10 grind"
+    }
+  ],
+  "edges": [
+    {
+      "from": "sm_squat_01",
+      "to": "sm_squat_02",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "sm_squat_02",
+      "to": "sm_squat_03",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "sm_squat_03",
+      "to": "sm_squat_04",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "sm_squat_04",
+      "to": "sm_squat_05",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "sm_squat_05",
+      "to": "sm_squat_06",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "sm_squat_06",
+      "to": "sm_squat_07",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    }
+  ]
+}

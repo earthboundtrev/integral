@@ -63,7 +63,7 @@ def test_seed_all_fitness_includes_full_cc2(tmp_path):
     repo = make_repo(tmp_path)
     seed_all_fitness(repo)
     exercises = repo.list_exercises()
-    assert len(exercises) == 152
+    assert len(exercises) == 177
     by_family = {}
     for ex in exercises:
         if ex.source_book == "CC2":
