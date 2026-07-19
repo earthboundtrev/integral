@@ -1,0 +1,140 @@
+{
+  "source_book": "CC2",
+  "family": "clutch_flag",
+  "step_progression": "sequential",
+  "version": "v1",
+  "source": "programs/convict-conditioning-2.json",
+  "hub_movement_id": "cc2-clutch-flag",
+  "exercises": [
+    {
+      "key": "cc2_clutch_flag_01",
+      "name": "Clutch Hang",
+      "step": 1,
+      "mastery_criteria": {
+        "sets": 1,
+        "hold_seconds": 30
+      }
+    },
+    {
+      "key": "cc2_clutch_flag_02",
+      "name": "Diagonal Split Clutch",
+      "step": 2,
+      "mastery_criteria": {
+        "sets": 1,
+        "hold_seconds": 30
+      }
+    },
+    {
+      "key": "cc2_clutch_flag_03",
+      "name": "Diagonal Tuck Clutch",
+      "step": 3,
+      "mastery_criteria": {
+        "sets": 1,
+        "hold_seconds": 30
+      }
+    },
+    {
+      "key": "cc2_clutch_flag_04",
+      "name": "Diagonal Clutch",
+      "step": 4,
+      "mastery_criteria": {
+        "sets": 1,
+        "hold_seconds": 30
+      }
+    },
+    {
+      "key": "cc2_clutch_flag_05",
+      "name": "Horizontal Tuck Clutch",
+      "step": 5,
+      "mastery_criteria": {
+        "sets": 1,
+        "hold_seconds": 30
+      }
+    },
+    {
+      "key": "cc2_clutch_flag_06",
+      "name": "Horizontal Split Clutch",
+      "step": 6,
+      "mastery_criteria": {
+        "sets": 1,
+        "hold_seconds": 30
+      }
+    },
+    {
+      "key": "cc2_clutch_flag_07",
+      "name": "Bent Leg Clutch Flag",
+      "step": 7,
+      "mastery_criteria": {
+        "sets": 1,
+        "hold_seconds": 30
+      }
+    },
+    {
+      "key": "cc2_clutch_flag_08",
+      "name": "Clutch Flag",
+      "step": 8,
+      "mastery_criteria": {
+        "sets": 1,
+        "hold_seconds": 60
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "cc2_clutch_flag_01",
+      "to": "cc2_clutch_flag_02",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_clutch_flag_02",
+      "to": "cc2_clutch_flag_03",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_clutch_flag_03",
+      "to": "cc2_clutch_flag_04",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_clutch_flag_04",
+      "to": "cc2_clutch_flag_05",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_clutch_flag_05",
+      "to": "cc2_clutch_flag_06",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_clutch_flag_06",
+      "to": "cc2_clutch_flag_07",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_clutch_flag_07",
+      "to": "cc2_clutch_flag_08",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    }
+  ]
+}

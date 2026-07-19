@@ -1,0 +1,174 @@
+{
+  "source_book": "CC2",
+  "family": "fingertip_pushup",
+  "step_progression": "sequential",
+  "version": "v1",
+  "source": "programs/convict-conditioning-2.json",
+  "hub_movement_id": "cc2-fingertip-pushups",
+  "exercises": [
+    {
+      "key": "cc2_fingertip_pushup_01",
+      "name": "Wall Fingertip Pushups",
+      "step": 1,
+      "mastery_criteria": {
+        "sets": 3,
+        "reps": 50
+      }
+    },
+    {
+      "key": "cc2_fingertip_pushup_02",
+      "name": "Incline Fingertip Pushups",
+      "step": 2,
+      "mastery_criteria": {
+        "sets": 3,
+        "reps": 40
+      }
+    },
+    {
+      "key": "cc2_fingertip_pushup_03",
+      "name": "Kneeling Fingertip Pushups",
+      "step": 3,
+      "mastery_criteria": {
+        "sets": 3,
+        "reps": 30
+      }
+    },
+    {
+      "key": "cc2_fingertip_pushup_04",
+      "name": "Half Fingertip Pushups",
+      "step": 4,
+      "mastery_criteria": {
+        "sets": 2,
+        "reps": 25
+      }
+    },
+    {
+      "key": "cc2_fingertip_pushup_05",
+      "name": "Full Fingertip Pushups",
+      "step": 5,
+      "mastery_criteria": {
+        "sets": 2,
+        "reps": 20
+      }
+    },
+    {
+      "key": "cc2_fingertip_pushup_06",
+      "name": "Close Fingertip Pushups",
+      "step": 6,
+      "mastery_criteria": {
+        "sets": 2,
+        "reps": 20
+      }
+    },
+    {
+      "key": "cc2_fingertip_pushup_07",
+      "name": "Uneven Fingertip Pushups",
+      "step": 7,
+      "mastery_criteria": {
+        "sets": 2,
+        "reps": 20
+      }
+    },
+    {
+      "key": "cc2_fingertip_pushup_08",
+      "name": "Half One-Arm Fingertip Pushups",
+      "step": 8,
+      "mastery_criteria": {
+        "sets": 2,
+        "reps": 20
+      }
+    },
+    {
+      "key": "cc2_fingertip_pushup_09",
+      "name": "Lever Fingertip Pushups",
+      "step": 9,
+      "mastery_criteria": {
+        "sets": 2,
+        "reps": 20
+      }
+    },
+    {
+      "key": "cc2_fingertip_pushup_10",
+      "name": "One-Arm Fingertip Pushups",
+      "step": 10,
+      "mastery_criteria": {
+        "sets": 1,
+        "reps": 50
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "cc2_fingertip_pushup_01",
+      "to": "cc2_fingertip_pushup_02",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_fingertip_pushup_02",
+      "to": "cc2_fingertip_pushup_03",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_fingertip_pushup_03",
+      "to": "cc2_fingertip_pushup_04",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_fingertip_pushup_04",
+      "to": "cc2_fingertip_pushup_05",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_fingertip_pushup_05",
+      "to": "cc2_fingertip_pushup_06",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_fingertip_pushup_06",
+      "to": "cc2_fingertip_pushup_07",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_fingertip_pushup_07",
+      "to": "cc2_fingertip_pushup_08",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_fingertip_pushup_08",
+      "to": "cc2_fingertip_pushup_09",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_fingertip_pushup_09",
+      "to": "cc2_fingertip_pushup_10",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    }
+  ]
+}

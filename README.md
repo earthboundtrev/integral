@@ -98,6 +98,7 @@ User data: `%APPDATA%\Integral\data.json` (encrypted optional via Data & Securit
 | **Streak** | Overall streak counts life log, journal, or fitness for the day; updates as soon as you save; mid-day grace if today is still empty |
 | **OS deep links** | Optional Windows `integral://` protocol — paste a journal link outside Integral and open straight to that entry (Data & Security) |
 | **Fitness Hub** | CC1/CC2/SS/OG/EC/FTR — nested book → program → steps |
+| **Fitness skill tree** | Progressive logging DAG for full CC1 Big Six plus full CC2 ladders (hangs, calves, fingertip push-ups, flags, neck bridges, Trifecta) from official Hub tables |
 | **Safety net** | Export CSV, full JSON backup, optional vault encryption |
 | **Reminders** | Windows toasts while Integral is running; optional Start with Windows + minimize-on-close so reminders keep working |
 | **AI Insight (optional)** | Local Ollama review of recent logs — see below |

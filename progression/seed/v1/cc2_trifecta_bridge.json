@@ -1,0 +1,140 @@
+{
+  "source_book": "CC2",
+  "family": "trifecta_bridge",
+  "step_progression": "sequential",
+  "version": "v1",
+  "source": "programs/convict-conditioning-2.json",
+  "hub_movement_id": "cc2-bridge-hold",
+  "exercises": [
+    {
+      "key": "cc2_trifecta_bridge_01",
+      "name": "Short Bridge Hold",
+      "step": 1,
+      "mastery_criteria": {
+        "sets": 1,
+        "hold_seconds": 90
+      }
+    },
+    {
+      "key": "cc2_trifecta_bridge_02",
+      "name": "Straight Bridge Hold",
+      "step": 2,
+      "mastery_criteria": {
+        "sets": 1,
+        "hold_seconds": 90
+      }
+    },
+    {
+      "key": "cc2_trifecta_bridge_03",
+      "name": "Angled Bridge Hold",
+      "step": 3,
+      "mastery_criteria": {
+        "sets": 1,
+        "hold_seconds": 60
+      }
+    },
+    {
+      "key": "cc2_trifecta_bridge_04",
+      "name": "Head Bridge Hold",
+      "step": 4,
+      "mastery_criteria": {
+        "sets": 1,
+        "hold_seconds": 60
+      }
+    },
+    {
+      "key": "cc2_trifecta_bridge_05",
+      "name": "Half Bridge Hold",
+      "step": 5,
+      "mastery_criteria": {
+        "sets": 1,
+        "hold_seconds": 45
+      }
+    },
+    {
+      "key": "cc2_trifecta_bridge_06",
+      "name": "Full Bridge Hold",
+      "step": 6,
+      "mastery_criteria": {
+        "sets": 1,
+        "hold_seconds": 45
+      }
+    },
+    {
+      "key": "cc2_trifecta_bridge_07",
+      "name": "Wall Walk Down Hold",
+      "step": 7,
+      "mastery_criteria": {
+        "sets": 1,
+        "hold_seconds": 30
+      }
+    },
+    {
+      "key": "cc2_trifecta_bridge_08",
+      "name": "Stand-to-Stand Bridge Hold",
+      "step": 8,
+      "mastery_criteria": {
+        "sets": 1,
+        "hold_seconds": 30
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "cc2_trifecta_bridge_01",
+      "to": "cc2_trifecta_bridge_02",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_trifecta_bridge_02",
+      "to": "cc2_trifecta_bridge_03",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_trifecta_bridge_03",
+      "to": "cc2_trifecta_bridge_04",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_trifecta_bridge_04",
+      "to": "cc2_trifecta_bridge_05",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_trifecta_bridge_05",
+      "to": "cc2_trifecta_bridge_06",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_trifecta_bridge_06",
+      "to": "cc2_trifecta_bridge_07",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_trifecta_bridge_07",
+      "to": "cc2_trifecta_bridge_08",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    }
+  ]
+}

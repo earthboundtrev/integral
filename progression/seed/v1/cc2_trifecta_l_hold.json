@@ -1,0 +1,106 @@
+{
+  "source_book": "CC2",
+  "family": "trifecta_l_hold",
+  "step_progression": "sequential",
+  "version": "v1",
+  "source": "programs/convict-conditioning-2.json",
+  "hub_movement_id": "cc2-l-hold",
+  "exercises": [
+    {
+      "key": "cc2_trifecta_l_hold_01",
+      "name": "Chair L-Hold",
+      "step": 1,
+      "mastery_criteria": {
+        "sets": 1,
+        "hold_seconds": 45
+      }
+    },
+    {
+      "key": "cc2_trifecta_l_hold_02",
+      "name": "Bent-Knee L-Hold",
+      "step": 2,
+      "mastery_criteria": {
+        "sets": 1,
+        "hold_seconds": 45
+      }
+    },
+    {
+      "key": "cc2_trifecta_l_hold_03",
+      "name": "Tuck L-Hold (Floor)",
+      "step": 3,
+      "mastery_criteria": {
+        "sets": 1,
+        "hold_seconds": 45
+      }
+    },
+    {
+      "key": "cc2_trifecta_l_hold_04",
+      "name": "One-Leg L-Hold",
+      "step": 4,
+      "mastery_criteria": {
+        "sets": 1,
+        "hold_seconds": 30
+      }
+    },
+    {
+      "key": "cc2_trifecta_l_hold_05",
+      "name": "Straddle L-Hold",
+      "step": 5,
+      "mastery_criteria": {
+        "sets": 1,
+        "hold_seconds": 30
+      }
+    },
+    {
+      "key": "cc2_trifecta_l_hold_06",
+      "name": "Full L-Hold",
+      "step": 6,
+      "mastery_criteria": {
+        "sets": 1,
+        "hold_seconds": 60
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "cc2_trifecta_l_hold_01",
+      "to": "cc2_trifecta_l_hold_02",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_trifecta_l_hold_02",
+      "to": "cc2_trifecta_l_hold_03",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_trifecta_l_hold_03",
+      "to": "cc2_trifecta_l_hold_04",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_trifecta_l_hold_04",
+      "to": "cc2_trifecta_l_hold_05",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_trifecta_l_hold_05",
+      "to": "cc2_trifecta_l_hold_06",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    }
+  ]
+}

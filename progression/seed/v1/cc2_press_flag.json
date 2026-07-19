@@ -1,0 +1,140 @@
+{
+  "source_book": "CC2",
+  "family": "press_flag",
+  "step_progression": "sequential",
+  "version": "v1",
+  "source": "programs/convict-conditioning-2.json",
+  "hub_movement_id": "cc2-press-flag",
+  "exercises": [
+    {
+      "key": "cc2_press_flag_01",
+      "name": "Support Press",
+      "step": 1,
+      "mastery_criteria": {
+        "sets": 1,
+        "hold_seconds": 30
+      }
+    },
+    {
+      "key": "cc2_press_flag_02",
+      "name": "Kick Press",
+      "step": 2,
+      "mastery_criteria": {
+        "sets": 1,
+        "reps": 20
+      }
+    },
+    {
+      "key": "cc2_press_flag_03",
+      "name": "Vertical Chamber Press",
+      "step": 3,
+      "mastery_criteria": {
+        "sets": 1,
+        "hold_seconds": 15
+      }
+    },
+    {
+      "key": "cc2_press_flag_04",
+      "name": "Vertical Press",
+      "step": 4,
+      "mastery_criteria": {
+        "sets": 1,
+        "hold_seconds": 15
+      }
+    },
+    {
+      "key": "cc2_press_flag_05",
+      "name": "Split Press Flag",
+      "step": 5,
+      "mastery_criteria": {
+        "sets": 1,
+        "hold_seconds": 15
+      }
+    },
+    {
+      "key": "cc2_press_flag_06",
+      "name": "Bent Leg Press Flag",
+      "step": 6,
+      "mastery_criteria": {
+        "sets": 1,
+        "hold_seconds": 15
+      }
+    },
+    {
+      "key": "cc2_press_flag_07",
+      "name": "Half Press Flag",
+      "step": 7,
+      "mastery_criteria": {
+        "sets": 1,
+        "hold_seconds": 15
+      }
+    },
+    {
+      "key": "cc2_press_flag_08",
+      "name": "Press Flag",
+      "step": 8,
+      "mastery_criteria": {
+        "sets": 1,
+        "hold_seconds": 30
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "cc2_press_flag_01",
+      "to": "cc2_press_flag_02",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_press_flag_02",
+      "to": "cc2_press_flag_03",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_press_flag_03",
+      "to": "cc2_press_flag_04",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_press_flag_04",
+      "to": "cc2_press_flag_05",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_press_flag_05",
+      "to": "cc2_press_flag_06",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_press_flag_06",
+      "to": "cc2_press_flag_07",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_press_flag_07",
+      "to": "cc2_press_flag_08",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    }
+  ]
+}

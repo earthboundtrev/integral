@@ -1,0 +1,106 @@
+{
+  "source_book": "CC2",
+  "family": "neck_bridge",
+  "step_progression": "sequential",
+  "version": "v1",
+  "source": "programs/convict-conditioning-2.json",
+  "hub_movement_id": "cc2-neck-bridges",
+  "exercises": [
+    {
+      "key": "cc2_neck_bridge_01",
+      "name": "Preliminary Wrestler's Bridge",
+      "step": 1,
+      "mastery_criteria": {
+        "sets": 1,
+        "hold_seconds": 30
+      }
+    },
+    {
+      "key": "cc2_neck_bridge_02",
+      "name": "Preliminary Front Bridge",
+      "step": 2,
+      "mastery_criteria": {
+        "sets": 1,
+        "hold_seconds": 30
+      }
+    },
+    {
+      "key": "cc2_neck_bridge_03",
+      "name": "Full Wrestler's Bridge",
+      "step": 3,
+      "mastery_criteria": {
+        "sets": 1,
+        "hold_seconds": 60
+      }
+    },
+    {
+      "key": "cc2_neck_bridge_04",
+      "name": "Full Front Bridge",
+      "step": 4,
+      "mastery_criteria": {
+        "sets": 1,
+        "hold_seconds": 60
+      }
+    },
+    {
+      "key": "cc2_neck_bridge_05",
+      "name": "Bridge Walk (Neck)",
+      "step": 5,
+      "mastery_criteria": {
+        "sets": 1,
+        "reps": 20
+      }
+    },
+    {
+      "key": "cc2_neck_bridge_06",
+      "name": "Wrestler's Bridge (Loaded)",
+      "step": 6,
+      "mastery_criteria": {
+        "sets": 1,
+        "hold_seconds": 90
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "cc2_neck_bridge_01",
+      "to": "cc2_neck_bridge_02",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_neck_bridge_02",
+      "to": "cc2_neck_bridge_03",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_neck_bridge_03",
+      "to": "cc2_neck_bridge_04",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_neck_bridge_04",
+      "to": "cc2_neck_bridge_05",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    },
+    {
+      "from": "cc2_neck_bridge_05",
+      "to": "cc2_neck_bridge_06",
+      "edge_type": "prerequisite",
+      "unlock_condition": {
+        "requires": "mastered"
+      }
+    }
+  ]
+}

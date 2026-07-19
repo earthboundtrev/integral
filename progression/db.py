@@ -34,6 +34,7 @@ class FitnessRepository:
     def __init__(self, db_path: str | None = None, fitness_settings: dict | None = None):
         self.db_path = db_path or get_fitness_db_path()
         self.fitness_settings = fitness_settings
+        self._schema_ready = False
 
     def connect(self) -> sqlite3.Connection:
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
@@ -43,6 +44,8 @@ class FitnessRepository:
         return conn
 
     def initialize(self) -> None:
+        if self._schema_ready:
+            return
         with self.connect() as conn:
             conn.executescript(
                 """
@@ -124,6 +127,7 @@ class FitnessRepository:
                 """
             )
             self._ensure_workout_set_form_quality_column(conn)
+        self._schema_ready = True
 
     def _ensure_workout_set_form_quality_column(self, conn: sqlite3.Connection) -> None:
         columns = {

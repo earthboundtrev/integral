@@ -68,12 +68,13 @@ Output: `dist/PersonalDevelopmentTracker.exe`
 | 003 | CC1 push seed (pilot) | `progression/seed/v1/cc1_push.json` |
 | 004 | Exercise logging UI | `fitness_ui.py` |
 | 005 | Skill tree v1 | `skill_tree.py` |
-| 006 | All book seeds (91 exercises) | `progression/seed/v1/*.json`, `seed_loader.py` |
+| 006 | All book seeds (base 91; CC2 sample later expanded) | `progression/seed/v1/*.json`, `seed_loader.py` |
 | 007 | Body composition | `body_composition_ui.py` |
 | 008 | Workout sessions | `progression/sessions.py`, `fitness_ui.py` |
 | 009 | Skill tree v2 (filters, click-to-log) | `skill_tree.py` |
+| 210 | Full CC2 Hub ladders (66 steps) | `progression/seed/v1/cc2_*.json` ([#28](https://github.com/earthboundtrev/integral/issues/28)) |
 
-### Seed data (91 exercises)
+### Seed data (152 exercises)
 
 | Book | Content |
 |------|---------|
@@ -82,7 +83,7 @@ Output: `dist/PersonalDevelopmentTracker.exe`
 | OG | Planche + front lever; skin the cat → back lever |
 | EC | Knee push-up → explosive one-arm push-up |
 | FTR | Five Tibetan Rites |
-| CC2 | Wall HSPU, stand-to-stand bridge, L-sit, V-sit, human flag tuck |
+| CC2 | Hang (8), fingertip push-up (10), clutch/press flag (8 each), neck bridge (6), calf (6), Trifecta bridge/L-hold/twist |
 | Cross-links | 4 recommended edges between books |
 
 **Fitness UI entry points** (dashboard → Fitness Progress):
@@ -116,8 +117,9 @@ Opening Fitness Progress auto-seeds missing exercises for existing profiles (inc
 2. **Optional AI coach** — explicitly deferred; requires ADR before any implementation
 3. **Settings screen** — still a placeholder dialog (export/import, profile management, etc.)
 4. **Doc cleanup** — `docs/ARCHITECTURE.md`, `docs/DATA_MODEL.md`, `docs/PROGRESSION_MODEL.md` are stale (missing profiles, fitness tables, current modules)
-5. **PRD sync** — `docs/PRD.md` §5 still lists old B6/B7 spec names; actual work lives in specs 006–009
+5. **PRD sync** — `docs/PRD.md` §5 still lists old B6/B7 spec names; actual work lives in specs 006–010
 6. **EXE rebuild** — last build may predate Phase 2 expansion; rebuild if distributing
+7. **Strong Medicine DAG** — Hub tables exist; skill-tree logging still TBD (follow-up after SPEC-210)
 
 ---
 
@@ -165,7 +167,7 @@ progression/
   engine.py / mastery.py
   seed_loader.py        seed_all_fitness()
   sessions.py           Workout session helpers
-  seed/v1/*.json        13 seed files, 91 exercises
+  seed/v1/*.json        CC1–CC2/SS/OG/EC/FTR seeds (152 exercises) + cross_links
 ```
 
 ---

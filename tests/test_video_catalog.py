@@ -22,11 +22,19 @@ def test_get_exercise_video_for_ftr():
 
 
 def test_get_exercise_video_for_cc2():
-    video = get_exercise_video("cc2_l_sit", "CC2", "sample", "L-Sit")
+    video = get_exercise_video(
+        "cc2_trifecta_l_hold_04", "CC2", "trifecta_l_hold", "L-Hold"
+    )
     assert video is not None
     assert "FitnessFAQs" in video["source"]
     assert "youtube.com" in video["url"]
 
-    flag = get_exercise_video("cc2_human_flag_tuck", "CC2", "sample", "Human Flag (Tuck)")
+    flag = get_exercise_video(
+        "cc2_clutch_flag_03", "CC2", "clutch_flag", "Clutch Flag"
+    )
     assert flag is not None
     assert "THENX" in flag["source"] or "Heria" in flag["source"]
+
+    series = get_exercise_video("cc2_hang_01", "CC2", "hang", "Horizontal Hang")
+    assert series is not None
+    assert "Dragon Door" in series["source"] or "Paul Wade" in series["source"]
