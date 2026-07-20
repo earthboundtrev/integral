@@ -115,3 +115,34 @@ def merge_day_entry_starter(
     if existing.get("backdate_reason"):
         day[category]["backdate_reason"] = existing["backdate_reason"]
     return entries
+
+
+def format_todo_done_note(*, text: str, when: datetime | None = None) -> str:
+    stamp = (when or datetime.now()).strftime("%H:%M")
+    cleaned = (text or "").strip() or "Todo"
+    return f"[Todo done {stamp}] {cleaned}"
+
+
+def merge_todo_done_line(
+    entries: dict,
+    *,
+    date_str: str,
+    category: str,
+    text: str,
+    when: datetime | None = None,
+) -> dict:
+    """Append a todo-completion line into today's category notes."""
+    day = entries.setdefault(date_str, {})
+    existing = dict(day.get(category) or {})
+    line = format_todo_done_note(text=text, when=when)
+    prev = (existing.get("notes") or "").strip()
+    notes = f"{line}\n\n{prev}" if prev else line
+    day[category] = {
+        "rating": existing.get("rating", 5),
+        "checklist": dict(existing.get("checklist") or {}),
+        "metrics": dict(existing.get("metrics") or {}),
+        "notes": notes,
+    }
+    if existing.get("backdate_reason"):
+        day[category]["backdate_reason"] = existing["backdate_reason"]
+    return entries

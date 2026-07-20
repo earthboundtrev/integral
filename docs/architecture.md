@@ -126,7 +126,7 @@ Creative/Mental Work integration (SPEC-304): log dialog links to Writing Project
 
 Deep Work Mode (SPEC-305): `deep_work.py` timer + `deep_work_ui.py` start dialog; tracker hides non-essential nav while a session runs.
 
-Quick Capture (SPEC-314): `quick_capture.py` settings + oEmbed helper + day-entry note merge; `quick_capture_ui.py` always-on-top panel (off by default). Link starters prepend into category `notes`; Journal now opens `show_journal_window(..., seed=)`. Optional YouTube title via public oEmbed only while capturing.
+Quick Capture (SPEC-314 + SPEC-315): `quick_capture.py` / `quick_capture_ui.py` always-on-top panel; `todos.py` day + scheduled items in `data.json`; finish→category notes; quick-log router; Deep Work timer; `focus_shield.py` Windows minimize/allowlist poll (not OS airplane mode).
 
 Notification residency (SPEC-306): reminders need a live process — `minimize_on_close` iconifies instead of quitting; `autostart_windows.py` toggles HKCU Run for Start with Windows. Controls live under Data & Security.
 
