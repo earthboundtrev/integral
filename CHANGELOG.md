@@ -1,10 +1,16 @@
 # Changelog
 
-## Unreleased
+## 0.3.10 — 2026-07-20
 
 ### Added
 
-- **Quick Capture expansion (SPEC-315)** — today/upcoming todos, finish→category log, quick-log launcher, Deep Work timer on the overlay, Windows focus shield (choose apps to minimize; nudge back until timer ends)
+- **Quick Capture expansion** — today/upcoming todos, finish→category log, quick-log launcher, Deep Work timer on the overlay, Windows focus shield (choose apps to minimize; nudge back until timer ends)
+
+### Build
+
+- Windows app: `dist/Integral/Integral.exe`
+- Release zip: `Integral-v0.3.10-windows.zip`
+- User data: `%APPDATA%\Integral\data.json`
 
 ## 0.3.9 — 2026-07-20
 
