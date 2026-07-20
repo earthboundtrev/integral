@@ -65,6 +65,8 @@ a = Analysis(
         "creative_ui",
         "deep_work",
         "deep_work_ui",
+        "quick_capture",
+        "quick_capture_ui",
         "autostart_windows",
         "ui_scroll",
         "ui_theme",
