@@ -11,8 +11,9 @@ import deep_work as dw
 import focus_shield
 import quick_capture
 import todos
-from theme import FONTS, style_text_widget
+from theme import FONTS, style_canvas, style_text_widget
 import ui_scroll
+from ui_scroll import refresh_scroll_region
 
 if TYPE_CHECKING:
     from personal_dev_tracker import PersonalDevelopmentTracker
@@ -53,12 +54,40 @@ def open_quick_capture_panel(tracker: PersonalDevelopmentTracker) -> tk.Toplevel
 
     win.protocol("WM_DELETE_WINDOW", on_close)
 
-    outer, scroll_inner, canvas = ui_scroll.make_scrollable_frame(win)
-    outer.pack(fill=tk.BOTH, expand=True)
-    pad = ttk.Frame(scroll_inner, padding=12)
-    pad.pack(fill=tk.BOTH, expand=True)
+    try:
+        return _build_quick_capture_body(tracker, win, theme, on_close)
+    except Exception:
+        # Don't leave a blank cached Toplevel if build fails mid-way.
+        tracker._quick_capture_win = None
+        try:
+            win.destroy()
+        except tk.TclError:
+            pass
+        raise
 
-    ttk.Label(pad, text="Quick Capture", font=FONTS["subtitle"]).pack(anchor="w")
+
+def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
+    # Pin footer first so scroll body cannot eat the whole window.
+    footer = ttk.Frame(win, padding=(12, 8))
+    footer.pack(side=tk.BOTTOM, fill=tk.X)
+    ttk.Button(footer, text="Turn off Quick Capture", command=on_close).pack(anchor="e")
+
+    scroll_host = ttk.Frame(win)
+    scroll_host.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
+    outer, inner, canvas = ui_scroll.make_scrollable_frame(scroll_host)
+    # Dark-theme ttk labels are light; unstyled tk.Canvas defaults to SystemButtonFace.
+    style_canvas(canvas, theme)
+    outer.configure(bg=theme["bg"])
+    inner.configure(bg=theme["bg"])
+    outer.pack(fill=tk.BOTH, expand=True)
+
+    pad = ttk.Frame(inner, padding=12)
+    pad.pack(fill=tk.X, expand=False)
+
+    # FONTS key is "subheading" (not "subtitle") — wrong key crashed build after
+    # caching the empty Toplevel, so later opens only lifted a blank shell.
+    ttk.Label(pad, text="Quick Capture", font=FONTS["subheading"]).pack(anchor="w")
     ttk.Label(
         pad,
         text="Todos, links, journal, quick log, and Deep Work — off when you close this.",
@@ -70,7 +99,7 @@ def open_quick_capture_panel(tracker: PersonalDevelopmentTracker) -> tk.Toplevel
     dw_box = ttk.LabelFrame(pad, text="Deep Work + focus shield", padding=8)
     dw_box.pack(fill=tk.X, pady=(0, 10))
     dw_timer_var = tk.StringVar(value="Not running")
-    ttk.Label(dw_box, textvariable=dw_timer_var, font=FONTS["subtitle"]).pack(anchor="w")
+    ttk.Label(dw_box, textvariable=dw_timer_var, font=FONTS["subheading"]).pack(anchor="w")
 
     def refresh_dw_timer() -> None:
         session = getattr(tracker, "_deep_work_session", None)
@@ -114,14 +143,14 @@ def open_quick_capture_panel(tracker: PersonalDevelopmentTracker) -> tk.Toplevel
 
     # --- Today / Upcoming todos ---
     todo_box = ttk.LabelFrame(pad, text="Today’s todos", padding=8)
-    todo_box.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
-    today_list = tk.Frame(todo_box)
-    today_list.pack(fill=tk.BOTH, expand=True)
+    todo_box.pack(fill=tk.X, expand=False, pady=(0, 10))
+    today_list = tk.Frame(todo_box, bg=theme["bg"])
+    today_list.pack(fill=tk.X, expand=False)
 
     upcoming_box = ttk.LabelFrame(pad, text="Upcoming (scheduled)", padding=8)
-    upcoming_box.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
-    upcoming_list = tk.Frame(upcoming_box)
-    upcoming_list.pack(fill=tk.BOTH, expand=True)
+    upcoming_box.pack(fill=tk.X, expand=False, pady=(0, 10))
+    upcoming_list = tk.Frame(upcoming_box, bg=theme["bg"])
+    upcoming_list.pack(fill=tk.X, expand=False)
 
     add_frame = ttk.Frame(pad)
     add_frame.pack(fill=tk.X, pady=(0, 10))
@@ -160,6 +189,8 @@ def open_quick_capture_panel(tracker: PersonalDevelopmentTracker) -> tk.Toplevel
             ttk.Label(upcoming_list, text="Nothing scheduled ahead.", style="Muted.TLabel").pack(
                 anchor="w"
             )
+        win.update_idletasks()
+        refresh_scroll_region(canvas, inner)
 
     def add_todo() -> None:
         text = new_text.get().strip()
@@ -309,10 +340,11 @@ def open_quick_capture_panel(tracker: PersonalDevelopmentTracker) -> tk.Toplevel
         anchor="w", pady=(6, 0)
     )
 
-    ttk.Button(pad, text="Turn off Quick Capture", command=on_close).pack(anchor="e", pady=(4, 12))
-
     rebuild_todo_lists()
     refresh_dw_timer()
+    win.update_idletasks()
+    refresh_scroll_region(canvas, inner)
+    canvas.yview_moveto(0)
     return win
 
 

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.10.1 — 2026-07-20
+
+### Fixed
+
+- **Quick Capture blank panel** — build crashed on `FONTS["subtitle"]` (valid key is `subheading`) after caching an empty always-on-top window, so later opens only lifted the blank shell; also theme the scroll canvas and pin the footer
+
+### Build
+
+- Windows app: `dist/Integral/Integral.exe`
+- Release zip: `Integral-v0.3.10.1-windows.zip`
+- User data: `%APPDATA%\Integral\data.json`
+
 ## 0.3.10 — 2026-07-20
 
 ### Added
