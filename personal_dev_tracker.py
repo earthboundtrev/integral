@@ -32,6 +32,8 @@ import deep_work
 from deep_work_ui import open_writing_pair, show_deep_work_start_dialog
 import quick_capture
 from quick_capture_ui import close_quick_capture_panel, open_quick_capture_panel
+import focus_shield
+import todos
 from milestones import merge_milestones, milestone_summary
 from notifications import ReminderScheduler, normalize_notification_settings, show_windows_notification
 from paths import APP_NAME, APP_VERSION, data_file, ensure_data_file, icon_path
@@ -120,6 +122,9 @@ class PersonalDevelopmentTracker:
         self._deep_work_banner: ttk.Frame | None = None
         self._deep_work_timer_label: ttk.Label | None = None
         self._quick_capture_win: tk.Toplevel | None = None
+        self._focus_shield = focus_shield.FocusShieldSession()
+        self._focus_shield_after_id: str | None = None
+        self.todos: dict = todos.empty_todos()
         self._nav_buttons: dict[str, ttk.Widget] = {}
         self._nav_frame: ttk.Frame | None = None
 
@@ -573,6 +578,7 @@ class PersonalDevelopmentTracker:
                 migrated.get("creative_projects")
             )
             self.day_plans = day_plans.normalize_day_plans(migrated.get("day_plans"))
+            self.todos = todos.normalize_todos(migrated.get("todos"))
             self.program_state = migrated.get("program_state", {})
             if sync_fitness_sessions_to_entries(self.entries, self.settings.get("fitness")):
                 self.save_data(flush=True)
@@ -592,6 +598,7 @@ class PersonalDevelopmentTracker:
             self.journal = journal.empty_journal()
             self.creative_projects = creative_projects.empty_creative_projects()
             self.day_plans = day_plans.empty_day_plans()
+            self.todos = todos.empty_todos()
             self.program_state = compute_program_state(self.programs, self.sessions, self.settings)
             self.save_data(flush=True)
 
@@ -609,6 +616,7 @@ class PersonalDevelopmentTracker:
             "journal": self.journal,
             "creative_projects": self.creative_projects,
             "day_plans": self.day_plans,
+            "todos": self.todos,
             "program_state": self.program_state,
             "user_levels": {},
         }
@@ -1868,6 +1876,8 @@ class PersonalDevelopmentTracker:
         )
         if persist:
             self.save_data(flush=True)
+        if not enabled:
+            self.stop_focus_shield()
         self.sync_quick_capture_panel()
 
     def sync_quick_capture_panel(self) -> None:
@@ -1906,7 +1916,13 @@ class PersonalDevelopmentTracker:
             return
         show_deep_work_start_dialog(self)
 
-    def start_deep_work(self, minutes: int, *, writing_project_id: str | None = None) -> None:
+    def start_deep_work(
+        self,
+        minutes: int,
+        *,
+        writing_project_id: str | None = None,
+        focus_minimize_windows: list | None = None,
+    ) -> None:
         if self._deep_work_after_id:
             self.root.after_cancel(self._deep_work_after_id)
             self._deep_work_after_id = None
@@ -1915,6 +1931,8 @@ class PersonalDevelopmentTracker:
         self._apply_deep_work_chrome()
         self._update_deep_work_banner()
         self._schedule_deep_work_tick()
+        if focus_minimize_windows:
+            self.start_focus_shield(focus_minimize_windows)
         if writing_project_id:
             try:
                 open_writing_pair(self, writing_project_id)
@@ -1924,16 +1942,50 @@ class PersonalDevelopmentTracker:
                     "Session started, but the writing project windows could not be opened.",
                 )
 
+    def start_focus_shield(self, minimize_windows: list) -> None:
+        self.stop_focus_shield()
+        if not focus_shield.is_supported():
+            return
+        integral_pids = {os.getpid()}
+        self._focus_shield.start(
+            minimize_windows=minimize_windows,
+            integral_pids=integral_pids,
+            allowed_pids=set(integral_pids),
+        )
+        self._schedule_focus_shield_tick()
+
+    def stop_focus_shield(self) -> None:
+        if self._focus_shield_after_id:
+            try:
+                self.root.after_cancel(self._focus_shield_after_id)
+            except Exception:
+                pass
+            self._focus_shield_after_id = None
+        self._focus_shield.stop()
+
+    def _schedule_focus_shield_tick(self) -> None:
+        if self._focus_shield_after_id:
+            try:
+                self.root.after_cancel(self._focus_shield_after_id)
+            except Exception:
+                pass
+        if not self._focus_shield.active:
+            return
+        self._focus_shield.tick()
+        self._focus_shield_after_id = self.root.after(1500, self._schedule_focus_shield_tick)
+
     def end_deep_work(self, *, completed: bool = False) -> None:
         if self._deep_work_after_id:
             self.root.after_cancel(self._deep_work_after_id)
             self._deep_work_after_id = None
+        self.stop_focus_shield()
         if self._deep_work_session is not None:
             self._deep_work_session.cancel()
         self._deep_work_session = None
         self._deep_work_banner = None
         self._deep_work_timer_label = None
         self.create_dashboard()
+        self.sync_quick_capture_panel()
         if completed:
             show_windows_notification("Deep Work", "Session complete. Nice focus.")
             messagebox.showinfo("Deep Work", "Session complete. Chrome restored.")

@@ -67,6 +67,8 @@ a = Analysis(
         "deep_work_ui",
         "quick_capture",
         "quick_capture_ui",
+        "todos",
+        "focus_shield",
         "autostart_windows",
         "ui_scroll",
         "ui_theme",

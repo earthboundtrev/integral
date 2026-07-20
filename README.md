@@ -96,7 +96,7 @@ User data: `%APPDATA%\Integral\data.json` (encrypted optional via Data & Securit
 | **Deep Work** | Focus timer (25 / 50 / 90 / custom); quieter nav; optional open a writing project; +10 min or end early |
 | **Activity** | GitHub-style contribution grid; click any day |
 | **Streak** | Overall streak counts life log, journal, or fitness for the day; updates as soon as you save; mid-day grace if today is still empty |
-| **Quick Capture** | Optional always-on-top panel (off by default): paste a link into a life domain, or **Journal now**; YouTube titles fetched best-effort via oEmbed |
+| **Quick Capture** | Optional always-on-top panel (off by default): today’s todos + scheduled backlog; finish→category log line; link starters; Journal now; quick-log opener; Deep Work timer + Windows focus shield (minimize chosen apps) |
 | **Fitness Hub** | CC1/CC2/SS/SM/OG/EC/FTR — nested book → program → steps |
 | **Fitness skill tree** | Progressive logging DAG for full CC1 Big Six, full CC2 ladders, and Strong Medicine resistance progressions (squat→barbell, sumo DL, DB bench/press, statue row, plank core) from official Hub tables |
 | **Safety net** | Export CSV, full JSON backup, optional vault encryption |
