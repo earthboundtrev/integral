@@ -65,6 +65,7 @@ def show_journal_window(
     *,
     prompt: str | None = None,
     entry_id: str | None = None,
+    seed: str | None = None,
 ) -> None:
     theme = tracker.theme
     win = tk.Toplevel(tracker.root)
@@ -486,6 +487,8 @@ def show_journal_window(
     if entry_id and journal.get_entry(tracker.journal, entry_id):
         load_selected()
     else:
+        if seed and str(seed).strip():
+            body_text.insert("1.0", str(seed).strip() + "\n\n")
         refresh_decorations()
         refresh_backlinks()
         body_text.focus_set()

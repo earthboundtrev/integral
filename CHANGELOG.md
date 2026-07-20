@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Quick Capture mode** — optional always-on-top panel (off by default): link → life-domain day starter; Journal now with optional seed; best-effort YouTube oEmbed titles
+
 ## 0.3.8 — 2026-07-19
 
 ### Added

@@ -52,6 +52,7 @@ Implement **in order** unless a spec declares otherwise. Human sets `approved` �
 | [011-cross-entity-links](phase-3/011-cross-entity-links.md) | done | Cross-entity links domain/fitness/project ([#25](https://github.com/earthboundtrev/integral/issues/25)) |
 | [012-journal-backlinks](phase-3/012-journal-backlinks.md) | done | Journal backlinks panel ([#26](https://github.com/earthboundtrev/integral/issues/26)) |
 | [013-os-protocol-handler](phase-3/013-os-protocol-handler.md) | done | Windows `integral://` OS deep links ([#22](https://github.com/earthboundtrev/integral/issues/22)) |
+| [014-quick-capture-mode](phase-3/014-quick-capture-mode.md) | done | Quick Capture — link → day entry + journal quick-start ([#32](https://github.com/earthboundtrev/integral/issues/32)) |
 
 Implement writing stack in order **302 → 303 → 304**. **305** may proceed in parallel (soft dependency on 302/303 for optional writing launch).
 

@@ -81,6 +81,7 @@ People tracking personal development across many life areas need:
 | C6 | Inspiration + manuscript writing windows | `specs/phase-3/003-creative-writing-windows.md` (done) — [GitHub #2](https://github.com/earthboundtrev/integral/issues/2) |
 | C7 | Tie writing projects to Creative/Mental Work | `specs/phase-3/004-creativity-writing-integration.md` (done) — [GitHub #3](https://github.com/earthboundtrev/integral/issues/3) |
 | C8 | Deep Work Mode (focus timer + reduced chrome) | `specs/phase-3/005-deep-work-mode.md` (done) — [GitHub #4](https://github.com/earthboundtrev/integral/issues/4) |
+| C9 | Quick Capture mode (link → day-entry starter) | `specs/phase-3/014-quick-capture-mode.md` (done) — [GitHub #32](https://github.com/earthboundtrev/integral/issues/32) |
 
 ## 6. Life Domains (8 Categories)
 

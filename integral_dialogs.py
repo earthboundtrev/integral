@@ -24,6 +24,7 @@ from theme import style_listbox, style_text_widget
 from vault import CRYPTO_AVAILABLE, encrypt_payload, is_encrypted_file
 import autostart_windows
 import protocol_windows
+import quick_capture
 import ui_scroll
 
 if TYPE_CHECKING:
@@ -393,6 +394,35 @@ def show_security_dialog(tracker: PersonalDevelopmentTracker) -> None:
     autostart_cb.pack(anchor="w", padx=15, pady=2)
     if not autostart_windows.is_supported():
         autostart_cb.state(["disabled"])
+
+    ttk.Separator(inner, orient=tk.HORIZONTAL).pack(fill=tk.X, padx=15, pady=12)
+    ttk.Label(inner, text="Quick Capture", font=("Helvetica", 13, "bold")).pack(
+        anchor="w", padx=15, pady=(4, 4)
+    )
+    ttk.Label(
+        inner,
+        text="Optional always-on-top panel for parking links into a life domain or starting a "
+        "journal thought while you browse. Off by default — when off, no overlay and no "
+        "YouTube title lookups.",
+        wraplength=500,
+        style="Muted.TLabel",
+    ).pack(anchor="w", padx=15, pady=(0, 8))
+
+    tracker.settings = quick_capture.apply_quick_capture_settings(
+        tracker.settings,
+        quick_capture.normalize_quick_capture_settings(tracker.settings),
+    )
+    capture_on = tk.BooleanVar(value=quick_capture.is_quick_capture_enabled(tracker.settings))
+
+    def on_quick_capture_toggle() -> None:
+        tracker.set_quick_capture_enabled(bool(capture_on.get()), persist=True)
+
+    ttk.Checkbutton(
+        inner,
+        text="Enable Quick Capture panel (always on top)",
+        variable=capture_on,
+        command=on_quick_capture_toggle,
+    ).pack(anchor="w", padx=15, pady=2)
 
     ttk.Separator(inner, orient=tk.HORIZONTAL).pack(fill=tk.X, padx=15, pady=12)
     ttk.Label(inner, text="OS deep links", font=("Helvetica", 13, "bold")).pack(

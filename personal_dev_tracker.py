@@ -30,6 +30,8 @@ import creative_projects
 from creative_ui import show_writing_projects_window
 import deep_work
 from deep_work_ui import open_writing_pair, show_deep_work_start_dialog
+import quick_capture
+from quick_capture_ui import close_quick_capture_panel, open_quick_capture_panel
 from milestones import merge_milestones, milestone_summary
 from notifications import ReminderScheduler, normalize_notification_settings, show_windows_notification
 from paths import APP_NAME, APP_VERSION, data_file, ensure_data_file, icon_path
@@ -117,6 +119,7 @@ class PersonalDevelopmentTracker:
         self._deep_work_after_id: str | None = None
         self._deep_work_banner: ttk.Frame | None = None
         self._deep_work_timer_label: ttk.Label | None = None
+        self._quick_capture_win: tk.Toplevel | None = None
         self._nav_buttons: dict[str, ttk.Widget] = {}
         self._nav_frame: ttk.Frame | None = None
 
@@ -131,6 +134,7 @@ class PersonalDevelopmentTracker:
         self.create_dashboard()
         self._start_day_watch()
         self._start_reminder_scheduler()
+        self.sync_quick_capture_panel()
         if not self.settings.get("onboarding_complete"):
             show_onboarding(self)
 
@@ -557,6 +561,10 @@ class PersonalDevelopmentTracker:
             self.settings = normalize_notification_settings(
                 {**{"dark_mode": False}, **migrated.get("settings", {})}
             )
+            self.settings = quick_capture.apply_quick_capture_settings(
+                self.settings,
+                quick_capture.normalize_quick_capture_settings(self.settings),
+            )
             self.settings["fitness"] = get_fitness_settings(self.settings)
             self.sessions = migrated.get("sessions", [])
             self.milestones = merge_milestones(migrated.get("milestones"))
@@ -573,6 +581,10 @@ class PersonalDevelopmentTracker:
             self.entries = {}
             self.settings = normalize_notification_settings(
                 {"dark_mode": False, "onboarding_complete": False}
+            )
+            self.settings = quick_capture.apply_quick_capture_settings(
+                self.settings,
+                quick_capture.default_quick_capture_settings(),
             )
             self.settings["fitness"] = get_fitness_settings(self.settings)
             self.sessions = []
@@ -1036,6 +1048,12 @@ class PersonalDevelopmentTracker:
         ttk.Button(nav, text="Deep Work", style="Accent.TButton", command=self.show_deep_work).pack(
             side=tk.LEFT, padx=6
         )
+        ttk.Button(
+            nav,
+            text="Quick Capture",
+            style="Accent.TButton",
+            command=self.toggle_quick_capture,
+        ).pack(side=tk.LEFT, padx=6)
         ttk.Button(nav, text="Plan Tomorrow", command=self.show_plan_tomorrow).pack(side=tk.LEFT, padx=6)
         ttk.Button(nav, text="Log Exercise", style="Accent.TButton", command=self.show_log_exercise).pack(
             side=tk.LEFT, padx=6
@@ -1842,6 +1860,24 @@ class PersonalDevelopmentTracker:
 
     def show_journal(self) -> None:
         show_journal_window(self)
+
+    def set_quick_capture_enabled(self, enabled: bool, *, persist: bool = True) -> None:
+        self.settings = quick_capture.apply_quick_capture_settings(
+            self.settings,
+            {"enabled": bool(enabled)},
+        )
+        if persist:
+            self.save_data(flush=True)
+        self.sync_quick_capture_panel()
+
+    def sync_quick_capture_panel(self) -> None:
+        if quick_capture.is_quick_capture_enabled(self.settings):
+            open_quick_capture_panel(self)
+        else:
+            close_quick_capture_panel(self)
+
+    def toggle_quick_capture(self) -> None:
+        self.set_quick_capture_enabled(not quick_capture.is_quick_capture_enabled(self.settings))
 
     def show_writing_projects(self) -> None:
         show_writing_projects_window(self)
