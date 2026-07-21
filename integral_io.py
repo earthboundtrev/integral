@@ -90,7 +90,17 @@ def export_milestones_csv(milestones: list[dict], path: str) -> int:
     with open(path, "w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(
             handle,
-            fieldnames=["year", "quarter", "title", "status", "notes", "completed_date"],
+            fieldnames=[
+                "year",
+                "quarter",
+                "title",
+                "status",
+                "notes",
+                "completed_date",
+                "domain",
+                "progress",
+            ],
+            extrasaction="ignore",
         )
         writer.writeheader()
         for item in milestones:

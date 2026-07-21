@@ -166,3 +166,25 @@ which enables an optional **per-movement** log (reps per movement) in the dialog
 the per-movement breakdown, is written into the linked domain note (feeding correlations + AI).
 Extend `PRACTICE_PRESETS` to add a routine — no schema change needed.
 
+---
+
+## Quarterly Milestones (Phase 3)
+
+Index key in `data.json`: `milestones` (list). Normalized by `milestones.normalize_milestone`.
+
+```json
+{
+  "year": 2026,
+  "quarter": 3,
+  "title": "Improve hypersomnia management",
+  "status": "open | in_progress | done",
+  "notes": "Free text; may contain [[journal:…]] / [[domain:…]] backlinks",
+  "completed_date": "",
+  "domain": "Sleep & Hypersomnia Management",
+  "progress": 40
+}
+```
+
+`domain` optionally links a milestone to a Life Domain; `progress` is 0–100 (status `done` snaps
+to 100). CSV export (`export_milestones_csv`) includes `domain` and `progress` columns.
+
