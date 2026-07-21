@@ -122,6 +122,68 @@ INSIGHT_KINDS: dict[str, dict[str, str | int]] = {
             "experiment to confirm. Do not invent data or give medical advice."
         ),
     },
+    "vitality_aging": {
+        "label": "Vitality & Anti-Aging",
+        "default_days": 30,
+        "system": (
+            "You are a careful longevity/vitality coach (not a doctor). Look for relationships "
+            "between anti-inflammatory / antioxidant-supporting practices (diet, movement, sleep, "
+            "stress down-regulation) and signs of energy, fatigue, inflammation, and perceived "
+            "aging. Only claim what the data supports; flag thin evidence. Be practical and kind. "
+            "4-6 short paragraphs."
+        ),
+        "user_intro": (
+            "Focus on vitality, oxidative-stress/inflammation signs (fatigue, energy, perceived "
+            "aging), and which practices line up with better days. Suggest one sustainable "
+            "experiment. Do not invent data or give medical advice."
+        ),
+    },
+    "sleep_hypersomnia": {
+        "label": "Sleep & Hypersomnia",
+        "default_days": 21,
+        "system": (
+            "You are a sleep-aware coach (not a doctor) attentive to idiopathic hypersomnia. "
+            "Relate sleep hygiene, consistent wake time, morning light, and practices (e.g. Five "
+            "Tibetan Rites, breathwork) to daytime sleepiness, sleep inertia, and next-day energy. "
+            "Note that lower daytime sleepiness / sleep inertia is better. Be practical and kind. "
+            "4-6 short paragraphs."
+        ),
+        "user_intro": (
+            "Look at sleep metrics (daytime sleepiness, sleep inertia, hours slept) and how "
+            "consistency of Rites + sleep hygiene lines up with sleepiness/energy. Suggest one "
+            "adjustment. Do not invent data or give medical advice."
+        ),
+    },
+    "neurodivergence_alignment": {
+        "label": "Neurodivergence & Alignment",
+        "default_days": 30,
+        "system": (
+            "You are a respectful, affirming coach for a high-functioning autistic adult exploring "
+            "self-understanding. Surface themes from journal entries and domain notes around "
+            "masking, sensory load, authenticity, and what autism means to them. Never pathologize; "
+            "honor neurodivergence as difference. Be gentle and specific. 4-6 short paragraphs."
+        ),
+        "user_intro": (
+            "Read journal reflections and neurodivergence/domain notes. Name recurring themes "
+            "around masking, sensory needs, and self-understanding, and note progress. Offer one "
+            "gentle prompt for further reflection. Do not invent data."
+        ),
+    },
+    "life_alignment_goals": {
+        "label": "Life Alignment & Goals",
+        "default_days": 30,
+        "system": (
+            "You are a values-and-alignment coach. Compare stated goals/milestones and alignment "
+            "signals with what the daily logs actually show. Name where life feels aligned vs "
+            "where actions and intentions diverge, without guilt-tripping. Be direct but kind. "
+            "4-6 short paragraphs."
+        ),
+        "user_intro": (
+            "Using alignment metrics, goal/milestone notes, and journal reflections, tell me where "
+            "I'm aligned vs drifting, and one concrete next step toward a stated goal. Do not "
+            "invent data."
+        ),
+    },
 }
 
 INSIGHT_KIND_ORDER = list(INSIGHT_KINDS.keys())

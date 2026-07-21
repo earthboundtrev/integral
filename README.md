@@ -95,6 +95,7 @@ User data: `%APPDATA%\Integral\data.json` (encrypted optional via Data & Securit
 | **Symptom correlations** | Guidance compares symptom metrics (gas, bloating, comfort, energy) on days *with* a logged practice vs *without*, surfacing patterns like "lower gas on practice days"; a "Gut & Symptom Patterns" AI insight goes deeper |
 | **Practice reminders** | Set nudges for specific routines (e.g. "Five Tibetan Rites + 10 min breathing") at a chosen time; guidance also flags practice consistency (kept-up vs stalled) |
 | **Goals & alignment** | Quarterly milestones can link to a life domain and carry a simple progress %; journal reflection prompts for alignment, masking, autism self-understanding, and goals |
+| **AI insight focuses** | Optional local (Ollama) insight kinds for Vitality & Anti-Aging, Sleep & Hypersomnia, Neurodivergence & Alignment, and Life Alignment & Goals — reasoning over your domains, practices, symptoms, and journal, fully offline |
 | **Journal** | Prompts or free write; markdown-lite toolbar (bold/italic/headings/lists); backlinks; cross-links to journal/domain/fitness/writing; gap-day continuity; OS `integral://` paste |
 | **Writing Projects** | Novels/scripts library — inspiration + manuscript in separate windows; debounced autosave; stored under `%APPDATA%\Integral\creative\` |
 | **Creative/Mental Work** | Open Writing Projects from the category log; **Log writing session** marks creative progress for the day |
