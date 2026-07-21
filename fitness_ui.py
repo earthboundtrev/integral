@@ -507,6 +507,7 @@ def show_fitness_window(
     *,
     fitness_settings: dict | None = None,
     on_fitness_settings_changed=None,
+    on_log_practice=None,
 ):
     import tkinter as tk
     from tkinter import messagebox, scrolledtext, ttk
@@ -940,6 +941,10 @@ def show_fitness_window(
         side=tk.LEFT
     )
     ttk.Button(btn_bar, text="New Session", command=open_session_dialog).pack(side=tk.LEFT, padx=6)
+    if on_log_practice is not None:
+        ttk.Button(
+            btn_bar, text="Log Daily Practice", command=lambda: on_log_practice(win)
+        ).pack(side=tk.LEFT, padx=6)
     ttk.Button(btn_bar, text="Session History", command=open_session_history).pack(side=tk.LEFT, padx=6)
     ttk.Button(
         btn_bar,

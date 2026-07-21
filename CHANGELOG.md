@@ -10,6 +10,7 @@
 - **Practice → symptom correlations** — the guidance engine now compares symptom metrics (gas, bloating, stomach comfort, energy, regularity) on days with a logged practice vs days without, surfacing findings like "lower average gas on practice days" (guarded by a minimum sample size). New "Gut & Symptom Patterns" AI insight kind looks for practice-vs-symptom relationships (#38)
 - **Practice-specific reminders & guidance** — set reminders tied to specific routines (e.g. "Five Tibetan Rites + 10 min breathing") at a chosen time from Data & Security → Reminders; each fires once/day while Integral is running. Guidance now also flags practice consistency (well-kept vs stalled) (#39)
 - **Personal Health & Alignment template** — a second one-click starter pack adding 5 personal-first domains (Vitality & Anti-Aging, Sleep & Hypersomnia Management, Neurodivergence & Self-Understanding, Inflammation & Oxidative Stress, Life Alignment & Goals) with direction-aware metrics that feed the correlation engine (#40)
+- **Deeper practice logging** — practices now support an optional **per-movement** breakdown (reps per rite / per lift), a new **Strong Medicine** preset, and a subjective **effect** field ("energy boost? reduced sleepiness?") that's written into the linked domain note (feeding correlations + AI). The practice log is now reachable from the **Fitness Hub** too, not just Quick Capture (#41)
 
 ## 0.3.10.1 — 2026-07-20
 
