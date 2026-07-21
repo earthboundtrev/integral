@@ -91,7 +91,7 @@ User data: `%APPDATA%\Integral\data.json` (encrypted optional via Data & Securit
 |------|----------|
 | **Life domains (18)** | Ratings, checklists, metrics, notes, streaks, guidance |
 | **Domain templates** | One-click starter packs (**Gut Healing**, **Personal Health & Alignment**) add a coherent set of pre-configured domains; applied from onboarding or the category editor, never overwriting existing domains |
-| **Daily practices** | Log non-program routines (Five Tibetan Rites, breathing, wind-releasing yoga) with duration, reps/completions, hold time, quality (1–10), and notes; flows into the linked life domain for history, streaks, and insights |
+| **Daily practices** | Log non-program routines (Five Tibetan Rites, Strong Medicine, breathing, wind-releasing yoga) with duration, reps/completions, hold time, quality (1–10), an optional per-movement breakdown, a subjective "effect" note, and free notes; reachable from Quick Capture **and** the Fitness Hub; flows into the linked life domain for history, streaks, and insights |
 | **Symptom correlations** | Guidance compares symptom metrics (gas, bloating, comfort, energy) on days *with* a logged practice vs *without*, surfacing patterns like "lower gas on practice days"; a "Gut & Symptom Patterns" AI insight goes deeper |
 | **Practice reminders** | Set nudges for specific routines (e.g. "Five Tibetan Rites + 10 min breathing") at a chosen time; guidance also flags practice consistency (kept-up vs stalled) |
 | **Journal** | Prompts or free write; markdown-lite toolbar (bold/italic/headings/lists); backlinks; cross-links to journal/domain/fitness/writing; gap-day continuity; OS `integral://` paste |

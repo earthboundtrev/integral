@@ -20,34 +20,57 @@ FIELD_SETS = "sets"
 FIELD_HOLD = "hold_seconds"
 FIELD_PER_SIDE = "per_side"
 FIELD_QUALITY = "quality"
+FIELD_EFFECT = "effect"
 FIELD_NOTES = "notes"
 
 PRACTICE_PRESETS: dict[str, dict[str, Any]] = {
     "tibetan_rites": {
         "title": "Five Tibetan Rites",
         "domain": "Physical Practices & Movement",
-        "fields": [FIELD_COMPLETIONS, FIELD_DURATION, FIELD_QUALITY, FIELD_NOTES],
+        "fields": [FIELD_COMPLETIONS, FIELD_DURATION, FIELD_QUALITY, FIELD_EFFECT, FIELD_NOTES],
         "labels": {FIELD_COMPLETIONS: "Reps per rite"},
         "hint": "Classic ramp: 3 reps/rite in week 1 → +2 each week → 21 by week 10.",
+        "movements": [
+            "Rite 1 — Spin",
+            "Rite 2 — Leg Raise",
+            "Rite 3 — Camel",
+            "Rite 4 — Tabletop",
+            "Rite 5 — Up/Down Dog",
+        ],
+    },
+    "strong_medicine": {
+        "title": "Strong Medicine session",
+        "domain": "Physical Practices & Movement",
+        "fields": [FIELD_DURATION, FIELD_QUALITY, FIELD_EFFECT, FIELD_NOTES],
+        "labels": {},
+        "hint": "Resistance foundation (Hardy & Gallagher). Log reps per lift; master technique before load.",
+        "movements": [
+            "King Squat",
+            "Sumo Deadlift (Healthlift)",
+            "Dumbbell Bench Press",
+            "Overhead Dumbbell Press",
+            "Statue Row",
+            "Abdominal (Plank)",
+        ],
     },
     "pavanamuktasana": {
         "title": "Wind-releasing pose (Pavanamuktasana)",
         "domain": "Physical Practices & Movement",
-        "fields": [FIELD_HOLD, FIELD_PER_SIDE, FIELD_DURATION, FIELD_QUALITY, FIELD_NOTES],
+        "fields": [FIELD_HOLD, FIELD_PER_SIDE, FIELD_DURATION, FIELD_QUALITY, FIELD_EFFECT, FIELD_NOTES],
         "labels": {FIELD_HOLD: "Hold (sec)"},
         "hint": "Hold each side; note total time. Great for trapped gas.",
     },
     "diaphragmatic_breathing": {
         "title": "Diaphragmatic / belly breathing",
         "domain": "Breathwork & Mindfulness",
-        "fields": [FIELD_DURATION, FIELD_COMPLETIONS, FIELD_QUALITY, FIELD_NOTES],
+        "fields": [FIELD_DURATION, FIELD_COMPLETIONS, FIELD_QUALITY, FIELD_EFFECT, FIELD_NOTES],
         "labels": {FIELD_DURATION: "Minutes", FIELD_COMPLETIONS: "Sessions"},
         "hint": "Slow belly breathing to stimulate the vagus nerve.",
     },
     "generic": {
         "title": "Yoga / movement practice",
         "domain": "Physical Practices & Movement",
-        "fields": [FIELD_DURATION, FIELD_QUALITY, FIELD_NOTES],
+        "fields": [FIELD_DURATION, FIELD_QUALITY, FIELD_EFFECT, FIELD_NOTES],
         "labels": {},
         "hint": "",
     },
@@ -65,6 +88,7 @@ def list_presets() -> list[dict[str, Any]]:
             "fields": list(preset["fields"]),
             "labels": dict(preset.get("labels", {})),
             "hint": preset.get("hint", ""),
+            "movements": list(preset.get("movements", [])),
         }
         for preset_id, preset in PRACTICE_PRESETS.items()
     ]
@@ -117,6 +141,30 @@ def _clamp_quality(value: Any) -> int | None:
     return max(1, min(10, quality))
 
 
+def _normalize_movements(raw: Any) -> list[dict[str, Any]]:
+    """Per-movement breakdown: [{name, reps?, hold_seconds?, quality?}]."""
+    if not isinstance(raw, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        name = str(entry.get("name") or "").strip()
+        if not name:
+            continue
+        movement = {
+            "name": name,
+            "reps": _opt_int(entry.get("reps")),
+            "hold_seconds": _opt_float(entry.get("hold_seconds")),
+            "quality": _clamp_quality(entry.get("quality")),
+        }
+        # Drop movements the user left entirely blank.
+        if movement["reps"] is None and movement["hold_seconds"] is None and movement["quality"] is None:
+            continue
+        out.append(movement)
+    return out
+
+
 def normalize_practices(stored: dict[str, Any] | None) -> dict[str, Any]:
     if not isinstance(stored, dict):
         return empty_practices()
@@ -143,6 +191,8 @@ def normalize_practices(stored: dict[str, Any] | None) -> dict[str, Any]:
                 "hold_seconds": _opt_float(raw.get("hold_seconds")),
                 "per_side": bool(raw.get("per_side", False)),
                 "quality": _clamp_quality(raw.get("quality")),
+                "effect": str(raw.get("effect") or "").strip(),
+                "movements": _normalize_movements(raw.get("movements")),
                 "notes": str(raw.get("notes") or "").strip(),
                 "domain": str(raw.get("domain") or "").strip(),
             }
@@ -173,6 +223,8 @@ def add_practice(
     hold_seconds: Any = None,
     per_side: bool = False,
     quality: Any = None,
+    effect: str = "",
+    movements: Any = None,
     notes: str = "",
     domain: str = "",
 ) -> dict[str, Any]:
@@ -193,6 +245,8 @@ def add_practice(
             "hold_seconds": _opt_float(hold_seconds),
             "per_side": bool(per_side),
             "quality": _clamp_quality(quality),
+            "effect": (effect or "").strip(),
+            "movements": _normalize_movements(movements),
             "notes": (notes or "").strip(),
             "domain": (domain or "").strip(),
         }
@@ -223,10 +277,30 @@ def format_practice_summary(item: dict[str, Any]) -> str:
     return ", ".join(parts) if parts else "logged"
 
 
+def format_movement_breakdown(item: dict[str, Any]) -> str:
+    """One-line per-movement breakdown, e.g. 'Rite 1 — Spin: 9, Rite 2 — Leg Raise: 9'."""
+    parts: list[str] = []
+    for movement in item.get("movements") or []:
+        detail: list[str] = []
+        if movement.get("reps") is not None:
+            detail.append(f"{movement['reps']} reps")
+        if movement.get("hold_seconds") is not None:
+            detail.append(f"{movement['hold_seconds']:g}s")
+        if movement.get("quality") is not None:
+            detail.append(f"q{movement['quality']}")
+        parts.append(f"{movement['name']}: {', '.join(detail) if detail else 'done'}")
+    return "; ".join(parts)
+
+
 def format_practice_note(item: dict[str, Any], *, when: datetime | None = None) -> str:
     stamp = (when or datetime.now()).strftime("%H:%M")
     summary = format_practice_summary(item)
     line = f"[Practice {stamp}] {item['name']} — {summary}"
+    breakdown = format_movement_breakdown(item)
+    if breakdown:
+        line = f"{line}\nPer movement: {breakdown}"
+    if item.get("effect"):
+        line = f"{line}\nEffect: {item['effect']}"
     if item.get("notes"):
         line = f"{line}\n{item['notes']}"
     return line

@@ -2328,6 +2328,7 @@ class PersonalDevelopmentTracker:
             theme=self.theme,
             fitness_settings=self.settings.get("fitness"),
             on_fitness_settings_changed=on_fitness_settings_changed,
+            on_log_practice=self.show_log_practice,
         )
 
     def show_settings(self) -> None:

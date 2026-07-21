@@ -18,6 +18,7 @@ _FIELD_LABELS = {
     practices.FIELD_SETS: "Sets",
     practices.FIELD_HOLD: "Hold (sec)",
     practices.FIELD_QUALITY: "Quality (1–10)",
+    practices.FIELD_EFFECT: "Effect / how it felt",
 }
 
 
@@ -68,11 +69,36 @@ def show_practice_log_dialog(
         side=tk.LEFT, padx=4
     )
 
+    per_movement_on = tk.BooleanVar(value=False)
+    per_movement_cb = ttk.Checkbutton(
+        body, text="Log per movement", variable=per_movement_on
+    )
+    movements_frame = ttk.Frame(body)
+
     fields_frame = ttk.Frame(body)
     fields_frame.pack(fill=tk.X, pady=(6, 0))
 
     field_vars: dict[str, tk.Variable] = {}
     notes_widget: dict[str, tk.Text] = {}
+    movement_vars: list[tuple[str, tk.StringVar]] = []
+
+    def rebuild_movements() -> None:
+        for child in movements_frame.winfo_children():
+            child.destroy()
+        movement_vars.clear()
+        preset = preset_by_title.get(preset_title.get()) or preset_summaries[0]
+        if not (per_movement_on.get() and preset.get("movements")):
+            movements_frame.pack_forget()
+            return
+        ttk.Label(movements_frame, text="Reps per movement", style="Muted.TLabel").pack(anchor="w")
+        for movement_name in preset["movements"]:
+            line = ttk.Frame(movements_frame)
+            line.pack(fill=tk.X, pady=1)
+            ttk.Label(line, text=movement_name, width=26).pack(side=tk.LEFT)
+            var = tk.StringVar(value="")
+            ttk.Entry(line, textvariable=var, width=6).pack(side=tk.LEFT)
+            movement_vars.append((movement_name, var))
+        movements_frame.pack(fill=tk.X, pady=(2, 4), after=per_movement_cb)
 
     def rebuild_fields(*_args) -> None:
         for child in fields_frame.winfo_children():
@@ -83,6 +109,11 @@ def show_practice_log_dialog(
         hint_var.set(preset.get("hint", ""))
         if preset["domain"] in domain_names:
             domain_var.set(preset["domain"])
+        if preset.get("movements"):
+            per_movement_cb.pack(anchor="w", pady=(4, 0), before=fields_frame)
+        else:
+            per_movement_cb.pack_forget()
+        rebuild_movements()
         labels = preset.get("labels", {})
         for field in preset["fields"]:
             if field == practices.FIELD_NOTES:
@@ -97,6 +128,14 @@ def show_practice_log_dialog(
                 ttk.Checkbutton(fields_frame, text="Per side", variable=var).pack(anchor="w", pady=2)
                 field_vars[field] = var
                 continue
+            if field == practices.FIELD_EFFECT:
+                ttk.Label(
+                    fields_frame, text=_FIELD_LABELS[practices.FIELD_EFFECT]
+                ).pack(anchor="w", pady=(6, 0))
+                var = tk.StringVar(value="")
+                ttk.Entry(fields_frame, textvariable=var).pack(fill=tk.X)
+                field_vars[field] = var
+                continue
             label = labels.get(field) or _FIELD_LABELS.get(field, field)
             line = ttk.Frame(fields_frame)
             line.pack(fill=tk.X, pady=2)
@@ -106,6 +145,7 @@ def show_practice_log_dialog(
             field_vars[field] = var
 
     preset_title.trace_add("write", rebuild_fields)
+    per_movement_on.trace_add("write", lambda *_a: rebuild_movements())
     rebuild_fields()
 
     def save() -> None:
@@ -120,6 +160,10 @@ def show_practice_log_dialog(
             kwargs[field] = var.get()
         if "notes" in notes_widget:
             kwargs["notes"] = notes_widget["notes"].get("1.0", "end-1c").strip()
+        if per_movement_on.get() and movement_vars:
+            kwargs["movements"] = [
+                {"name": name, "reps": var.get()} for name, var in movement_vars
+            ]
         try:
             tracker.practices = practices.add_practice(tracker.practices, **kwargs)
         except ValueError as exc:

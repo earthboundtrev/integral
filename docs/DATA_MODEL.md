@@ -147,6 +147,11 @@ a summary line into the linked Life Domain's day entry (so it counts for history
       "hold_seconds": null,
       "per_side": false,
       "quality": 8,
+      "effect": "Big energy boost, less daytime sleepiness",
+      "movements": [
+        {"name": "Rite 1 — Spin", "reps": 9, "hold_seconds": null, "quality": null},
+        {"name": "Rite 2 — Leg Raise", "reps": 9, "hold_seconds": null, "quality": null}
+      ],
       "notes": "Felt strong energy after",
       "domain": "Physical Practices & Movement"
     }
@@ -155,5 +160,9 @@ a summary line into the linked Life Domain's day entry (so it counts for history
 ```
 
 Presets live in `practices.py` (`PRACTICE_PRESETS`) and declare which fields + labels a routine
-surfaces plus its default linked domain. Extend that dict to add a routine.
+surfaces plus its default linked domain. A preset may also declare `movements` (a list of names),
+which enables an optional **per-movement** log (reps per movement) in the dialog. The optional
+`effect` field captures the subjective result ("energy boost?", "reduced sleepiness?") and, with
+the per-movement breakdown, is written into the linked domain note (feeding correlations + AI).
+Extend `PRACTICE_PRESETS` to add a routine — no schema change needed.
 
