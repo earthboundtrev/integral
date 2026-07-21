@@ -643,6 +643,66 @@ def analyze_practice_symptom_correlations(
     return insights
 
 
+def analyze_practice_consistency(
+    practices_store: dict | None,
+    today: date | None = None,
+    *,
+    days: int = 7,
+) -> list[Insight]:
+    """Nudge on daily-practice consistency (holistic guidance)."""
+    today = today or date.today()
+    if not isinstance(practices_store, dict):
+        return []
+    items = [i for i in (practices_store.get("items") or []) if isinstance(i, dict)]
+    if not items:
+        return []
+
+    dates = set(_date_range(today, days))
+    by_practice: dict[str, set[str]] = {}
+    active_days: set[str] = set()
+    for item in items:
+        day = str(item.get("date") or "")
+        name = str(item.get("name") or "").strip()
+        if day not in dates or not name:
+            continue
+        active_days.add(day)
+        by_practice.setdefault(name, set()).add(day)
+
+    insights: list[Insight] = []
+    ever_logged = any(str(i.get("date") or "") for i in items)
+    last_logged = max((str(i.get("date") or "") for i in items), default="")
+    if not active_days and ever_logged:
+        gap = ""
+        parsed = _parse_date(last_logged)
+        if parsed:
+            gap = f" (last on {last_logged}, {(today - parsed).days} days ago)"
+        insights.append(
+            Insight(
+                severity="watch",
+                category=None,
+                title="Practices have stalled",
+                message=f"No daily practices logged in the last {days} days{gap}. "
+                "A short session can restart the habit.",
+                priority=35,
+            )
+        )
+        return insights
+
+    threshold = max(3, (days * 3) // 5)
+    for name, logged_days in by_practice.items():
+        if len(logged_days) >= threshold:
+            insights.append(
+                Insight(
+                    severity="positive",
+                    category=None,
+                    title="Strong practice consistency",
+                    message=f"{name}: logged {len(logged_days)} of the last {days} days. Keep it up.",
+                    priority=60,
+                )
+            )
+    return insights
+
+
 def analyze_all(
     entries: dict,
     categories: dict,
@@ -660,6 +720,7 @@ def analyze_all(
         analyze_cross_category(entries, categories, today, sessions=sessions, program_state=program_state)
     )
     insights.extend(analyze_practice_symptom_correlations(entries, practices, today))
+    insights.extend(analyze_practice_consistency(practices, today))
     insights.sort(key=lambda item: item.sort_key())
     return insights
 

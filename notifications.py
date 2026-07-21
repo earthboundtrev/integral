@@ -111,9 +111,37 @@ def default_notification_settings() -> dict:
         "reminder_times": list(DEFAULT_REMINDER_TIMES),
         "end_of_day_reminder": DEFAULT_END_OF_DAY_REMINDER,
         "reminder_state": {},
+        "practice_reminders": [],
         "start_with_windows": False,
         "minimize_on_close": False,
     }
+
+
+def _normalize_practice_reminders(raw: object) -> list[dict]:
+    """Clean a list of practice reminders: {label, time (HH:MM), enabled}."""
+    if not isinstance(raw, list):
+        return []
+    cleaned: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        label = str(item.get("label") or "").strip()
+        time_value = str(item.get("time") or "").strip()
+        if not label or _parse_hhmm(time_value) is None:
+            continue
+        key = (label.lower(), time_value)
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(
+            {
+                "label": label,
+                "time": time_value,
+                "enabled": bool(item.get("enabled", True)),
+            }
+        )
+    return cleaned
 
 
 def normalize_notification_settings(settings: dict | None) -> dict:
@@ -127,6 +155,7 @@ def normalize_notification_settings(settings: dict | None) -> dict:
         merged["end_of_day_reminder"] = str(stored["end_of_day_reminder"])
     if isinstance(stored.get("reminder_state"), dict):
         merged["reminder_state"] = dict(stored["reminder_state"])
+    merged["practice_reminders"] = _normalize_practice_reminders(stored.get("practice_reminders"))
     merged["enabled"] = bool(merged.get("enabled", True))
     merged["start_with_windows"] = bool(merged.get("start_with_windows", False))
     merged["minimize_on_close"] = bool(merged.get("minimize_on_close", False))
@@ -230,6 +259,42 @@ def due_reminders(
     return due
 
 
+def practice_reminder_key(label: str, reminder_time: str) -> str:
+    return f"practice:{reminder_time}:{label}"
+
+
+def due_practice_reminders(
+    settings: dict,
+    *,
+    now: datetime | None = None,
+) -> list[tuple[str, str, str]]:
+    """Practice-specific reminders — fire once/day at their time, independent of logging."""
+    normalized = normalize_notification_settings(settings)
+    notifications = normalized["notifications"]
+    if not notifications.get("enabled", True):
+        return []
+
+    now = now or datetime.now()
+    today = now.date()
+    state = reminder_state_for_day(settings, today)
+    sent_keys = set(state["sent_keys"])
+    due: list[tuple[str, str, str]] = []
+    for reminder in notifications.get("practice_reminders") or []:
+        if not reminder.get("enabled", True):
+            continue
+        label = str(reminder.get("label") or "").strip()
+        reminder_time = str(reminder.get("time") or "").strip()
+        if not label:
+            continue
+        key = practice_reminder_key(label, reminder_time)
+        if key in sent_keys:
+            continue
+        if not _time_reached(now, reminder_time):
+            continue
+        due.append((key, f"{APP_NAME} — practice", f"Time for: {label}"))
+    return due
+
+
 def record_sent_reminders(settings: dict, keys: list[str], today: date | None = None) -> dict:
     updated = normalize_notification_settings(settings)
     today = today or datetime.now().date()
@@ -293,6 +358,7 @@ class ReminderScheduler:
     def _process_due_reminders(self) -> None:
         settings = self._get_settings()
         pending = due_reminders(settings, logged_today=self._has_logged_today())
+        pending = pending + due_practice_reminders(settings)
         if not pending:
             return
 
