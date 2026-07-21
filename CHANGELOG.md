@@ -12,6 +12,7 @@
 - **Personal Health & Alignment template** — a second one-click starter pack adding 5 personal-first domains (Vitality & Anti-Aging, Sleep & Hypersomnia Management, Neurodivergence & Self-Understanding, Inflammation & Oxidative Stress, Life Alignment & Goals) with direction-aware metrics that feed the correlation engine (#40)
 - **Deeper practice logging** — practices now support an optional **per-movement** breakdown (reps per rite / per lift), a new **Strong Medicine** preset, and a subjective **effect** field ("energy boost? reduced sleepiness?") that's written into the linked domain note (feeding correlations + AI). The practice log is now reachable from the **Fitness Hub** too, not just Quick Capture (#41)
 - **Goal & alignment tools** — quarterly milestones can now link to a **life domain** and track a simple **progress %** (shown in the list + summary; done snaps to 100%); the journal gains alignment/masking/autism/goal **reflection prompts**. Milestones CSV export gains `domain`/`progress` columns (#43)
+- **Personal AI insight kinds** — four new optional, fully-local (Ollama) insight focuses: **Vitality & Anti-Aging**, **Sleep & Hypersomnia**, **Neurodivergence & Alignment**, and **Life Alignment & Goals**, reasoning over domains, practice/effect notes, symptom metrics, and journal reflections. Prompts are affirming and stay coach-not-doctor with no invented data (#42)
 
 ## 0.3.10.1 — 2026-07-20
 

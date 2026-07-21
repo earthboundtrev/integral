@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 
 from ai_insights import (
     DEFAULT_MODEL,
+    INSIGHT_KIND_ORDER,
     INSIGHT_KINDS,
     build_chat_messages,
     collect_recent_context,
@@ -102,3 +103,29 @@ def test_ollama_optional():
     assert DEFAULT_MODEL == "llama3.2:3b"
     assert "day_scanner" in INSIGHT_KINDS
     assert INSIGHT_KINDS["day_scanner"]["default_days"] == 1
+
+
+def test_personal_insight_kinds_present_and_well_formed():
+    new_kinds = [
+        "vitality_aging",
+        "sleep_hypersomnia",
+        "neurodivergence_alignment",
+        "life_alignment_goals",
+    ]
+    for kind in new_kinds:
+        assert kind in INSIGHT_KINDS, kind
+        assert kind in INSIGHT_KIND_ORDER
+        spec = INSIGHT_KINDS[kind]
+        for key in ("label", "default_days", "system", "user_intro"):
+            assert spec.get(key), f"{kind} missing {key}"
+        assert isinstance(spec["default_days"], int)
+
+
+def test_personal_kinds_build_chat_messages_and_guardrails():
+    messages = build_chat_messages("sample context", kind="sleep_hypersomnia", days=21)
+    assert messages[0]["role"] == "system"
+    assert "sample context" in messages[1]["content"]
+    # No medical advice / no invented data guardrails present.
+    neuro = INSIGHT_KINDS["neurodivergence_alignment"]
+    assert "not invent" in neuro["user_intro"].lower()
+    assert "medical advice" in INSIGHT_KINDS["vitality_aging"]["user_intro"].lower()
