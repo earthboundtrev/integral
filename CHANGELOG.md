@@ -8,6 +8,7 @@
 - **Domain templates** — apply a pre-configured starter pack of Life Domains in one click (first pack: **Gut Healing**), from onboarding or the category editor. Non-destructive: existing domains are never overwritten. Extensible via `domain_templates.py` (#36)
 - **Daily practice logging** — log non-DAG routines (Five Tibetan Rites, diaphragmatic breathing, wind-releasing yoga, generic movement) with duration, reps/completions, hold time (per side), quality (1–10), and notes via Quick Capture → "Log daily practice". Logged practices bridge into the linked life domain (history/streaks/AI); CC session summaries now show form quality. Extensible via `practices.py` (#37)
 - **Practice → symptom correlations** — the guidance engine now compares symptom metrics (gas, bloating, stomach comfort, energy, regularity) on days with a logged practice vs days without, surfacing findings like "lower average gas on practice days" (guarded by a minimum sample size). New "Gut & Symptom Patterns" AI insight kind looks for practice-vs-symptom relationships (#38)
+- **Practice-specific reminders & guidance** — set reminders tied to specific routines (e.g. "Five Tibetan Rites + 10 min breathing") at a chosen time from Data & Security → Reminders; each fires once/day while Integral is running. Guidance now also flags practice consistency (well-kept vs stalled) (#39)
 
 ## 0.3.10.1 — 2026-07-20
 

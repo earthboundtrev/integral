@@ -93,6 +93,7 @@ User data: `%APPDATA%\Integral\data.json` (encrypted optional via Data & Securit
 | **Domain templates** | One-click starter packs (e.g. **Gut Healing**) add a coherent set of pre-configured domains; applied from onboarding or the category editor, never overwriting existing domains |
 | **Daily practices** | Log non-program routines (Five Tibetan Rites, breathing, wind-releasing yoga) with duration, reps/completions, hold time, quality (1–10), and notes; flows into the linked life domain for history, streaks, and insights |
 | **Symptom correlations** | Guidance compares symptom metrics (gas, bloating, comfort, energy) on days *with* a logged practice vs *without*, surfacing patterns like "lower gas on practice days"; a "Gut & Symptom Patterns" AI insight goes deeper |
+| **Practice reminders** | Set nudges for specific routines (e.g. "Five Tibetan Rites + 10 min breathing") at a chosen time; guidance also flags practice consistency (kept-up vs stalled) |
 | **Journal** | Prompts or free write; markdown-lite toolbar (bold/italic/headings/lists); backlinks; cross-links to journal/domain/fitness/writing; gap-day continuity; OS `integral://` paste |
 | **Writing Projects** | Novels/scripts library — inspiration + manuscript in separate windows; debounced autosave; stored under `%APPDATA%\Integral\creative\` |
 | **Creative/Mental Work** | Open Writing Projects from the category log; **Log writing session** marks creative progress for the day |

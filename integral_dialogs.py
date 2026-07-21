@@ -396,6 +396,88 @@ def show_security_dialog(tracker: PersonalDevelopmentTracker) -> None:
     if not autostart_windows.is_supported():
         autostart_cb.state(["disabled"])
 
+    ttk.Label(
+        inner, text="Practice reminders", font=("Helvetica", 12, "bold")
+    ).pack(anchor="w", padx=15, pady=(10, 2))
+    ttk.Label(
+        inner,
+        text="Nudges for specific routines (e.g. \"Five Tibetan Rites + 10 min breathing\"). "
+        "Each fires once per day at its time while Integral is running.",
+        wraplength=500,
+        style="Muted.TLabel",
+    ).pack(anchor="w", padx=15, pady=(0, 6))
+
+    practice_list = ttk.Frame(inner)
+    practice_list.pack(fill=tk.X, padx=15, pady=(0, 4))
+
+    def refresh_practice_reminders() -> None:
+        for child in practice_list.winfo_children():
+            child.destroy()
+        tracker.settings = normalize_notification_settings(tracker.settings)
+        reminders = tracker.settings["notifications"].get("practice_reminders") or []
+        if not reminders:
+            ttk.Label(
+                practice_list, text="No practice reminders yet.", style="Muted.TLabel"
+            ).pack(anchor="w")
+            return
+        for index, reminder in enumerate(reminders):
+            row = ttk.Frame(practice_list)
+            row.pack(fill=tk.X, pady=1)
+            state = "" if reminder.get("enabled", True) else " (off)"
+            ttk.Label(
+                row, text=f"{reminder['time']}  —  {reminder['label']}{state}"
+            ).pack(side=tk.LEFT)
+            ttk.Button(
+                row,
+                text="Remove",
+                width=8,
+                command=lambda i=index: remove_practice_reminder(i),
+            ).pack(side=tk.RIGHT)
+
+    def remove_practice_reminder(index: int) -> None:
+        tracker.settings = normalize_notification_settings(tracker.settings)
+        reminders = list(tracker.settings["notifications"].get("practice_reminders") or [])
+        if 0 <= index < len(reminders):
+            reminders.pop(index)
+            tracker.settings["notifications"]["practice_reminders"] = reminders
+            tracker.save_data(flush=True)
+        refresh_practice_reminders()
+
+    add_row = ttk.Frame(inner)
+    add_row.pack(fill=tk.X, padx=15, pady=(2, 4))
+    new_label = tk.StringVar()
+    new_time = tk.StringVar(value="07:00")
+    ttk.Entry(add_row, textvariable=new_label, width=32).pack(side=tk.LEFT)
+    ttk.Label(add_row, text="at").pack(side=tk.LEFT, padx=4)
+    ttk.Entry(add_row, textvariable=new_time, width=7).pack(side=tk.LEFT)
+
+    def add_practice_reminder() -> None:
+        label = new_label.get().strip()
+        time_value = new_time.get().strip()
+        if not label:
+            messagebox.showinfo("Practice reminder", "Enter a practice name.", parent=window)
+            return
+        tracker.settings = normalize_notification_settings(tracker.settings)
+        reminders = list(tracker.settings["notifications"].get("practice_reminders") or [])
+        reminders.append({"label": label, "time": time_value, "enabled": True})
+        tracker.settings["notifications"]["practice_reminders"] = reminders
+        tracker.settings = normalize_notification_settings(tracker.settings)
+        if not any(
+            r["label"] == label for r in tracker.settings["notifications"]["practice_reminders"]
+        ):
+            messagebox.showinfo(
+                "Practice reminder", "Use a valid time as HH:MM (24h).", parent=window
+            )
+            return
+        tracker.save_data(flush=True)
+        new_label.set("")
+        refresh_practice_reminders()
+
+    ttk.Button(add_row, text="Add", width=6, command=add_practice_reminder).pack(
+        side=tk.LEFT, padx=6
+    )
+    refresh_practice_reminders()
+
     ttk.Separator(inner, orient=tk.HORIZONTAL).pack(fill=tk.X, padx=15, pady=12)
     ttk.Label(inner, text="Quick Capture", font=("Helvetica", 13, "bold")).pack(
         anchor="w", padx=15, pady=(4, 4)
