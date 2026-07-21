@@ -63,6 +63,42 @@ def test_apply_deep_copies_metrics():
     assert template_default != 99
 
 
+def test_personal_alignment_pack_shape():
+    template = domain_templates.get_template("personal_alignment")
+    assert template is not None
+    domains = template["domains"]
+    assert 5 <= len(domains) <= 7
+    assert "Sleep & Hypersomnia Management" in domains
+    assert "Life Alignment & Goals" in domains
+    for name, definition in domains.items():
+        assert definition["checklist"]
+        for metric in definition.get("metrics", []):
+            assert metric["type"] in ("rating", "number")
+            if metric["type"] == "rating":
+                assert metric["min"] < metric["max"]
+            else:
+                assert "unit" in metric
+
+
+def test_personal_alignment_metric_directionality():
+    """Symptom-style metrics carry a lower/higher hint so #38 correlations read correctly."""
+    domains = domain_templates.get_template("personal_alignment")["domains"]
+    sleepiness = next(
+        m
+        for m in domains["Sleep & Hypersomnia Management"]["metrics"]
+        if "sleepiness" in m["name"].lower()
+    )
+    assert "lower = better" in sleepiness["name"].lower()
+
+
+def test_personal_alignment_applies_non_destructively():
+    merged, added, _ = domain_templates.apply_template({}, "personal_alignment")
+    assert "Vitality & Anti-Aging" in added
+    merged2, added2, skipped2 = domain_templates.apply_template(merged, "personal_alignment")
+    assert added2 == []
+    assert len(skipped2) == len(added)
+
+
 def test_unknown_template_raises():
     try:
         domain_templates.apply_template({}, "nope")

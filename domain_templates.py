@@ -94,6 +94,76 @@ DOMAIN_TEMPLATES: dict[str, dict[str, Any]] = {
             },
         },
     },
+    "personal_alignment": {
+        "title": "Personal Health & Alignment",
+        "description": (
+            "Personal-first pack: vitality/anti-aging, sleep & hypersomnia, neurodivergence & "
+            "self-understanding, inflammation/oxidative stress, and life alignment & goals. Edit "
+            "checklists/notes to match your exact practices (e.g. add specific book protocols)."
+        ),
+        "domains": {
+            "Vitality & Anti-Aging": {
+                "checklist": [
+                    "Anti-inflammatory / antioxidant-supporting food",
+                    "Movement or resistance practice",
+                    "Sunlight / circadian anchor",
+                    "Stress down-regulation (breath, rest)",
+                ],
+                "metrics": [
+                    {"name": "Energy / vitality", "type": "rating", "min": 1, "max": 10, "default": 5},
+                    {"name": "Perceived aging signs (lower = better)", "type": "rating", "min": 1, "max": 10, "default": 5},
+                ],
+            },
+            "Sleep & Hypersomnia Management": {
+                "checklist": [
+                    "Consistent wake time",
+                    "Morning light exposure",
+                    "No screens ~1h before bed",
+                    "Wind-down / sleep hygiene routine",
+                ],
+                "metrics": [
+                    {"name": "Daytime sleepiness (lower = better)", "type": "rating", "min": 1, "max": 10, "default": 5},
+                    {"name": "Sleep inertia on waking (lower = better)", "type": "rating", "min": 1, "max": 10, "default": 5},
+                    {"name": "Hours slept", "type": "number", "unit": "hrs", "default": 0},
+                ],
+            },
+            "Neurodivergence & Self-Understanding": {
+                "checklist": [
+                    "Honored a sensory need",
+                    "Noticed / reduced masking",
+                    "Acted from authentic preference",
+                    "Reflected on what autism means to me",
+                ],
+                "metrics": [
+                    {"name": "Sensory load (lower = better)", "type": "rating", "min": 1, "max": 10, "default": 5},
+                    {"name": "Masking effort (lower = better)", "type": "rating", "min": 1, "max": 10, "default": 5},
+                    {"name": "Self-understanding / acceptance", "type": "rating", "min": 1, "max": 10, "default": 5},
+                ],
+            },
+            "Inflammation & Oxidative Stress": {
+                "checklist": [
+                    "Avoided known inflammatory triggers",
+                    "Antioxidant-rich intake",
+                    "Recovery / low-stress block",
+                ],
+                "metrics": [
+                    {"name": "Inflammation feel (lower = better)", "type": "rating", "min": 1, "max": 10, "default": 5},
+                    {"name": "Fatigue (lower = better)", "type": "rating", "min": 1, "max": 10, "default": 5},
+                ],
+            },
+            "Life Alignment & Goals": {
+                "checklist": [
+                    "Acted on a meaningful goal",
+                    "Chose alignment over autopilot",
+                    "Reflected on misalignment / next step",
+                ],
+                "metrics": [
+                    {"name": "Alignment feel", "type": "rating", "min": 1, "max": 10, "default": 5},
+                    {"name": "Goal progress", "type": "rating", "min": 1, "max": 10, "default": 5},
+                ],
+            },
+        },
+    },
 }
 
 
