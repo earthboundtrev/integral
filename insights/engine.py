@@ -552,6 +552,97 @@ def analyze_cross_category(
     return insights
 
 
+SYMPTOM_METRIC_HINTS = (
+    "gas",
+    "bloat",
+    "stomach comfort",
+    "regularity",
+    "energy",
+    "well-being",
+    "wellbeing",
+    "comfort",
+)
+LOWER_IS_BETTER_HINTS = ("gas", "bloat")
+
+
+def _practice_days(practices_store: dict | None, dates: list[str]) -> set[str]:
+    if not isinstance(practices_store, dict):
+        return set()
+    logged = {
+        str(item.get("date"))
+        for item in (practices_store.get("items") or [])
+        if isinstance(item, dict) and item.get("date")
+    }
+    return {day for day in dates if day in logged}
+
+
+def _collect_symptom_metrics(entries: dict, dates: list[str]) -> dict[str, dict[str, float]]:
+    """Return {metric_name: {date: value}} for metrics whose name matches a symptom hint."""
+    collected: dict[str, dict[str, float]] = {}
+    for date_str in dates:
+        day = entries.get(date_str, {})
+        if not isinstance(day, dict):
+            continue
+        for entry in day.values():
+            if not isinstance(entry, dict):
+                continue
+            for name, raw in (entry.get("metrics") or {}).items():
+                lowered = str(name).lower()
+                if not any(hint in lowered for hint in SYMPTOM_METRIC_HINTS):
+                    continue
+                try:
+                    value = float(raw)
+                except (TypeError, ValueError):
+                    continue
+                collected.setdefault(name, {})[date_str] = value
+    return collected
+
+
+def analyze_practice_symptom_correlations(
+    entries: dict,
+    practices_store: dict | None,
+    today: date | None = None,
+    *,
+    days: int = 21,
+    min_samples: int = 3,
+) -> list[Insight]:
+    """Compare symptom metrics on days with a logged practice vs days without."""
+    today = today or date.today()
+    dates = _date_range(today, days)
+    practice_days = _practice_days(practices_store, dates)
+    if len(practice_days) < min_samples:
+        return []
+
+    insights: list[Insight] = []
+    for name, by_day in _collect_symptom_metrics(entries, dates).items():
+        with_vals = [value for day, value in by_day.items() if day in practice_days]
+        without_vals = [value for day, value in by_day.items() if day not in practice_days]
+        if len(with_vals) < min_samples or len(without_vals) < min_samples:
+            continue
+        avg_with = sum(with_vals) / len(with_vals)
+        avg_without = sum(without_vals) / len(without_vals)
+        delta = avg_with - avg_without
+        if abs(delta) < 0.5:
+            continue
+        lower_better = any(hint in name.lower() for hint in LOWER_IS_BETTER_HINTS)
+        better_on_practice = (delta < 0) if lower_better else (delta > 0)
+        direction = "lower" if delta < 0 else "higher"
+        message = (
+            f"{name}: {avg_with:.1f} on practice days vs {avg_without:.1f} on others "
+            f"({direction} with practice)."
+        )
+        insights.append(
+            Insight(
+                severity="positive" if better_on_practice else "watch",
+                category=None,
+                title="Practice ↔ symptom pattern",
+                message=message,
+                priority=40,
+            )
+        )
+    return insights
+
+
 def analyze_all(
     entries: dict,
     categories: dict,
@@ -559,6 +650,7 @@ def analyze_all(
     today: date | None = None,
     sessions: list[dict] | None = None,
     program_state: dict | None = None,
+    practices: dict | None = None,
 ) -> list[Insight]:
     today = today or date.today()
     insights: list[Insight] = []
@@ -567,6 +659,7 @@ def analyze_all(
     insights.extend(
         analyze_cross_category(entries, categories, today, sessions=sessions, program_state=program_state)
     )
+    insights.extend(analyze_practice_symptom_correlations(entries, practices, today))
     insights.sort(key=lambda item: item.sort_key())
     return insights
 

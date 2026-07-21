@@ -106,6 +106,22 @@ INSIGHT_KINDS: dict[str, dict[str, str | int]] = {
             "and what seems unresolved. One prompt for the next journal entry."
         ),
     },
+    "gut_symptoms": {
+        "label": "Gut & Symptom Patterns",
+        "default_days": 21,
+        "system": (
+            "You are a careful holistic-health coach (not a doctor). Look for relationships "
+            "between daily practices (breathing, Five Tibetan Rites, yoga, diet adherence, "
+            "supplements) and symptoms (gas, bloating, stomach comfort, energy, regularity). "
+            "Only claim patterns the data supports; note when evidence is thin. Be practical "
+            "and kind. 4-6 short paragraphs."
+        ),
+        "user_intro": (
+            "Using the '[Practice ...]' log lines, symptom metrics, and notes below, tell me "
+            "which practices seem to line up with better or worse symptoms, and suggest one "
+            "experiment to confirm. Do not invent data or give medical advice."
+        ),
+    },
 }
 
 INSIGHT_KIND_ORDER = list(INSIGHT_KINDS.keys())
