@@ -31,6 +31,45 @@ def test_today_vs_upcoming():
     assert [i["text"] for i in upcoming] == ["Future"]
 
 
+def test_move_todo_reorders_within_section():
+    store = todos.empty_todos()
+    store = todos.add_todo(store, text="A", work_date="2026-07-20")
+    store = todos.add_todo(store, text="B", work_date="2026-07-20")
+    store = todos.add_todo(store, text="C", work_date="2026-07-20")
+    today = todos.items_for_day(store, "2026-07-20")
+    assert [i["text"] for i in today] == ["A", "B", "C"]
+    ids = [i["id"] for i in today]
+    # Move C up one → A, C, B
+    store = todos.move_todo(store, ids[2], ids, -1)
+    order = [i["text"] for i in todos.items_for_day(store, "2026-07-20")]
+    assert order == ["A", "C", "B"]
+    # Move A down one → C, A, B
+    order_ids = [i["id"] for i in todos.items_for_day(store, "2026-07-20")]
+    store = todos.move_todo(store, order_ids[1], order_ids, -1)
+    assert [i["text"] for i in todos.items_for_day(store, "2026-07-20")] == ["C", "A", "B"]
+
+
+def test_move_todo_noop_off_ends():
+    store = todos.add_todo(todos.empty_todos(), text="Only", work_date="2026-07-20")
+    ids = [i["id"] for i in todos.list_items(store)]
+    before = list(todos.list_items(store))
+    store = todos.move_todo(store, ids[0], ids, -1)
+    store = todos.move_todo(store, ids[0], ids, 1)
+    assert todos.list_items(store) == before
+
+
+def test_edit_updates_text_date_category():
+    store = todos.add_todo(todos.empty_todos(), text="Old", work_date="2026-07-20")
+    tid = store["items"][0]["id"]
+    store = todos.update_todo(
+        store, tid, text="New", work_date="2026-07-25", category="Money/Freedom"
+    )
+    item = todos.get_todo(store, tid)
+    assert item["text"] == "New"
+    assert item["work_date"] == "2026-07-25"
+    assert item["category"] == "Money/Freedom"
+
+
 def test_toggle_and_remove():
     store = todos.add_todo(todos.empty_todos(), text="X", work_date="2026-07-20")
     tid = store["items"][0]["id"]

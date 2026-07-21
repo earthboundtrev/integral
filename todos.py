@@ -71,7 +71,8 @@ def items_for_day(todos: dict[str, Any], day: str) -> list[dict[str, Any]]:
         elif work < today and not item["done"]:
             # Overdue incomplete still on Today
             result.append(item)
-    result.sort(key=lambda i: (i["done"], i["work_date"], i["text"].lower()))
+    # Preserve stored (manual) order; only sink finished items to the bottom.
+    result.sort(key=lambda i: i["done"])
     return result
 
 
@@ -87,7 +88,7 @@ def upcoming_items(todos: dict[str, Any], today: str) -> list[dict[str, Any]]:
         work = datetime.strptime(item["work_date"], "%Y-%m-%d").date()
         if work > today_d:
             result.append(item)
-    result.sort(key=lambda i: (i["work_date"], i["text"].lower()))
+    # Preserve stored (manual) order so ↑/↓ reordering is reflected.
     return result
 
 
@@ -150,3 +151,33 @@ def get_todo(todos: dict[str, Any], todo_id: str) -> dict[str, Any] | None:
         if item["id"] == todo_id:
             return item
     return None
+
+
+def move_todo(
+    todos: dict[str, Any],
+    todo_id: str,
+    sibling_ids: list[str],
+    delta: int,
+) -> dict[str, Any]:
+    """Swap ``todo_id`` with its neighbour in the visible section order.
+
+    ``sibling_ids`` is the ordered list of ids currently shown in that section;
+    ``delta`` is -1 (up) or +1 (down). Reorders the underlying ``items`` list so
+    the new order persists. No-op when the move would fall off either end.
+    """
+    todos = normalize_todos(todos)
+    ids = list(sibling_ids or [])
+    if todo_id not in ids:
+        return todos
+    pos = ids.index(todo_id)
+    target = pos + delta
+    if target < 0 or target >= len(ids):
+        return todos
+    swap_id = ids[target]
+    items = todos["items"]
+    index_by_id = {item["id"]: idx for idx, item in enumerate(items)}
+    if todo_id not in index_by_id or swap_id not in index_by_id:
+        return todos
+    a, b = index_by_id[todo_id], index_by_id[swap_id]
+    items[a], items[b] = items[b], items[a]
+    return todos
