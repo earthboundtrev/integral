@@ -90,6 +90,7 @@ User data: `%APPDATA%\Integral\data.json` (encrypted optional via Data & Securit
 | Area | Features |
 |------|----------|
 | **Life domains (18)** | Ratings, checklists, metrics, notes, streaks, guidance |
+| **Domain templates** | One-click starter packs (e.g. **Gut Healing**) add a coherent set of pre-configured domains; applied from onboarding or the category editor, never overwriting existing domains |
 | **Journal** | Prompts or free write; markdown-lite toolbar (bold/italic/headings/lists); backlinks; cross-links to journal/domain/fitness/writing; gap-day continuity; OS `integral://` paste |
 | **Writing Projects** | Novels/scripts library — inspiration + manuscript in separate windows; debounced autosave; stored under `%APPDATA%\Integral\creative\` |
 | **Creative/Mental Work** | Open Writing Projects from the category log; **Log writing session** marks creative progress for the day |
