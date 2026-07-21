@@ -21,6 +21,11 @@ DEFAULT_PROMPTS = [
     "Search practice — what's alive?",
     "What do I want to remember?",
     "Stream of consciousness",
+    "Alignment check — where did I feel most/least aligned?",
+    "What did masking cost me today?",
+    "What does autism mean to me right now?",
+    "Goal reflection — what moved forward, what's stuck?",
+    "Where am I out of alignment, and what's one next step?",
 ]
 
 MIN_BACKDATE_REASON_LEN = 12

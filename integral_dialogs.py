@@ -154,18 +154,35 @@ def show_milestones_dialog(tracker: PersonalDevelopmentTracker) -> None:
 
     title_var = tk.StringVar()
     status_var = tk.StringVar(value="open")
+    domain_var = tk.StringVar(value="")
+    progress_var = tk.StringVar(value="0")
     notes_text = scrolledtext.ScrolledText(editor, height=8, wrap=tk.WORD)
     style_text_widget(notes_text, tracker.theme)
 
+    domain_choices = [""] + list(tracker.categories.keys())
+
     ttk.Label(editor, text="Title").grid(row=0, column=0, sticky="w")
     ttk.Entry(editor, textvariable=title_var, width=40).grid(row=1, column=0, sticky="ew", pady=(0, 8))
-    ttk.Label(editor, text="Status").grid(row=2, column=0, sticky="w")
-    ttk.Combobox(editor, textvariable=status_var, values=["open", "in_progress", "done"], state="readonly").grid(
-        row=3, column=0, sticky="w", pady=(0, 8)
+    meta_row = ttk.Frame(editor)
+    meta_row.grid(row=2, column=0, sticky="ew", pady=(0, 8))
+    ttk.Label(meta_row, text="Status").pack(side=tk.LEFT)
+    ttk.Combobox(
+        meta_row, textvariable=status_var, values=["open", "in_progress", "done"],
+        state="readonly", width=12,
+    ).pack(side=tk.LEFT, padx=(4, 12))
+    ttk.Label(meta_row, text="Progress %").pack(side=tk.LEFT)
+    ttk.Spinbox(meta_row, from_=0, to=100, increment=5, textvariable=progress_var, width=5).pack(
+        side=tk.LEFT, padx=4
     )
-    ttk.Label(editor, text="Notes").grid(row=4, column=0, sticky="w")
-    notes_text.grid(row=5, column=0, sticky="nsew")
-    editor.rowconfigure(5, weight=1)
+    ttk.Label(editor, text="Linked life domain").grid(row=3, column=0, sticky="w")
+    ttk.Combobox(
+        editor, textvariable=domain_var, values=domain_choices, state="readonly"
+    ).grid(row=4, column=0, sticky="ew", pady=(0, 8))
+    ttk.Label(editor, text="Notes (supports [[journal:…]] / [[domain:…]] links)").grid(
+        row=5, column=0, sticky="w"
+    )
+    notes_text.grid(row=6, column=0, sticky="nsew")
+    editor.rowconfigure(6, weight=1)
 
     working = list(tracker.milestones)
 
@@ -174,7 +191,11 @@ def show_milestones_dialog(tracker: PersonalDevelopmentTracker) -> None:
         for item in working:
             status = item.get("status", "open")
             mark = "✓" if status == "done" else "○"
-            listbox.insert(tk.END, f"{mark} {item.get('title', '')}")
+            progress = item.get("progress", 0)
+            suffix = f" — {progress}%" if progress else ""
+            domain = item.get("domain") or ""
+            domain_tag = f" [{domain}]" if domain else ""
+            listbox.insert(tk.END, f"{mark} {item.get('title', '')}{suffix}{domain_tag}")
         if select_index is not None and 0 <= select_index < len(working):
             listbox.selection_set(select_index)
             load_selected()
@@ -186,6 +207,8 @@ def show_milestones_dialog(tracker: PersonalDevelopmentTracker) -> None:
         item = working[selection[0]]
         title_var.set(item.get("title", ""))
         status_var.set(item.get("status", "open"))
+        domain_var.set(item.get("domain", "") or "")
+        progress_var.set(str(item.get("progress", 0)))
         notes_text.delete("1.0", tk.END)
         notes_text.insert("1.0", item.get("notes", ""))
 
@@ -196,9 +219,16 @@ def show_milestones_dialog(tracker: PersonalDevelopmentTracker) -> None:
         item = working[selection[0]]
         item["title"] = title_var.get().strip() or item.get("title", "Untitled")
         item["status"] = status_var.get()
+        item["domain"] = domain_var.get().strip()
+        try:
+            item["progress"] = max(0, min(100, int(float(progress_var.get() or 0))))
+        except (TypeError, ValueError):
+            item["progress"] = item.get("progress", 0)
+        if item["status"] == "done":
+            item["progress"] = 100
+            if not item.get("completed_date"):
+                item["completed_date"] = datetime.now().strftime("%Y-%m-%d")
         item["notes"] = notes_text.get("1.0", tk.END).strip()
-        if item["status"] == "done" and not item.get("completed_date"):
-            item["completed_date"] = datetime.now().strftime("%Y-%m-%d")
         refresh_list(selection[0])
 
     def add_milestone() -> None:
@@ -210,6 +240,8 @@ def show_milestones_dialog(tracker: PersonalDevelopmentTracker) -> None:
                 "status": "open",
                 "notes": "",
                 "completed_date": "",
+                "domain": "",
+                "progress": 0,
             }
         )
         refresh_list(len(working) - 1)
