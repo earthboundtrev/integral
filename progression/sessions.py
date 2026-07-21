@@ -80,6 +80,8 @@ def format_session_summary(repo: FitnessRepository, session: WorkoutSession) -> 
             parts.append(f"{workout_set.hold_seconds}s hold")
         if workout_set.weight_kg is not None:
             parts.append(f"{workout_set.weight_kg} kg")
+        if workout_set.form_quality is not None:
+            parts.append(f"quality {workout_set.form_quality}/10")
         lines.append(f"  • {name}: {', '.join(parts) if parts else 'logged'}")
     return "\n".join(lines)
 

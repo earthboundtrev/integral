@@ -36,6 +36,7 @@ import quick_capture
 from quick_capture_ui import close_quick_capture_panel, open_quick_capture_panel
 import focus_shield
 import todos
+import practices
 from milestones import merge_milestones, milestone_summary
 from notifications import ReminderScheduler, normalize_notification_settings, show_windows_notification
 from paths import APP_NAME, APP_VERSION, data_file, ensure_data_file, icon_path
@@ -127,6 +128,7 @@ class PersonalDevelopmentTracker:
         self._focus_shield = focus_shield.FocusShieldSession()
         self._focus_shield_after_id: str | None = None
         self.todos: dict = todos.empty_todos()
+        self.practices: dict = practices.empty_practices()
         self._nav_buttons: dict[str, ttk.Widget] = {}
         self._nav_frame: ttk.Frame | None = None
 
@@ -581,6 +583,7 @@ class PersonalDevelopmentTracker:
             )
             self.day_plans = day_plans.normalize_day_plans(migrated.get("day_plans"))
             self.todos = todos.normalize_todos(migrated.get("todos"))
+            self.practices = practices.normalize_practices(migrated.get("practices"))
             self.program_state = migrated.get("program_state", {})
             if sync_fitness_sessions_to_entries(self.entries, self.settings.get("fitness")):
                 self.save_data(flush=True)
@@ -601,6 +604,7 @@ class PersonalDevelopmentTracker:
             self.creative_projects = creative_projects.empty_creative_projects()
             self.day_plans = day_plans.empty_day_plans()
             self.todos = todos.empty_todos()
+            self.practices = practices.empty_practices()
             self.program_state = compute_program_state(self.programs, self.sessions, self.settings)
             self.save_data(flush=True)
 
@@ -619,6 +623,7 @@ class PersonalDevelopmentTracker:
             "creative_projects": self.creative_projects,
             "day_plans": self.day_plans,
             "todos": self.todos,
+            "practices": self.practices,
             "program_state": self.program_state,
             "user_levels": {},
         }
@@ -1893,6 +1898,11 @@ class PersonalDevelopmentTracker:
 
     def show_writing_projects(self) -> None:
         show_writing_projects_window(self)
+
+    def show_log_practice(self, parent=None) -> None:
+        from practices_ui import show_practice_log_dialog
+
+        show_practice_log_dialog(self, parent)
 
     def log_writing_session_for_day(self, day: str | None = None, *, parent=None) -> bool:
         day_str = (day or self.today_str()).strip()

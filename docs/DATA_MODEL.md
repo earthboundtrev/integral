@@ -125,3 +125,35 @@ Document bodies are **not** stored in `data.json`. Files live under:
 
 On Windows (frozen or typical): `%APPDATA%\Integral\creative\...`
 
+---
+
+## Daily Practices (Phase 3)
+
+Index key in `data.json`: `practices`. Lightweight daily routines that are **not** part of the
+progressive fitness DAG (Tibetan Rites, breathing, yoga holds). Logging a practice also appends
+a summary line into the linked Life Domain's day entry (so it counts for history/streaks/AI).
+
+```json
+{
+  "items": [
+    {
+      "id": "12hex",
+      "date": "2026-07-21",
+      "name": "Five Tibetan Rites",
+      "preset": "tibetan_rites",
+      "duration_minutes": 12,
+      "completions": 9,
+      "sets": null,
+      "hold_seconds": null,
+      "per_side": false,
+      "quality": 8,
+      "notes": "Felt strong energy after",
+      "domain": "Physical Practices & Movement"
+    }
+  ]
+}
+```
+
+Presets live in `practices.py` (`PRACTICE_PRESETS`) and declare which fields + labels a routine
+surfaces plus its default linked domain. Extend that dict to add a routine.
+

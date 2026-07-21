@@ -22,6 +22,7 @@ QUICK_LOG_CHOICES = (
     ("Life domain log…", "life"),
     ("Journal", "journal"),
     ("Log exercise", "exercise"),
+    ("Log daily practice", "practice"),
     ("Fitness Hub", "fitness"),
     ("Body composition", "body"),
     ("Plan tomorrow", "plan"),
@@ -293,6 +294,8 @@ def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
             show_journal_window(tracker, tracker.today_str())
         elif kind == "exercise":
             tracker.show_log_exercise()
+        elif kind == "practice":
+            tracker.show_log_practice()
         elif kind == "fitness":
             tracker.show_fitness_hub()
         elif kind == "body":
