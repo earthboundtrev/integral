@@ -23,7 +23,9 @@ from integral_dialogs import (
     show_milestones_dialog,
     show_onboarding,
     show_security_dialog,
+    show_template_picker,
 )
+import domain_templates
 import journal
 from journal_ui import show_journal_window
 import creative_projects
@@ -2337,6 +2339,8 @@ class PersonalDevelopmentTracker:
         save_cat_btn.pack(side=tk.LEFT, padx=8)
         reset_btn = ttk.Button(buttons, text="Reset Defaults")
         reset_btn.pack(side=tk.LEFT, padx=8)
+        template_btn = ttk.Button(buttons, text="Apply Template…")
+        template_btn.pack(side=tk.LEFT, padx=8)
         save_close_btn = ttk.Button(buttons, text="Save & Close")
         save_close_btn.pack(side=tk.RIGHT)
         ttk.Button(buttons, text="Cancel", command=editor.destroy).pack(side=tk.RIGHT, padx=8)
@@ -2512,10 +2516,24 @@ class PersonalDevelopmentTracker:
 
         category_list.bind("<<ListboxSelect>>", load_selected)
 
+        def apply_template() -> None:
+            def merge(template_id: str) -> None:
+                merged, added, skipped = domain_templates.apply_template(working, template_id)
+                working.clear()
+                working.update(merged)
+                refresh_list(added[0] if added else next(iter(working.keys()), None))
+                message = f"Added {len(added)} domain(s). Save & Close to keep them."
+                if skipped:
+                    message += f" Skipped {len(skipped)} already present."
+                messagebox.showinfo("Template applied", message, parent=editor)
+
+            show_template_picker(self, editor, on_apply=merge)
+
         add_btn.configure(command=add_category)
         delete_btn.configure(command=delete_category)
         save_cat_btn.configure(command=save_category)
         reset_btn.configure(command=reset_defaults)
+        template_btn.configure(command=apply_template)
         save_close_btn.configure(command=save_all)
 
         refresh_list(next(iter(working.keys())))

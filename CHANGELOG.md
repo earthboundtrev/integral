@@ -5,6 +5,7 @@
 ### Added
 
 - **Quick Capture todo management** — Today’s todos and Upcoming sections are now collapsible (state remembered per reopen); each todo has an inline editor (text, work date, category) and ↑/↓ reorder buttons. Lists now honor your manual order (finished items still sink to the bottom of Today)
+- **Domain templates** — apply a pre-configured starter pack of Life Domains in one click (first pack: **Gut Healing**), from onboarding or the category editor. Non-destructive: existing domains are never overwritten. Extensible via `domain_templates.py` (#36)
 
 ## 0.3.10.1 — 2026-07-20
 

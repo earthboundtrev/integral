@@ -17,10 +17,11 @@ from integral_io import (
     restore_backup_to_path,
     write_backup,
 )
+import domain_templates
 from milestones import current_quarter_label, merge_milestones, milestone_summary
 from notifications import normalize_notification_settings, show_windows_notification
 from paths import APP_NAME
-from theme import style_listbox, style_text_widget
+from theme import FONTS, style_listbox, style_text_widget
 from vault import CRYPTO_AVAILABLE, encrypt_payload, is_encrypted_file
 import autostart_windows
 import protocol_windows
@@ -559,4 +560,84 @@ def show_onboarding(tracker: PersonalDevelopmentTracker, on_done: Callable[[], N
         if on_done:
             on_done()
 
-    ttk.Button(footer, text="Get started", command=finish).pack()
+    def start_with_template() -> None:
+        show_template_picker(tracker, window)
+
+    ttk.Button(footer, text="Start with a template…", command=start_with_template).pack(
+        side=tk.LEFT, padx=(20, 0)
+    )
+    ttk.Button(footer, text="Get started", command=finish).pack(side=tk.RIGHT, padx=(0, 20))
+
+
+def show_template_picker(
+    tracker: PersonalDevelopmentTracker,
+    parent: tk.Misc | None = None,
+    *,
+    on_apply: Callable[[str], None] | None = None,
+) -> tk.Toplevel:
+    """Pick and apply a pre-configured domain template.
+
+    When ``on_apply`` is given the caller handles the merge (e.g. into an editor's working
+    copy). Otherwise the template is applied directly to ``tracker.categories`` and saved.
+    """
+    parent = parent or tracker.root
+    dlg = tk.Toplevel(parent)
+    dlg.title("Apply a template")
+    dlg.geometry("560x460")
+    dlg.minsize(420, 360)
+    dlg.configure(bg=tracker.theme["bg"])
+    dlg.transient(parent)
+    dlg.grab_set()
+
+    ttk.Label(dlg, text="Apply a domain template", font=FONTS["heading"]).pack(
+        anchor="w", padx=16, pady=(16, 4)
+    )
+    ttk.Label(
+        dlg,
+        text="Adds a coherent set of Life Domains. Existing domains are never overwritten.",
+        style="Muted.TLabel",
+        wraplength=500,
+    ).pack(anchor="w", padx=16, pady=(0, 8))
+
+    templates = domain_templates.list_templates()
+    selected = tk.StringVar(value=templates[0]["id"] if templates else "")
+
+    list_frame = ttk.Frame(dlg)
+    list_frame.pack(fill=tk.BOTH, expand=True, padx=16, pady=8)
+    for template in templates:
+        ttk.Radiobutton(
+            list_frame,
+            text=f"{template['title']}  ({template['domain_count']} domains)",
+            value=template["id"],
+            variable=selected,
+        ).pack(anchor="w", pady=(4, 0))
+        ttk.Label(
+            list_frame, text=template["description"], style="Muted.TLabel", wraplength=480
+        ).pack(anchor="w", padx=24, pady=(0, 6))
+
+    def apply_selected() -> None:
+        template_id = selected.get()
+        if not template_id:
+            return
+        if on_apply is not None:
+            on_apply(template_id)
+            dlg.destroy()
+            return
+        merged, added, skipped = domain_templates.apply_template(tracker.categories, template_id)
+        tracker.categories = merged
+        tracker._invalidate_caches()
+        tracker.save_data()
+        tracker.refresh_dashboard()
+        dlg.destroy()
+        message = f"Added {len(added)} domain(s)."
+        if skipped:
+            message += f" Skipped {len(skipped)} already present."
+        messagebox.showinfo("Template applied", message, parent=parent)
+
+    controls = ttk.Frame(dlg, padding=12)
+    controls.pack(fill=tk.X, side=tk.BOTTOM)
+    ttk.Button(controls, text="Apply", style="Accent.TButton", command=apply_selected).pack(
+        side=tk.LEFT
+    )
+    ttk.Button(controls, text="Cancel", command=dlg.destroy).pack(side=tk.RIGHT)
+    return dlg
