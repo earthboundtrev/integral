@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.11 — 2026-07-21
+
+### Added
+
+- **Quick Capture todo management** — Today’s todos and Upcoming sections are now collapsible (state remembered per reopen); each todo has an inline editor (text, work date, category) and ↑/↓ reorder buttons. Lists now honor your manual order (finished items still sink to the bottom of Today)
+
 ## 0.3.10.1 — 2026-07-20
 
 ### Fixed

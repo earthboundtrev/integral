@@ -141,16 +141,43 @@ def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
     ttk.Button(dw_btns, text="+10 min", command=extend_deep_work).pack(side=tk.LEFT, padx=4)
     ttk.Button(dw_btns, text="End", command=end_deep_work).pack(side=tk.LEFT)
 
-    # --- Today / Upcoming todos ---
-    todo_box = ttk.LabelFrame(pad, text="Today’s todos", padding=8)
-    todo_box.pack(fill=tk.X, expand=False, pady=(0, 10))
-    today_list = tk.Frame(todo_box, bg=theme["bg"])
-    today_list.pack(fill=tk.X, expand=False)
+    # --- Today / Upcoming todos (collapsible) ---
+    def _make_section(title: str, section_key: str) -> tk.Frame:
+        box = ttk.Frame(pad)
+        box.pack(fill=tk.X, expand=False, pady=(0, 10))
+        body = tk.Frame(box, bg=theme["bg"])
+        header_var = tk.StringVar()
+        state = {"collapsed": quick_capture.is_section_collapsed(tracker.settings, section_key)}
 
-    upcoming_box = ttk.LabelFrame(pad, text="Upcoming (scheduled)", padding=8)
-    upcoming_box.pack(fill=tk.X, expand=False, pady=(0, 10))
-    upcoming_list = tk.Frame(upcoming_box, bg=theme["bg"])
-    upcoming_list.pack(fill=tk.X, expand=False)
+        def render_header() -> None:
+            header_var.set(f"{'▸' if state['collapsed'] else '▾'}  {title}")
+
+        def apply_visibility() -> None:
+            if state["collapsed"]:
+                body.pack_forget()
+            else:
+                body.pack(fill=tk.X, expand=False, pady=(4, 0))
+            win.update_idletasks()
+            refresh_scroll_region(canvas, inner)
+
+        def toggle(_event=None) -> None:
+            state["collapsed"] = not state["collapsed"]
+            tracker.settings = quick_capture.set_section_collapsed(
+                tracker.settings, section_key, state["collapsed"]
+            )
+            tracker.save_data(flush=True)
+            render_header()
+            apply_visibility()
+
+        header = ttk.Label(box, textvariable=header_var, style="Subheading.TLabel", cursor="hand2")
+        header.pack(fill=tk.X)
+        header.bind("<Button-1>", toggle)
+        render_header()
+        apply_visibility()
+        return body
+
+    today_list = _make_section("Today’s todos", "today")
+    upcoming_list = _make_section("Upcoming (scheduled)", "upcoming")
 
     add_frame = ttk.Frame(pad)
     add_frame.pack(fill=tk.X, pady=(0, 10))
@@ -179,10 +206,21 @@ def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
         for child in upcoming_list.winfo_children():
             child.destroy()
         today = tracker.today_str()
-        for item in todos.items_for_day(tracker.todos, today):
-            _todo_row(today_list, tracker, item, persist_todos, rebuild_todo_lists, win)
-        for item in todos.upcoming_items(tracker.todos, today):
-            _todo_row(upcoming_list, tracker, item, persist_todos, rebuild_todo_lists, win, upcoming=True)
+        edit_categories = list(tracker.categories.keys())
+        today_items = todos.items_for_day(tracker.todos, today)
+        today_ids = [i["id"] for i in today_items]
+        for item in today_items:
+            _todo_row(
+                today_list, tracker, item, persist_todos, rebuild_todo_lists, win,
+                sibling_ids=today_ids, categories=edit_categories,
+            )
+        upcoming = todos.upcoming_items(tracker.todos, today)
+        upcoming_ids = [i["id"] for i in upcoming]
+        for item in upcoming:
+            _todo_row(
+                upcoming_list, tracker, item, persist_todos, rebuild_todo_lists, win,
+                upcoming=True, sibling_ids=upcoming_ids, categories=edit_categories,
+            )
         if not today_list.winfo_children():
             ttk.Label(today_list, text="No todos for today.", style="Muted.TLabel").pack(anchor="w")
         if not upcoming_list.winfo_children():
@@ -348,7 +386,10 @@ def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
     return win
 
 
-def _todo_row(parent, tracker, item, persist, rebuild, win, *, upcoming: bool = False) -> None:
+def _todo_row(
+    parent, tracker, item, persist, rebuild, win,
+    *, upcoming: bool = False, sibling_ids=None, categories=None,
+) -> None:
     row = ttk.Frame(parent)
     row.pack(fill=tk.X, pady=2)
     done_var = tk.BooleanVar(value=bool(item["done"]))
@@ -370,6 +411,30 @@ def _todo_row(parent, tracker, item, persist, rebuild, win, *, upcoming: bool = 
         rebuild()
 
     ttk.Checkbutton(row, variable=done_var, command=on_toggle).pack(side=tk.LEFT)
+
+    def on_remove() -> None:
+        tracker.todos = todos.remove_todo(tracker.todos, item["id"])
+        persist()
+        rebuild()
+
+    def on_move(delta: int) -> None:
+        tracker.todos = todos.move_todo(tracker.todos, item["id"], list(sibling_ids or []), delta)
+        persist()
+        rebuild()
+
+    def on_edit() -> None:
+        def after_save() -> None:
+            persist()
+            rebuild()
+
+        _edit_todo_dialog(tracker, item, categories or [], after_save, win)
+
+    # Right-side controls; pack right-to-left so the visual order is ↑ ↓ ✎ ✕.
+    ttk.Button(row, text="✕", width=3, command=on_remove).pack(side=tk.RIGHT)
+    ttk.Button(row, text="✎", width=3, command=on_edit).pack(side=tk.RIGHT)
+    ttk.Button(row, text="↓", width=3, command=lambda: on_move(1)).pack(side=tk.RIGHT)
+    ttk.Button(row, text="↑", width=3, command=lambda: on_move(-1)).pack(side=tk.RIGHT)
+
     label = item["text"]
     if upcoming:
         label = f"{item['work_date']} — {label}"
@@ -377,14 +442,54 @@ def _todo_row(parent, tracker, item, persist, rebuild, win, *, upcoming: bool = 
         label = f"(overdue {item['work_date']}) {label}"
     if item.get("category"):
         label = f"{label}  [{item['category']}]"
-    ttk.Label(row, text=label, wraplength=300).pack(side=tk.LEFT, fill=tk.X, expand=True)
+    ttk.Label(row, text=label, wraplength=200).pack(side=tk.LEFT, fill=tk.X, expand=True)
 
-    def on_remove() -> None:
-        tracker.todos = todos.remove_todo(tracker.todos, item["id"])
-        persist()
-        rebuild()
 
-    ttk.Button(row, text="×", width=3, command=on_remove).pack(side=tk.RIGHT)
+def _edit_todo_dialog(tracker, item, categories, on_saved, parent) -> None:
+    theme = tracker.theme
+    dlg = tk.Toplevel(parent)
+    dlg.title("Edit todo")
+    dlg.configure(bg=theme["bg"])
+    dlg.transient(parent)
+    dlg.attributes("-topmost", True)
+    dlg.geometry("380x250")
+
+    body = ttk.Frame(dlg, padding=12)
+    body.pack(fill=tk.BOTH, expand=True)
+
+    ttk.Label(body, text="Text").pack(anchor="w")
+    text_var = tk.StringVar(value=item["text"])
+    ttk.Entry(body, textvariable=text_var).pack(fill=tk.X, pady=(0, 6))
+
+    ttk.Label(body, text="Work date (YYYY-MM-DD)").pack(anchor="w")
+    date_var = tk.StringVar(value=item["work_date"])
+    ttk.Entry(body, textvariable=date_var, width=14).pack(anchor="w", pady=(0, 6))
+
+    ttk.Label(body, text="Category").pack(anchor="w")
+    cat_var = tk.StringVar(value=item.get("category", ""))
+    ttk.Combobox(
+        body, textvariable=cat_var, values=[""] + list(categories or []), state="readonly"
+    ).pack(fill=tk.X, pady=(0, 6))
+
+    def save() -> None:
+        try:
+            tracker.todos = todos.update_todo(
+                tracker.todos,
+                item["id"],
+                text=text_var.get().strip(),
+                work_date=date_var.get().strip(),
+                category=cat_var.get().strip(),
+            )
+        except (ValueError, KeyError) as exc:
+            messagebox.showwarning("Edit todo", str(exc), parent=dlg)
+            return
+        dlg.destroy()
+        on_saved()
+
+    footer = ttk.Frame(dlg, padding=12)
+    footer.pack(fill=tk.X, side=tk.BOTTOM)
+    ttk.Button(footer, text="Save", style="Accent.TButton", command=save).pack(side=tk.LEFT)
+    ttk.Button(footer, text="Cancel", command=dlg.destroy).pack(side=tk.RIGHT)
 
 
 def _show_deep_work_shield_dialog(tracker: PersonalDevelopmentTracker, *, parent) -> None:

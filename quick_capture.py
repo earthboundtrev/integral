@@ -9,7 +9,8 @@ from urllib.error import URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-DEFAULT_QUICK_CAPTURE = {"enabled": False}
+SECTION_KEYS = ("today", "upcoming")
+DEFAULT_QUICK_CAPTURE = {"enabled": False, "collapsed": {"today": False, "upcoming": False}}
 
 _YOUTUBE_HOSTS = (
     "youtube.com",
@@ -23,7 +24,15 @@ _URL_RE = re.compile(r"^https?://", re.IGNORECASE)
 
 
 def default_quick_capture_settings() -> dict:
-    return dict(DEFAULT_QUICK_CAPTURE)
+    return {"enabled": False, "collapsed": {key: False for key in SECTION_KEYS}}
+
+
+def _normalize_collapsed(raw: dict | None) -> dict:
+    collapsed = {key: False for key in SECTION_KEYS}
+    if isinstance(raw, dict):
+        for key in SECTION_KEYS:
+            collapsed[key] = bool(raw.get(key, False))
+    return collapsed
 
 
 def normalize_quick_capture_settings(settings: dict | None) -> dict:
@@ -33,17 +42,35 @@ def normalize_quick_capture_settings(settings: dict | None) -> dict:
     raw = settings.get("quick_capture")
     if not isinstance(raw, dict):
         return base
-    return {"enabled": bool(raw.get("enabled", False))}
+    return {
+        "enabled": bool(raw.get("enabled", False)),
+        "collapsed": _normalize_collapsed(raw.get("collapsed")),
+    }
 
 
 def apply_quick_capture_settings(settings: dict | None, quick_capture: dict) -> dict:
+    """Merge ``quick_capture`` onto existing normalized settings (partial updates OK)."""
     out = dict(settings or {})
-    out["quick_capture"] = normalize_quick_capture_settings({"quick_capture": quick_capture})
+    current = normalize_quick_capture_settings(settings)
+    merged = {**current, **(quick_capture or {})}
+    if "collapsed" in (quick_capture or {}):
+        merged["collapsed"] = {**current["collapsed"], **(quick_capture["collapsed"] or {})}
+    out["quick_capture"] = normalize_quick_capture_settings({"quick_capture": merged})
     return out
 
 
 def is_quick_capture_enabled(settings: dict | None) -> bool:
     return bool(normalize_quick_capture_settings(settings).get("enabled"))
+
+
+def is_section_collapsed(settings: dict | None, section: str) -> bool:
+    return bool(normalize_quick_capture_settings(settings)["collapsed"].get(section, False))
+
+
+def set_section_collapsed(settings: dict | None, section: str, collapsed: bool) -> dict:
+    if section not in SECTION_KEYS:
+        return dict(settings or {})
+    return apply_quick_capture_settings(settings, {"collapsed": {section: bool(collapsed)}})
 
 
 def looks_like_url(text: str) -> bool:

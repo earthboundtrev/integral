@@ -10,9 +10,28 @@ import quick_capture
 
 
 def test_quick_capture_defaults_off():
-    assert quick_capture.normalize_quick_capture_settings({}) == {"enabled": False}
+    assert quick_capture.normalize_quick_capture_settings({}) == {
+        "enabled": False,
+        "collapsed": {"today": False, "upcoming": False},
+    }
     assert quick_capture.is_quick_capture_enabled({}) is False
     assert quick_capture.is_quick_capture_enabled({"quick_capture": {"enabled": True}}) is True
+
+
+def test_collapsed_state_persists_and_survives_enable_toggle():
+    settings = quick_capture.set_section_collapsed({}, "upcoming", True)
+    assert quick_capture.is_section_collapsed(settings, "upcoming") is True
+    assert quick_capture.is_section_collapsed(settings, "today") is False
+    # Toggling enabled must not wipe collapsed flags (partial merge).
+    settings = quick_capture.apply_quick_capture_settings(settings, {"enabled": True})
+    assert quick_capture.is_quick_capture_enabled(settings) is True
+    assert quick_capture.is_section_collapsed(settings, "upcoming") is True
+
+
+def test_set_section_collapsed_ignores_unknown_section():
+    settings = quick_capture.set_section_collapsed({}, "bogus", True)
+    assert quick_capture.is_section_collapsed(settings, "today") is False
+    assert quick_capture.is_section_collapsed(settings, "upcoming") is False
 
 
 def test_is_youtube_url():
