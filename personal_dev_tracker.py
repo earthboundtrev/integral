@@ -466,6 +466,7 @@ class PersonalDevelopmentTracker:
                 self.categories,
                 sessions=self.sessions,
                 program_state=self.program_state,
+                practices=self.practices,
             )
         return self._insights_cache
 
@@ -1828,6 +1829,7 @@ class PersonalDevelopmentTracker:
             self.categories,
             sessions=self.sessions,
             program_state=self.program_state,
+            practices=self.practices,
         )
         text.insert(tk.END, format_guidance_report(top_insights(week_insights, limit=8)))
         text.insert(tk.END, "\n" + "=" * 50 + "\nCATEGORY DETAIL\n" + "=" * 50 + "\n\n")
