@@ -110,6 +110,11 @@ def make_horizontal_scroll_row(parent, *, height: int = 44, overflow_hint: str =
     Horizontal strip for toolbars that overflow on narrow windows.
 
     Returns (host, inner, canvas). Pack buttons into inner with side=tk.LEFT.
+
+    The embedded window keeps its *natural* content width so trailing actions
+    (e.g. Export) stay reachable via scrollbar / mousewheel. Only the height is
+    matched to the canvas — forcing width to the viewport (as vertical scroll
+    areas do) collapses overflow and hides later buttons.
     """
     host = ttk.Frame(parent)
     hint = ttk.Label(host, text="", style="Muted.TLabel")
@@ -123,8 +128,25 @@ def make_horizontal_scroll_row(parent, *, height: int = 44, overflow_hint: str =
     inner = ttk.Frame(canvas)
     window_id = canvas.create_window((0, 0), window=inner, anchor="nw")
 
-    def update_hint() -> None:
+    def _sync_window_geometry() -> None:
+        """Size the embedded window: natural width, canvas height; pad if short."""
         canvas.update_idletasks()
+        inner.update_idletasks()
+        visible_w = max(canvas.winfo_width(), 1)
+        visible_h = max(canvas.winfo_height(), height)
+        # reqwidth reflects packed children; do not clamp to the viewport.
+        content_w = max(inner.winfo_reqwidth(), 1)
+        canvas.itemconfigure(
+            window_id,
+            width=max(content_w, visible_w) if content_w <= visible_w else content_w,
+            height=visible_h,
+        )
+        bbox = canvas.bbox("all")
+        if bbox:
+            canvas.configure(scrollregion=bbox)
+
+    def update_hint() -> None:
+        _sync_window_geometry()
         bbox = canvas.bbox("all")
         if not bbox:
             hint.config(text="")
@@ -141,18 +163,27 @@ def make_horizontal_scroll_row(parent, *, height: int = 44, overflow_hint: str =
             scrollbar.pack_forget()
             hint.config(text="")
 
-    def on_inner_configure(event):
-        canvas.configure(scrollregion=canvas.bbox("all"))
-        canvas.itemconfigure(window_id, height=max(event.height, height))
+    def on_inner_configure(_event):
         update_hint()
 
-    def on_canvas_configure(event):
-        canvas.itemconfigure(window_id, width=max(event.width, 1), height=event.height)
+    def on_canvas_configure(_event):
+        # Height only from viewport — never shrink content width to fit.
         update_hint()
 
     def on_xscroll(first, last):
         scrollbar.set(first, last)
-        update_hint()
+        # Hint only (avoid re-entrant geometry sync on every xview tick).
+        bbox = canvas.bbox("all")
+        if not bbox:
+            hint.config(text="")
+            return
+        content_width = bbox[2] - bbox[0]
+        visible_width = max(canvas.winfo_width(), 1)
+        if content_width > visible_width + 2:
+            _left, right = float(first), float(last)
+            hint.config(text=overflow_hint if right < 0.99 else "")
+        else:
+            hint.config(text="")
 
     inner.bind("<Configure>", on_inner_configure)
     canvas.bind("<Configure>", on_canvas_configure)
@@ -167,8 +198,9 @@ def make_horizontal_scroll_row(parent, *, height: int = 44, overflow_hint: str =
             canvas.xview_scroll(amount, "units")
         return "break"
 
-    bind_mousewheel(viewport, canvas.xview, watch_configure=inner)
-    for seq in ("<Shift-MouseWheel>",):
+    # Wheel over the footer scrolls horizontally (Shift+wheel also bound).
+    bind_mousewheel(viewport, canvas.xview, horizontal=True, watch_configure=inner)
+    for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>", "<Shift-MouseWheel>"):
         canvas.bind(seq, on_wheel, add="+")
         inner.bind(seq, on_wheel, add="+")
 
