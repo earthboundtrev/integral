@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Footer nav scroll** — the bottom action strip no longer forces its content width to the viewport, so horizontal overflow works again and trailing actions (**Export**, Backup, Edit Categories, Data & Security) are reachable via scrollbar / mousewheel (#44)
+
 ## 0.3.11 — 2026-07-21
 
 ### Added
