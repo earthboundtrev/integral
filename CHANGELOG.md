@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.3.11.2 — 2026-07-25
+
 ### Added
 
 - **Full-fidelity backup / export (#45)** — Backup now writes a zip with `data.json` + Writing Project documents under `creative/` (+ fitness DB when present); profile zip backups include `creative/` too; CSV Export also emits `integral-creative-*.zip`. Legacy JSON restore still works for the library index and warns that manuscripts are not included.
