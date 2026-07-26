@@ -61,6 +61,16 @@ def test_reset_reminder_state_clears_day():
     assert state["logged_once"] is False
 
 
+def test_reminder_copy_is_non_punitive():
+    from notifications import LOGGED_ONCE_MESSAGE, NOT_LOGGED_MESSAGES
+
+    joined = " ".join(NOT_LOGGED_MESSAGES).lower()
+    assert "waiting" not in joined
+    assert "slip by" not in joined
+    assert "finish logging everything" not in LOGGED_ONCE_MESSAGE.lower()
+    assert "only if you want" in LOGGED_ONCE_MESSAGE.lower() or "you're done" in LOGGED_ONCE_MESSAGE.lower()
+
+
 def test_show_windows_notification_hides_subprocess_console(monkeypatch):
     calls: list[tuple[list[str], dict]] = []
 

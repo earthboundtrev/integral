@@ -132,44 +132,30 @@ def analyze_category(
     last_14 = _date_range(today, 14)
     prior_7 = _date_range(today - timedelta(days=7), 7)
 
-    logged_today = category in entries.get(today_str, {})
     days_since = _days_since_logged(entries, category, today)
 
+    # Unused domains stay quiet — never logged is not a failure.
     if days_since is None:
-        insights.append(
-            Insight(
-                severity="watch",
-                category=category,
-                title="Never logged",
-                message=f"You haven't logged {category} yet. Starting is the hardest part on low-energy days.",
-                suggested_actions=get_actions(category, "neglected"),
-                priority=20,
-            )
-        )
         return insights
 
-    if days_since >= 7:
+    # Long gap: soft invitation only (not an "action" penalty for skipping).
+    if days_since >= 14:
         insights.append(
             Insight(
-                severity="action",
+                severity="info",
                 category=category,
-                title="Maintenance gap",
-                message=f"No log in {days_since} days — this area may be slipping while life continues.",
-                suggested_actions=get_actions(category, "neglected"),
-                priority=10,
+                title="Quiet for a while",
+                message=(
+                    f"No log here in {days_since} days — fine if that was intentional. "
+                    "Open it only if you want a check-in."
+                ),
+                suggested_actions=[
+                    "Optional: one quick rating if this area is on your mind.",
+                ],
+                priority=70,
             )
         )
-    elif not logged_today and days_since == 1:
-        insights.append(
-            Insight(
-                severity="watch",
-                category=category,
-                title="Streak at risk",
-                message="You logged yesterday but not today. A quick rating takes under a minute.",
-                suggested_actions=["Open Log / Update Today — rating + Save is enough."],
-                priority=15,
-            )
-        )
+    # Do not nag for "logged yesterday but not today" — light days are valid.
 
     recent = _ratings_for_category(entries, category, last_7)
     prior = _ratings_for_category(entries, category, prior_7)
@@ -179,12 +165,12 @@ def analyze_category(
         if recent_avg <= prior_avg - 1.0:
             insights.append(
                 Insight(
-                    severity="action",
+                    severity="watch",
                     category=category,
-                    title="Declining trend",
-                    message=f"Average rating dropped from {prior_avg:.1f} to {recent_avg:.1f} over the last two weeks.",
+                    title="Softer ratings lately",
+                    message=f"Average rating moved from {prior_avg:.1f} to {recent_avg:.1f} over the last two weeks.",
                     suggested_actions=get_actions(category, "declining"),
-                    priority=12,
+                    priority=25,
                 )
             )
         elif recent_avg >= prior_avg + 1.0:
@@ -193,8 +179,8 @@ def analyze_category(
                     severity="positive",
                     category=category,
                     title="Improving trend",
-                    message=f"Average rating rose from {prior_avg:.1f} to {recent_avg:.1f} — note what's working in your journal.",
-                    suggested_actions=["Capture in notes what changed so you can repeat it."],
+                    message=f"Average rating rose from {prior_avg:.1f} to {recent_avg:.1f} — note what's working if you like.",
+                    suggested_actions=["Optional: capture in notes what changed so you can repeat it."],
                     priority=80,
                 )
             )
@@ -205,12 +191,12 @@ def analyze_category(
         if spread <= 1.5 and 4 <= avg <= 7:
             insights.append(
                 Insight(
-                    severity="watch",
+                    severity="info",
                     category=category,
-                    title="Plateau",
-                    message=f"Ratings have been steady around {avg:.1f}/10 — progress may need a different lever.",
+                    title="Steady stretch",
+                    message=f"Ratings have been steady around {avg:.1f}/10 — change something only if you want to.",
                     suggested_actions=get_actions(category, "plateau"),
-                    priority=35,
+                    priority=55,
                 )
             )
 
@@ -223,40 +209,31 @@ def analyze_category(
         if today_rating <= 4:
             insights.append(
                 Insight(
-                    severity="action",
+                    severity="watch",
                     category=category,
-                    title="Low day logged",
-                    message=f"Today's rating is {today_rating:.0f}/10 — the app works best when you name what's hard.",
+                    title="Hard day named",
+                    message=f"Today's rating is {today_rating:.0f}/10 — naming what's hard is enough; no need to fix everything tonight.",
                     suggested_actions=get_actions(category, "low_rating"),
-                    priority=8,
+                    priority=20,
                 )
             )
 
+    # Checklist items that sit unused: invite edit/retire, don't treat as failure.
     rare_items = _rarely_checked_items(entries, category, cat_def, last_14)
-    for item in rare_items[:2]:
+    for item in rare_items[:1]:
         insights.append(
             Insight(
-                severity="watch",
+                severity="info",
                 category=category,
-                title="Checklist gap",
-                message=f"'{item}' hasn't been checked in 2 weeks — a maintenance item may need attention or editing.",
+                title="Quiet checklist item",
+                message=(
+                    f"'{item}' hasn't been checked lately — keep it if it still matters, "
+                    "or edit the checklist if it doesn't."
+                ),
                 suggested_actions=[
-                    f"Either do '{item}' once this week or edit the checklist if it's no longer relevant.",
+                    f"Optional: do '{item}' once, or remove it from Edit Categories.",
                 ],
-                priority=40,
-            )
-        )
-
-    done, total = _checklist_completion_rate(entries, category, cat_def, last_7)
-    if total >= 7 and done / total < 0.35:
-        insights.append(
-            Insight(
-                severity="watch",
-                category=category,
-                title="Low checklist follow-through",
-                message=f"Only {int((done / total) * 100)}% of checklist items completed this week.",
-                suggested_actions=get_actions(category, "declining"),
-                priority=30,
+                priority=65,
             )
         )
 
@@ -278,14 +255,17 @@ def analyze_cross_category(
     if logged_today_count == 0 and entries:
         insights.append(
             Insight(
-                severity="action",
+                severity="info",
                 category=None,
-                title="Nothing logged today",
-                message="Pick one category and log rating + Save — 20 seconds protects your streak.",
+                title="Whenever you're ready",
+                message=(
+                    "Nothing logged yet today — one rating, a journal line, or a practice "
+                    "is a complete honest day. Skip the rest without guilt."
+                ),
                 suggested_actions=[
-                    "Start with Burnout Prevention, What You Have Eaten, or Body & Presence if energy is low.",
+                    "Optional: open any one domain → rating → Save (under a minute).",
                 ],
-                priority=5,
+                priority=75,
             )
         )
 
@@ -303,13 +283,13 @@ def analyze_cross_category(
         ):
             insights.append(
                 Insight(
-                    severity="action",
+                    severity="watch",
                     category=burnout,
-                    title="Burnout warning",
-                    message="Energy is down and/or stress is up across recent logs — protect recovery before pushing output.",
+                    title="Energy & stress signal",
+                    message="Recent logs show softer energy and/or higher stress — protect recovery if that resonates.",
                     suggested_actions=get_actions(burnout, "declining")
-                    + ["Consider lowering Creative/Mental Work expectations this week."],
-                    priority=6,
+                    + ["Optional: lower Creative/Mental Work expectations this week."],
+                    priority=15,
                 )
             )
 
@@ -322,15 +302,15 @@ def analyze_cross_category(
         if body_days >= 3 and body_ratings and sum(body_ratings) / len(body_ratings) < 5 and not recent_fitness:
             insights.append(
                 Insight(
-                    severity="watch",
+                    severity="info",
                     category=body,
-                    title="Body struggling, no structured fitness",
-                    message="Body & Presence ratings are low and no fitness sessions in 14 days.",
+                    title="Body soft, little structured fitness",
+                    message="Body & Presence ratings are soft and no fitness sessions in 14 days — only if movement is a goal for you.",
                     suggested_actions=[
-                        "Log a minimal movement session in Fitness Hub or tick 'Completed movement/exercise'.",
-                        "Check sleep hours — often the root cause.",
+                        "Optional: a short Fitness Hub session or tick movement on Body & Presence.",
+                        "Sleep is often the quieter lever.",
                     ],
-                    priority=18,
+                    priority=50,
                 )
             )
 
@@ -384,13 +364,17 @@ def analyze_cross_category(
         if body_days >= 3 and body_ratings and sum(body_ratings) / len(body_ratings) < 5.5 and food_days == 0:
             insights.append(
                 Insight(
-                    severity="watch",
+                    severity="info",
                     category=food,
-                    title="Body struggling — food not logged",
-                    message="Body ratings are soft this week and eating hasn't been logged — fuel and recovery may be connected.",
-                    suggested_actions=get_actions(food, "neglected")
-                    + ["Note sleep and one meal that helped or hurt energy."],
-                    priority=20,
+                    title="Body soft — food optional to note",
+                    message=(
+                        "Body ratings are soft this week and eating wasn't logged — "
+                        "only glance at food if that feels useful; skipping is fine."
+                    ),
+                    suggested_actions=[
+                        "Optional: log one meal that helped or hurt energy.",
+                    ],
+                    priority=55,
                 )
             )
 
@@ -400,13 +384,15 @@ def analyze_cross_category(
         if mood_ratings and sum(mood_ratings) / len(mood_ratings) < 5 and art_days == 0:
             insights.append(
                 Insight(
-                    severity="watch",
+                    severity="info",
                     category=art,
-                    title="Mood low — little art logged",
-                    message="Emotional ratings are down and no art logged this week — input isn't a fix, but honest logging helps you see the gap.",
-                    suggested_actions=get_actions(art, "neglected")
-                    + get_actions(emotional, "low_rating")[:1],
-                    priority=22,
+                    title="Mood soft — art is optional",
+                    message=(
+                        "Emotional ratings are down; no art logged this week. "
+                        "Art isn't required — open that domain only if you want it."
+                    ),
+                    suggested_actions=get_actions(emotional, "low_rating")[:1],
+                    priority=58,
                 )
             )
 
@@ -431,12 +417,15 @@ def analyze_cross_category(
         if content_days >= 5 and reading_days == 0:
             insights.append(
                 Insight(
-                    severity="watch",
+                    severity="info",
                     category=reading,
-                    title="Feeds up, books quiet",
-                    message="Short-form content is logged most days this week but no book reading — fine if intentional; worth noticing.",
-                    suggested_actions=get_actions(reading, "declining"),
-                    priority=26,
+                    title="Short-form busy — books quiet",
+                    message=(
+                        "Short-form content showed up often this week; books didn't. "
+                        "Fine if intentional — notice only if you care."
+                    ),
+                    suggested_actions=["Optional: one short reading session if you want balance."],
+                    priority=60,
                 )
             )
 
@@ -446,12 +435,15 @@ def analyze_cross_category(
         if creative_ratings and sum(creative_ratings) / len(creative_ratings) < 5 and reading_days == 0:
             insights.append(
                 Insight(
-                    severity="watch",
+                    severity="info",
                     category=reading,
-                    title="Creative work low — no reading logged",
-                    message="Output feels stuck and no long-form reading this week — input and craft often travel together.",
-                    suggested_actions=get_actions(reading, "neglected")[:2],
-                    priority=28,
+                    title="Creative soft — reading optional",
+                    message=(
+                        "Creative ratings are soft and no reading was logged — "
+                        "not a requirement; open reading only if it helps you."
+                    ),
+                    suggested_actions=["Optional: a few pages of something nourishing."],
+                    priority=62,
                 )
             )
 
@@ -525,12 +517,15 @@ def analyze_cross_category(
         if creative_ratings and sum(creative_ratings) / len(creative_ratings) < 5.5 and learning_days == 0:
             insights.append(
                 Insight(
-                    severity="watch",
+                    severity="info",
                     category=learning,
-                    title="Output stuck — little learning logged",
-                    message="Creative work is soft and no deliberate learning this week — skills and input feed output.",
-                    suggested_actions=get_actions(learning, "neglected")[:2],
-                    priority=27,
+                    title="Creative soft — learning optional",
+                    message=(
+                        "Creative work is soft and no deliberate learning was logged — "
+                        "skip freely; open learning only if you want a skill boost."
+                    ),
+                    suggested_actions=["Optional: one small learning session this week."],
+                    priority=63,
                 )
             )
 
@@ -678,12 +673,14 @@ def analyze_practice_consistency(
             gap = f" (last on {last_logged}, {(today - parsed).days} days ago)"
         insights.append(
             Insight(
-                severity="watch",
+                severity="info",
                 category=None,
-                title="Practices have stalled",
-                message=f"No daily practices logged in the last {days} days{gap}. "
-                "A short session can restart the habit.",
-                priority=35,
+                title="Practices quiet lately",
+                message=(
+                    f"No daily practices logged in the last {days} days{gap}. "
+                    "Fine if intentional — a short session only if you want one."
+                ),
+                priority=70,
             )
         )
         return insights
@@ -695,8 +692,8 @@ def analyze_practice_consistency(
                 Insight(
                     severity="positive",
                     category=None,
-                    title="Strong practice consistency",
-                    message=f"{name}: logged {len(logged_days)} of the last {days} days. Keep it up.",
+                    title="Practice rhythm",
+                    message=f"{name}: logged {len(logged_days)} of the last {days} days — nice if that felt right.",
                     priority=60,
                 )
             )
@@ -729,6 +726,8 @@ def top_insights(insights: list[Insight], limit: int = 5) -> list[Insight]:
     prioritized = [item for item in insights if item.severity in ("action", "watch")]
     if len(prioritized) < limit:
         prioritized.extend(item for item in insights if item.severity == "positive")
+    if len(prioritized) < limit:
+        prioritized.extend(item for item in insights if item.severity == "info")
     return prioritized[:limit]
 
 
@@ -746,18 +745,21 @@ def format_insight_line(insight: Insight) -> str:
 
 def format_guidance_report(insights: list[Insight]) -> str:
     if not insights:
-        return "Log a few days across categories — guidance improves as patterns emerge.\n"
+        return (
+            "Guidance stays quiet until patterns appear — "
+            "one check-in or a journal line is enough whenever you want it.\n"
+        )
 
-    lines = ["GUIDANCE & MAINTENANCE\n", "=" * 50 + "\n"]
+    lines = ["GUIDANCE\n", "=" * 50 + "\n"]
     current_severity: str | None = None
     for insight in insights:
         if insight.severity != current_severity:
             current_severity = insight.severity
             label = {
-                "action": "NEEDS ATTENTION",
-                "watch": "WATCH",
+                "action": "WORTH A LOOK",
+                "watch": "NOTICING",
                 "positive": "WINS & MOMENTUM",
-                "info": "INFO",
+                "info": "OPTIONAL NOTES",
             }.get(current_severity, current_severity.upper())
             lines.append(f"\n{label}\n" + "-" * 30 + "\n")
 
@@ -765,7 +767,7 @@ def format_guidance_report(insights: list[Insight]) -> str:
         lines.append(f"{cat}{insight.title}\n")
         lines.append(f"  {insight.message}\n")
         if insight.suggested_actions:
-            lines.append("  Try:\n")
+            lines.append("  Ideas (optional):\n")
             for action in insight.suggested_actions:
                 lines.append(f"    • {action}\n")
         lines.append("\n")

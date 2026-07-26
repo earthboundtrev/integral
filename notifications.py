@@ -15,13 +15,13 @@ DEFAULT_END_OF_DAY_REMINDER = "21:00"
 CHECK_INTERVAL_MS = 30_000
 
 NOT_LOGGED_MESSAGES = (
-    "Time to check in with Integral — even one quick rating keeps your streak alive.",
-    "Your life domains are waiting. Open Integral and log how today is going.",
-    "A few minutes of honest logging goes a long way. How's your day?",
-    "Don't let today slip by unlogged — open Integral and capture where you are.",
+    "Integral is here when you want it — one quick rating is enough.",
+    "No pressure to fill every domain. A single honest check-in counts.",
+    "Whenever you're ready: open Integral and capture whatever matters today.",
+    "Light days are valid. Log one thing — or skip — without guilt.",
 )
 LOGGED_ONCE_MESSAGE = (
-    "Before the day ends, finish logging everything you did today in Integral."
+    "You already checked in today. Add more only if you want — you're done."
 )
 
 

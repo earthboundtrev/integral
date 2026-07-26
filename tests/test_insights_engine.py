@@ -31,9 +31,16 @@ DEFAULT_CATEGORIES = {
 
 
 class TestInsights(unittest.TestCase):
-    def test_detects_neglected_category(self) -> None:
+    def test_long_gap_is_soft_info_not_penalty(self) -> None:
         entries = {
-            "2026-06-20": {"Burnout Prevention & Energy Management": {"rating": 6, "checklist": {}, "metrics": {}, "notes": ""}},
+            "2026-06-20": {
+                "Burnout Prevention & Energy Management": {
+                    "rating": 6,
+                    "checklist": {},
+                    "metrics": {},
+                    "notes": "",
+                }
+            },
         }
         insights = analyze_category(
             "Burnout Prevention & Energy Management",
@@ -42,7 +49,18 @@ class TestInsights(unittest.TestCase):
             date(2026, 7, 5),
         )
         titles = [item.title for item in insights]
-        self.assertIn("Maintenance gap", titles)
+        self.assertIn("Quiet for a while", titles)
+        self.assertNotIn("Maintenance gap", titles)
+        self.assertTrue(all(item.severity == "info" for item in insights if item.title == "Quiet for a while"))
+
+    def test_never_logged_stays_quiet(self) -> None:
+        insights = analyze_category(
+            "Body & Presence",
+            DEFAULT_CATEGORIES["Body & Presence"],
+            {},
+            date(2026, 7, 5),
+        )
+        self.assertEqual(insights, [])
 
     def test_detects_declining_trend(self) -> None:
         entries = {}
@@ -60,7 +78,9 @@ class TestInsights(unittest.TestCase):
             entries,
             date(2026, 7, 14),
         )
-        self.assertTrue(any(item.title == "Declining trend" for item in insights))
+        soft = [item for item in insights if item.title == "Softer ratings lately"]
+        self.assertTrue(soft)
+        self.assertEqual(soft[0].severity, "watch")
 
     def test_top_insights_prioritizes_action(self) -> None:
         entries = {
@@ -69,7 +89,7 @@ class TestInsights(unittest.TestCase):
         insights = analyze_all(entries, DEFAULT_CATEGORIES, today=date(2026, 7, 5))
         top = top_insights(insights, limit=2)
         self.assertTrue(top)
-        self.assertIn(top[0].severity, ("action", "watch"))
+        self.assertIn(top[0].severity, ("action", "watch", "positive", "info"))
 
     def test_default_categories_include_consumption_areas(self) -> None:
         tracker = MagicMock()
@@ -115,7 +135,7 @@ class TestInsights(unittest.TestCase):
         self.assertIn("What You Have Eaten", merged)
         self.assertEqual(len(merged), len(defaults))
 
-    def test_cross_category_food_when_body_low(self) -> None:
+    def test_cross_category_food_when_body_low_is_optional_info(self) -> None:
         tracker = MagicMock()
         categories = {
             "Body & Presence": DEFAULT_CATEGORIES["Body & Presence"],
@@ -127,8 +147,13 @@ class TestInsights(unittest.TestCase):
                 "Body & Presence": {"rating": 4, "checklist": {}, "metrics": {}, "notes": ""},
             }
         insights = analyze_cross_category(entries, categories, date(2026, 7, 7))
-        titles = [item.title for item in insights]
-        self.assertIn("Body struggling — food not logged", titles)
+        food = [item for item in insights if "food" in item.title.lower()]
+        self.assertTrue(food)
+        self.assertEqual(food[0].severity, "info")
+        self.assertTrue(
+            "skipping is fine" in food[0].message.lower()
+            or "if that feels useful" in food[0].message.lower()
+        )
 
 
 if __name__ == "__main__":

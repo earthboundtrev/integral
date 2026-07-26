@@ -65,12 +65,12 @@ def test_consistency_positive_when_frequent():
     assert any(f.severity == "positive" and "Rites" in f.message for f in findings)
 
 
-def test_consistency_watch_when_stalled():
+def test_consistency_info_when_quiet():
     today = date(2026, 7, 21)
     # Last practice 10 days ago → nothing in the last 7.
     store = {"items": [{"date": _day(today, 10), "name": "Rites"}]}
     findings = analyze_practice_consistency(store, today)
-    assert any(f.severity == "watch" and "stalled" in f.title.lower() for f in findings)
+    assert any(f.severity == "info" and "quiet" in f.title.lower() for f in findings)
 
 
 def test_consistency_empty_store():

@@ -66,7 +66,7 @@ I care enough to use it. I just wasn’t going to hand-write all of this code my
 - **Writing Projects** — novels and scripts with an inspiration document beside the manuscript (autosave, local files)
 - **Deep Work Mode** — a focus timer that quiets the rest of the app so you can write or log without chrome noise
 
-Integral is for the lightweight daily check-in *and* the detailed stream-of-consciousness reflection — the kind of record you would want to read back years later, without digging through paper, hoping the cloud still works, or wondering where you left off.
+Integral is for the lightweight daily check-in *and* the detailed stream-of-consciousness reflection — the kind of record you would want to read back years later, without digging through paper, hoping the cloud still works, or wondering where you left off. **Depth is optional:** one rating is a complete honest day; unused domains stay quiet. The tool works for you — you don't work for the tool.
 
 ## Quick start
 
@@ -89,7 +89,7 @@ User data: `%APPDATA%\Integral\data.json` (encrypted optional via Data & Securit
 
 | Area | Features |
 |------|----------|
-| **Life domains (18)** | Ratings, checklists, metrics, notes, streaks, guidance |
+| **Life domains (18)** | Ratings, checklists, metrics, notes, streaks, guidance — **optional depth**; one check-in is enough; never scored as N/18 completeness |
 | **Domain templates** | One-click starter packs (**Gut Healing**, **Personal Health & Alignment**) add a coherent set of pre-configured domains; applied from onboarding or the category editor, never overwriting existing domains |
 | **Daily practices** | Log non-program routines (Five Tibetan Rites, Strong Medicine, breathing, wind-releasing yoga) with duration, reps/completions, hold time, quality (1–10), an optional per-movement breakdown, a subjective "effect" note, and free notes; reachable from Quick Capture **and** the Fitness Hub; flows into the linked life domain for history, streaks, and insights |
 | **Symptom correlations** | Guidance compares symptom metrics (gas, bloating, comfort, energy) on days *with* a logged practice vs *without*, surfacing patterns like "lower gas on practice days"; a "Gut & Symptom Patterns" AI insight goes deeper |

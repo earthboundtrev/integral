@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **Low-friction tone (#46)** — optional depth without mandatory daily completeness: dashboard no longer scores “N/total domains”; guidance/reminders/AI stop framing skipped domains as neglect; one check-in is treated as a complete honest day
+
 ## 0.3.11.1 — 2026-07-25
 
 ### Fixed

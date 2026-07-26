@@ -125,7 +125,14 @@ def test_personal_kinds_build_chat_messages_and_guardrails():
     messages = build_chat_messages("sample context", kind="sleep_hypersomnia", days=21)
     assert messages[0]["role"] == "system"
     assert "sample context" in messages[1]["content"]
-    # No medical advice / no invented data guardrails present.
     neuro = INSIGHT_KINDS["neurodivergence_alignment"]
     assert "not invent" in neuro["user_intro"].lower()
     assert "medical advice" in INSIGHT_KINDS["vitality_aging"]["user_intro"].lower()
+
+
+def test_gaps_and_balance_prompt_avoids_neglect_framing():
+    spec = INSIGHT_KINDS["gaps_and_balance"]
+    blob = f"{spec['system']} {spec['user_intro']}".lower()
+    assert "neglect" not in blob
+    assert "guilt" in blob or "no guilt" in blob
+    assert "optional" in blob

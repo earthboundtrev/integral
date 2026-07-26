@@ -653,12 +653,13 @@ def show_onboarding(tracker: PersonalDevelopmentTracker, on_done: Callable[[], N
     body.insert(
         tk.END,
         "Integral is free, open-source software — your data stays on this machine.\n\n"
-        "Integral tracks development across the whole person — financial, physical, mental, "
+        "Integral offers optional depth across many life areas — financial, physical, mental, "
         "emotional, spiritual, relational, cultural, and what you take in (food, art, books, content).\n\n"
-        "Daily logging (keep it light):\n"
-        "  • Pick any life area → 1–10 rating → Save. That's enough on hard days.\n"
-        "  • You don't need every category every day — log what matters today.\n"
-        "  • Add checklist ticks, metrics, and notes when you have energy.\n\n"
+        "Daily logging (keep it light — never mandatory completeness):\n"
+        "  • Pick any life area → 1–10 rating → Save. That's a complete honest day.\n"
+        "  • You never need every category every day — unused domains stay quiet.\n"
+        "  • Add checklist ticks, metrics, and notes only when you have energy.\n"
+        "  • Skip freely. The tool works for you; you don't work for the tool.\n\n"
         "Overview shows a year-at-a-glance grid — click any day to explore.\n\n"
         "Fitness Hub includes reference tables from popular training books (CC, Tibetan Rites, "
         "Overcoming Gravity, and more). Integral is not sponsored by those authors — "
