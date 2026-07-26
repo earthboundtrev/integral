@@ -24,7 +24,8 @@ UI-only or pure display tweaks do **not** need a full export/import pass.
 | Path | Module | Must stay working |
 |------|--------|-------------------|
 | JSON backup / restore | `integral_io.write_backup` / `load_backup` / `restore_backup_to_path` | Full payload roundtrip |
-| Profile zip backup | `backup.py` (`PROFILE_ARTIFACTS`) | Zip includes every profile artifact |
+| Profile zip backup | `backup.py` (`PROFILE_ARTIFACTS` + `creative/`) | Zip includes every profile artifact **and** Writing Project documents |
+| Full UI backup | `integral_io.write_full_backup` / `restore_backup_file` | `data.json` + `creative/**` + optional `fitness.db`; legacy JSON still restores |
 | CSV export | `integral_io.export_*_csv` + `show_export_dialog` | New data kinds get a CSV column/file when user-visible |
 
 Never invent a second backup format in UI code — extend these modules.

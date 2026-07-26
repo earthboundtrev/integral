@@ -9,14 +9,15 @@ import tkinter as tk
 from typing import TYPE_CHECKING, Any, Callable
 
 from integral_io import (
+    export_creative_documents_zip,
     export_fitness_sessions_csv,
     export_journal_csv,
     export_life_entries_csv,
     export_milestones_csv,
-    load_backup,
-    restore_backup_to_path,
-    write_backup,
+    restore_backup_file,
+    write_full_backup,
 )
+from paths import creative_projects_dir
 import domain_templates
 from milestones import current_quarter_label, merge_milestones, milestone_summary
 from notifications import normalize_notification_settings, show_windows_notification
@@ -32,6 +33,22 @@ if TYPE_CHECKING:
     from personal_dev_tracker import PersonalDevelopmentTracker
 
 
+def _active_fitness_db_path(
+    tracker: PersonalDevelopmentTracker, *, require_exists: bool = True
+) -> str | None:
+    try:
+        from fitness_ui import get_profile_repo
+
+        path = get_profile_repo(tracker.settings.get("fitness")).db_path
+        if not path:
+            return None
+        if require_exists and not os.path.isfile(path):
+            return None
+        return path
+    except Exception:
+        return None
+
+
 def show_export_dialog(tracker: PersonalDevelopmentTracker) -> None:
     folder = filedialog.askdirectory(title="Choose export folder")
     if not folder:
@@ -41,17 +58,23 @@ def show_export_dialog(tracker: PersonalDevelopmentTracker) -> None:
     fitness_path = os.path.join(folder, f"integral-fitness-{stamp}.csv")
     milestone_path = os.path.join(folder, f"integral-milestones-{stamp}.csv")
     journal_path = os.path.join(folder, f"integral-journal-{stamp}.csv")
+    creative_path = os.path.join(folder, f"integral-creative-{stamp}.zip")
     try:
         life_rows = export_life_entries_csv(tracker.entries, tracker.categories, life_path)
         fitness_rows = export_fitness_sessions_csv(tracker.sessions, tracker.programs, fitness_path)
         milestone_rows = export_milestones_csv(tracker.milestones, milestone_path)
         journal_rows = export_journal_csv(tracker.journal, journal_path)
+        creative_files = export_creative_documents_zip(creative_projects_dir(), creative_path)
         messagebox.showinfo(
             "Export complete",
-            f"Exported to:\n{life_path}\n({life_rows} life rows)\n\n"
+            f"Spreadsheet exports:\n{life_path}\n({life_rows} life rows)\n\n"
             f"{fitness_path}\n({fitness_rows} fitness rows)\n\n"
             f"{milestone_path}\n({milestone_rows} milestones)\n\n"
-            f"{journal_path}\n({journal_rows} journal entries)",
+            f"{journal_path}\n({journal_rows} journal entries)\n\n"
+            f"Writing documents:\n{creative_path}\n({creative_files} files)\n\n"
+            "For a full restore (library index + manuscripts + life data), use Backup → Export Backup (zip).\n"
+            "CSV/zip export here is for copies and spreadsheets — todos, day plans, and settings "
+            "are included in Backup, not in these CSV files.",
         )
     except OSError as exc:
         messagebox.showerror("Export failed", str(exc))
@@ -60,51 +83,84 @@ def show_export_dialog(tracker: PersonalDevelopmentTracker) -> None:
 def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
     window = tk.Toplevel(tracker.root)
     window.title("Backup & Restore")
-    window.geometry("520x320")
+    window.geometry("560x360")
     window.configure(bg=tracker.theme["bg"])
     window.transient(tracker.root)
 
     ttk.Label(
         window,
-        text="Back up your full journal (life areas, general journal, fitness + milestones) as JSON.\n"
-        "Restore replaces the current data file (a .bak copy is kept).",
-        wraplength=480,
+        text=(
+            "Full backup is a zip: life data (including todos, practices, day plans, settings), "
+            "Writing Projects documents under creative/, and fitness.db when present.\n\n"
+            "Restore replaces the current data file and creative documents (a .bak copy of data is kept). "
+            "Legacy JSON backups still restore the library index, but not manuscript files."
+        ),
+        wraplength=520,
     ).pack(anchor="w", padx=15, pady=15)
 
     def backup_now() -> None:
         path = filedialog.asksaveasfilename(
-            title="Save backup",
-            defaultextension=".json",
-            filetypes=[("JSON backup", "*.json"), ("All files", "*.*")],
-            initialfile=f"integral-backup-{datetime.now().strftime('%Y%m%d')}.json",
+            title="Save full backup",
+            defaultextension=".zip",
+            filetypes=[
+                ("Integral full backup", "*.zip"),
+                ("All files", "*.*"),
+            ],
+            initialfile=f"integral-backup-{datetime.now().strftime('%Y%m%d')}.zip",
         )
         if not path:
             return
         try:
-            write_backup(tracker._payload(), path)
-            messagebox.showinfo("Backup saved", f"Backup written to:\n{path}")
+            manifest = write_full_backup(
+                tracker._payload(),
+                path,
+                creative_root=creative_projects_dir(),
+                fitness_db_path=_active_fitness_db_path(tracker),
+            )
+            messagebox.showinfo(
+                "Backup saved",
+                f"Full backup written to:\n{path}\n\n"
+                f"Creative files: {manifest.get('creative_file_count', 0)}\n"
+                f"Fitness DB: {'yes' if manifest.get('has_fitness') else 'no'}",
+            )
         except OSError as exc:
             messagebox.showerror("Backup failed", str(exc))
 
     def restore_now() -> None:
         path = filedialog.askopenfilename(
             title="Restore backup",
-            filetypes=[("JSON backup", "*.json"), ("All files", "*.*")],
+            filetypes=[
+                ("Integral backups", "*.zip *.json"),
+                ("Full zip backup", "*.zip"),
+                ("Legacy JSON backup", "*.json"),
+                ("All files", "*.*"),
+            ],
         )
         if not path:
             return
         if not messagebox.askyesno(
             "Confirm restore",
-            "This replaces your current journal with the backup. Continue?",
+            "This replaces your current journal and Writing Project documents with the backup. Continue?",
         ):
             return
         try:
-            backup = load_backup(path)
-            restore_backup_to_path(backup, tracker.data_path, make_copy=True)
+            result = restore_backup_file(
+                path,
+                tracker.data_path,
+                creative_root=creative_projects_dir(),
+                fitness_db_path=_active_fitness_db_path(tracker, require_exists=False),
+                make_copy=True,
+            )
             tracker.load_data()
             tracker.create_dashboard()
             window.destroy()
-            messagebox.showinfo("Restored", "Journal restored from backup.")
+            warning = result.get("warning")
+            msg = "Journal restored from backup."
+            if result.get("restored_creative_files"):
+                msg += f"\nCreative files restored: {result['restored_creative_files']}"
+            if warning:
+                msg += f"\n\nNote: {warning}"
+            messagebox.showinfo("Restored", msg)
         except (OSError, ValueError) as exc:
             messagebox.showerror("Restore failed", str(exc))
 

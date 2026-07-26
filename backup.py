@@ -1,4 +1,8 @@
-"""Profile and full-app backup export/import (zip archives)."""
+"""Profile and full-app backup export/import (zip archives).
+
+Includes profile artifacts (data.json, fitness.db) plus app-level creative/
+document sidecars so Writing Projects manuscripts round-trip with the archive.
+"""
 
 from __future__ import annotations
 
@@ -7,12 +11,14 @@ import os
 import zipfile
 from datetime import datetime
 
+import paths
 import profiles
 import storage
 
 BACKUP_VERSION = 1
 MANIFEST_NAME = "manifest.json"
 PROFILE_ARTIFACTS = ("data.json", "fitness.db")
+CREATIVE_PREFIX = "creative/"
 
 
 def _write_profile_files(zf: zipfile.ZipFile, profile_id: str) -> list[str]:
@@ -39,7 +45,48 @@ def _write_profile_files(zf: zipfile.ZipFile, profile_id: str) -> list[str]:
     return included
 
 
-def export_backup(dest_path: str, profile_id: str | None = None) -> dict:
+def _write_creative_files(zf: zipfile.ZipFile, creative_root: str | None = None) -> list[str]:
+    root = creative_root if creative_root is not None else paths.creative_projects_dir()
+    if not root or not os.path.isdir(root):
+        return []
+    included: list[str] = []
+    for dirpath, _dirnames, filenames in os.walk(root):
+        for name in filenames:
+            abs_path = os.path.join(dirpath, name)
+            rel = os.path.relpath(abs_path, root).replace("\\", "/")
+            if not rel or ".." in rel.split("/"):
+                continue
+            arcname = f"{CREATIVE_PREFIX}{rel}"
+            zf.write(abs_path, arcname)
+            included.append(arcname)
+    return included
+
+
+def _restore_creative_files(zf: zipfile.ZipFile, creative_root: str | None = None) -> int:
+    root = creative_root if creative_root is not None else paths.creative_projects_dir()
+    os.makedirs(root, exist_ok=True)
+    restored = 0
+    for name in zf.namelist():
+        normalized = name.replace("\\", "/")
+        if not normalized.startswith(CREATIVE_PREFIX) or normalized.endswith("/"):
+            continue
+        rel = normalized[len(CREATIVE_PREFIX) :]
+        if not rel or ".." in rel.split("/"):
+            continue
+        dest = os.path.join(root, *rel.split("/"))
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        with zf.open(name) as src, open(dest, "wb") as dst:
+            dst.write(src.read())
+        restored += 1
+    return restored
+
+
+def export_backup(
+    dest_path: str,
+    profile_id: str | None = None,
+    *,
+    creative_root: str | None = None,
+) -> dict:
     """Write a zip backup. One profile if profile_id set, else all profiles."""
     profiles.ensure_app_structure()
     config = profiles.load_config()
@@ -51,12 +98,16 @@ def export_backup(dest_path: str, profile_id: str | None = None) -> dict:
         "profiles": profile_ids,
         "active_profile_id": config.get("active_profile_id"),
         "files": [],
+        "creative_file_count": 0,
     }
 
     with zipfile.ZipFile(dest_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("config.json", json.dumps(config, indent=2, ensure_ascii=False))
         for pid in profile_ids:
             manifest["files"].extend(_write_profile_files(zf, pid))
+        creative_files = _write_creative_files(zf, creative_root=creative_root)
+        manifest["files"].extend(creative_files)
+        manifest["creative_file_count"] = len(creative_files)
         zf.writestr(MANIFEST_NAME, json.dumps(manifest, indent=2, ensure_ascii=False))
 
     return manifest
@@ -83,8 +134,13 @@ def validate_backup(zip_path: str) -> dict:
         return manifest
 
 
-def import_backup(zip_path: str, merge_profiles: bool = True) -> dict:
-    """Restore profiles from a validated backup zip."""
+def import_backup(
+    zip_path: str,
+    merge_profiles: bool = True,
+    *,
+    creative_root: str | None = None,
+) -> dict:
+    """Restore profiles and creative documents from a validated backup zip."""
     manifest = validate_backup(zip_path)
     profiles.ensure_app_structure()
 
@@ -104,6 +160,9 @@ def import_backup(zip_path: str, merge_profiles: bool = True) -> dict:
                 target = os.path.join(dest_dir, filename)
                 with zf.open(name) as src, open(target, "wb") as dst:
                     dst.write(src.read())
+
+        restored_docs = _restore_creative_files(zf, creative_root=creative_root)
+        manifest = {**manifest, "restored_creative_files": restored_docs}
 
         if merge_profiles:
             current = profiles.load_config()

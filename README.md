@@ -60,7 +60,7 @@ I care enough to use it. I just wasn’t going to hand-write all of this code my
 
 - **Everything lives on your machine** — searchable, reviewable, exportable
 - **Optional encryption** — journal-grade privacy for thoughts you would not put on a random cloud app
-- **Backups and CSV export** — zip your full life data + fitness progress; keep copies like you wish you had for that notebook
+- **Backups and CSV export** — full zip backup includes life data, Writing Project manuscripts (`creative/`), and fitness progress; CSV Export also ships a creative documents zip for offline copies
 - **Backdated entries with a reason** — catch up honestly without pretending you logged on the day (accountability, not cheating the tool)
 - **Fitness Hub** — CC and other programs as structured progressions, not scattered notes
 - **Writing Projects** — novels and scripts with an inspiration document beside the manuscript (autosave, local files)
@@ -105,7 +105,7 @@ User data: `%APPDATA%\Integral\data.json` (encrypted optional via Data & Securit
 | **Quick Capture** | Optional always-on-top panel (off by default): today’s todos + scheduled backlog with collapsible sections, inline edit, and drag-free ↑/↓ reordering; finish→category log line; link starters; Journal now; quick-log opener; Deep Work timer + Windows focus shield (minimize chosen apps) |
 | **Fitness Hub** | CC1/CC2/SS/SM/OG/EC/FTR — nested book → program → steps |
 | **Fitness skill tree** | Progressive logging DAG for full CC1 Big Six, full CC2 ladders, and Strong Medicine resistance progressions (squat→barbell, sumo DL, DB bench/press, statue row, plank core) from official Hub tables |
-| **Safety net** | Export CSV, full JSON backup, optional vault encryption |
+| **Safety net** | Export CSV (+ creative docs zip), full zip backup (data + `creative/` + fitness), optional vault encryption |
 | **Reminders** | Windows toasts while Integral is running; optional Start with Windows + minimize-on-close so reminders keep working |
 | **AI Insight (optional)** | Local Ollama review of recent logs — see below |
 
