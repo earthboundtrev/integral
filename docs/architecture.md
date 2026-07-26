@@ -118,7 +118,7 @@ Do not merge into one monolithic form — link via shared date + category refere
 | `creative_ui.py` | Writing Projects library window + document editors |
 | `paths.creative_projects_dir()` | `%APPDATA%\Integral\creative\` (or platform equivalent) |
 
-Metadata lives in `data.json` under `creative_projects`; novel-length text stays on disk beside user data so daily loads stay lean.
+Metadata lives in `data.json` under `creative_projects`; novel-length text stays on disk beside user data so daily loads stay lean. Full backup/export (`integral_io.write_full_backup`, `backup.export_backup`) must include the `creative/` tree — JSON-only restore does not recover manuscripts (SPEC-326 / #45).
 
 Document windows (SPEC-303): Inspiration and Manuscript open as independent `Toplevel`s with debounced autosave; app quit flushes dirty editors via `flush_open_document_windows()`.
 

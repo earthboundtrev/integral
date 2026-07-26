@@ -107,3 +107,31 @@ def test_export_all_profiles_includes_config(temp_app, tmp_path):
     contents = backup.list_backup_contents(zip_path)
     assert "config.json" in contents["files"]
     assert any(name.endswith("data.json") for name in contents["files"])
+
+
+def test_export_import_includes_creative_sidecars(temp_app, tmp_path, monkeypatch):
+    app_dir = temp_app["app_dir"]
+    creative_root = os.path.join(app_dir, "creative")
+    project_dir = os.path.join(creative_root, "novel01")
+    os.makedirs(project_dir)
+    with open(os.path.join(project_dir, "inspiration.txt"), "w", encoding="utf-8") as handle:
+        handle.write("spark")
+    with open(os.path.join(project_dir, "manuscript.txt"), "w", encoding="utf-8") as handle:
+        handle.write("once upon a time")
+
+    monkeypatch.setattr(backup.paths, "creative_projects_dir", lambda: creative_root)
+
+    zip_path = str(tmp_path / "with-creative.zip")
+    manifest = backup.export_backup(zip_path, profile_id="default", creative_root=creative_root)
+    assert manifest["creative_file_count"] == 2
+    assert "creative/novel01/manuscript.txt" in manifest["files"]
+
+    # Wipe documents, then import.
+    for name in ("inspiration.txt", "manuscript.txt"):
+        os.remove(os.path.join(project_dir, name))
+
+    restored_root = os.path.join(tmp_path, "restored-creative")
+    result = backup.import_backup(zip_path, merge_profiles=True, creative_root=restored_root)
+    assert result["restored_creative_files"] == 2
+    with open(os.path.join(restored_root, "novel01", "manuscript.txt"), encoding="utf-8") as handle:
+        assert handle.read() == "once upon a time"

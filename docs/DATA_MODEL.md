@@ -125,6 +125,17 @@ Document bodies are **not** stored in `data.json`. Files live under:
 
 On Windows (frozen or typical): `%APPDATA%\Integral\creative\...`
 
+### Backup / export coverage
+
+| Path | What it includes for creative |
+|------|-------------------------------|
+| **Full zip Backup** (`integral_io.write_full_backup`) | `data.json` (index + life payload) **and** `creative/**` documents; optional `fitness.db` |
+| **Profile zip** (`backup.export_backup`) | Profile `data.json` + `fitness.db` **and** app-level `creative/**` |
+| **CSV Export** | Companion `integral-creative-*.zip` of document files (not a restore substitute) |
+| **Legacy JSON Backup** | Library index only — manuscripts are **not** in the JSON file |
+
+Prefer the full `.zip` Backup for machine moves and disaster recovery.
+
 ---
 
 ## Daily Practices (Phase 3)

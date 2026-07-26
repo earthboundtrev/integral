@@ -153,3 +153,180 @@ def restore_backup_to_path(backup: dict, target_path: str, *, make_copy: bool = 
     clean = {key: value for key, value in backup.items() if not str(key).startswith("backup_")}
     with open(target_path, "w", encoding="utf-8") as handle:
         json.dump(clean, handle, indent=2, ensure_ascii=False)
+
+
+FULL_BACKUP_KIND = "integral_full"
+FULL_BACKUP_VERSION = 1
+
+
+def _iter_creative_files(creative_root: str) -> list[tuple[str, str]]:
+    """Return (absolute_path, arcname) pairs under creative_root."""
+    if not creative_root or not os.path.isdir(creative_root):
+        return []
+    pairs: list[tuple[str, str]] = []
+    for dirpath, _dirnames, filenames in os.walk(creative_root):
+        for name in filenames:
+            abs_path = os.path.join(dirpath, name)
+            rel = os.path.relpath(abs_path, creative_root).replace("\\", "/")
+            pairs.append((abs_path, f"creative/{rel}"))
+    return pairs
+
+
+def export_creative_documents_zip(creative_root: str, path: str) -> int:
+    """Zip inspiration/manuscript files for CSV Export. Returns file count."""
+    import zipfile
+
+    pairs = _iter_creative_files(creative_root)
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for abs_path, arcname in pairs:
+            zf.write(abs_path, arcname)
+        zf.writestr(
+            "README.txt",
+            "Integral creative writing documents.\n"
+            "For a full restore (index + files + life data), use Backup → Export Backup (zip).\n",
+        )
+    return len(pairs)
+
+
+def write_full_backup(
+    payload: dict,
+    path: str,
+    *,
+    creative_root: str | None = None,
+    fitness_db_path: str | None = None,
+) -> dict[str, Any]:
+    """Write a full-fidelity zip: data.json + creative/ + optional fitness.db."""
+    import zipfile
+
+    from paths import creative_projects_dir
+
+    creative_root = creative_root if creative_root is not None else creative_projects_dir()
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    creative_files = _iter_creative_files(creative_root)
+    has_fitness = bool(fitness_db_path and os.path.isfile(fitness_db_path))
+    manifest = {
+        "backup_kind": FULL_BACKUP_KIND,
+        "backup_version": FULL_BACKUP_VERSION,
+        "exported_at": datetime.now().isoformat(timespec="seconds"),
+        "backup_app": "Integral",
+        "has_creative": bool(creative_files),
+        "has_fitness": has_fitness,
+        "creative_file_count": len(creative_files),
+    }
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(
+            "data.json",
+            json.dumps(backup_payload(payload), indent=2, ensure_ascii=False),
+        )
+        for abs_path, arcname in creative_files:
+            zf.write(abs_path, arcname)
+        if has_fitness:
+            zf.write(fitness_db_path, "fitness.db")
+        zf.writestr("manifest.json", json.dumps(manifest, indent=2, ensure_ascii=False))
+    return manifest
+
+
+def is_full_backup_zip(path: str) -> bool:
+    import zipfile
+
+    if not path.lower().endswith(".zip"):
+        return False
+    try:
+        with zipfile.ZipFile(path, "r") as zf:
+            names = set(zf.namelist())
+            if "manifest.json" in names and "data.json" in names:
+                manifest = json.loads(zf.read("manifest.json"))
+                return manifest.get("backup_kind") == FULL_BACKUP_KIND
+            # Accept zip that simply has data.json + creative/ (forward-compatible).
+            return "data.json" in names
+    except (OSError, zipfile.BadZipFile, json.JSONDecodeError, ValueError):
+        return False
+
+
+def restore_full_backup(
+    path: str,
+    target_data_path: str,
+    *,
+    creative_root: str | None = None,
+    fitness_db_path: str | None = None,
+    make_copy: bool = True,
+) -> dict[str, Any]:
+    """Restore a full zip backup (data.json + creative/ + optional fitness.db)."""
+    import zipfile
+
+    from paths import creative_projects_dir
+
+    creative_root = creative_root if creative_root is not None else creative_projects_dir()
+    with zipfile.ZipFile(path, "r") as zf:
+        names = zf.namelist()
+        if "data.json" not in names:
+            raise ValueError("Full backup missing data.json")
+        payload = json.loads(zf.read("data.json"))
+        if not isinstance(payload, dict):
+            raise ValueError("Backup data.json is not a valid object.")
+        restore_backup_to_path(payload, target_data_path, make_copy=make_copy)
+
+        os.makedirs(creative_root, exist_ok=True)
+        restored_docs = 0
+        for name in names:
+            if not name.startswith("creative/") or name.endswith("/"):
+                continue
+            rel = name[len("creative/") :]
+            if not rel or ".." in rel.split("/"):
+                continue
+            dest = os.path.join(creative_root, *rel.split("/"))
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            with zf.open(name) as src, open(dest, "wb") as dst:
+                dst.write(src.read())
+            restored_docs += 1
+
+        fitness_restored = False
+        if fitness_db_path and "fitness.db" in names:
+            os.makedirs(os.path.dirname(fitness_db_path) or ".", exist_ok=True)
+            if make_copy and os.path.exists(fitness_db_path):
+                stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+                shutil.copy2(fitness_db_path, f"{fitness_db_path}.bak-{stamp}")
+            with zf.open("fitness.db") as src, open(fitness_db_path, "wb") as dst:
+                dst.write(src.read())
+            fitness_restored = True
+
+        manifest: dict[str, Any] = {}
+        if "manifest.json" in names:
+            try:
+                manifest = json.loads(zf.read("manifest.json"))
+            except json.JSONDecodeError:
+                manifest = {}
+        manifest["restored_creative_files"] = restored_docs
+        manifest["restored_fitness"] = fitness_restored
+        return manifest
+
+
+def restore_backup_file(
+    path: str,
+    target_data_path: str,
+    *,
+    creative_root: str | None = None,
+    fitness_db_path: str | None = None,
+    make_copy: bool = True,
+) -> dict[str, Any]:
+    """Restore from full zip or legacy JSON. Returns a small result dict."""
+    if is_full_backup_zip(path):
+        return restore_full_backup(
+            path,
+            target_data_path,
+            creative_root=creative_root,
+            fitness_db_path=fitness_db_path,
+            make_copy=make_copy,
+        )
+    backup = load_backup(path)
+    restore_backup_to_path(backup, target_data_path, make_copy=make_copy)
+    return {
+        "backup_kind": "legacy_json",
+        "restored_creative_files": 0,
+        "restored_fitness": False,
+        "warning": (
+            "JSON backup restores the library index only — writing documents under "
+            "creative/ are not included. Prefer a full .zip backup next time."
+        ),
+    }

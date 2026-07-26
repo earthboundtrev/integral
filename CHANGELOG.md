@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- **Full-fidelity backup / export (#45)** — Backup now writes a zip with `data.json` + Writing Project documents under `creative/` (+ fitness DB when present); profile zip backups include `creative/` too; CSV Export also emits `integral-creative-*.zip`. Legacy JSON restore still works for the library index and warns that manuscripts are not included.
+
 ### Changed
 
 - **Low-friction tone (#46)** — optional depth without mandatory daily completeness: dashboard no longer scores “N/total domains”; guidance/reminders/AI stop framing skipped domains as neglect; one check-in is treated as a complete honest day
