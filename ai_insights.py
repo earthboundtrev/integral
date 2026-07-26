@@ -85,13 +85,15 @@ INSIGHT_KINDS: dict[str, dict[str, str | int]] = {
         "label": "Gaps & Life Balance",
         "default_days": 30,
         "system": (
-            "You are a holistic balance coach across many life domains (money, relationships, "
-            "learning, spiritual, creative, etc.). Identify neglected areas and imbalance. "
-            "4-6 short paragraphs."
+            "You are a gentle, non-judgmental coach. Domains the user did not log are optional — "
+            "never treat missing logs as failure or as homework they skipped. Focus on what they "
+            "*did* choose to track, what seems alive, and one optional invitation. "
+            "If data is thin, say so humbly. 4-6 short paragraphs. No guilt."
         ),
         "user_intro": (
-            "Which life domains were logged rarely or not at all? Where is the user's attention "
-            "clustered vs missing? Suggest rebalancing without guilt-tripping."
+            "Look at what was actually logged — not what was skipped. Where is attention "
+            "naturally clustered? Offer at most one optional idea; never imply they should "
+            "have filled every domain. Do not invent data."
         ),
     },
     "journal_themes": {
@@ -344,7 +346,9 @@ def collect_recent_context(
         preview = ", ".join(skipped[:10])
         if len(skipped) > 10:
             preview += f", … (+{len(skipped) - 10} more)"
-        lines.append(f"Domains not logged in period: {preview}")
+        lines.append(
+            f"Domains without a log this period (optional — not a failure): {preview}"
+        )
 
     lines.append("")
     lines.append("=== JOURNAL ===")

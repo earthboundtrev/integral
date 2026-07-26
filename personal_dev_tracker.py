@@ -773,6 +773,15 @@ class PersonalDevelopmentTracker:
         if self.root.winfo_exists():
             self.root.after(1500, self._poll_pending_deep_link)
 
+    def format_today_presence_line(self) -> str:
+        """Non-punitive summary: check-ins count, never N/total completeness."""
+        logged_count, _total = self.count_today_logged()
+        if logged_count == 0:
+            return "Nothing logged yet today — one rating is enough whenever you're ready."
+        if logged_count == 1:
+            return "1 check-in today — that's a complete honest day."
+        return f"{logged_count} check-ins today — add more only if you want."
+
     def count_today_logged(self) -> tuple[int, int]:
         logged = len(self.entries.get(self.today_str(), {}))
         return logged, len(self.categories)
@@ -785,7 +794,7 @@ class PersonalDevelopmentTracker:
         return None
 
     def create_todays_log_bar(self) -> None:
-        logged_count, total = self.count_today_logged()
+        logged_count, _total = self.count_today_logged()
         today_entries = self.entries.get(self.today_str(), {})
 
         log_bar = ttk.LabelFrame(self.root, text="Today's Log", padding=14, style="Card.TLabelframe")
@@ -794,12 +803,12 @@ class PersonalDevelopmentTracker:
 
         ttk.Label(
             log_bar,
-            text=f"{logged_count} of {total} life areas logged",
+            text=self.format_today_presence_line(),
             style="OnSurfaceSubheading.TLabel",
         ).pack(anchor="w")
         ttk.Label(
             log_bar,
-            text="Log as you go, or reflect at end of day — pick any area below.",
+            text="Domains are optional depth — pick any area below, or skip. Rating + Save is enough.",
             style="OnSurfaceMuted.TLabel",
         ).pack(anchor="w", pady=(4, 10))
 
@@ -813,10 +822,16 @@ class PersonalDevelopmentTracker:
         if next_cat:
             ttk.Button(
                 actions,
-                text=f"Continue → {CATEGORY_SHORT_LABELS.get(next_cat, next_cat)}",
+                text=f"Log one → {CATEGORY_SHORT_LABELS.get(next_cat, next_cat)}",
                 style="Accent.TButton",
                 command=lambda: self.open_log_dialog(next_cat),
             ).pack(side=tk.LEFT, padx=(0, 8))
+        elif logged_count:
+            ttk.Label(
+                actions,
+                text="All listed domains have a check-in — nothing more required.",
+                style="OnSurfaceMuted.TLabel",
+            ).pack(side=tk.LEFT)
         ttk.Button(
             actions, text="Journal", style="Accent.TButton", command=self.show_journal
         ).pack(side=tk.LEFT, padx=(0, 8))
@@ -862,15 +877,6 @@ class PersonalDevelopmentTracker:
                 text="Plan vs Actual",
                 command=lambda: show_plan_comparison_window(self, self.today_str()),
             ).pack(side=tk.RIGHT)
-
-        progress = ttk.Progressbar(
-            log_bar,
-            orient=tk.HORIZONTAL,
-            mode="determinate",
-            maximum=max(total, 1),
-            value=logged_count,
-        )
-        progress.pack(fill=tk.X, pady=(10, 0))
 
         # ~3 rows of category buttons visible by default; mousewheel scrolls the rest
         cat_scroll_host = ttk.Frame(log_bar, style="Surface.TFrame")
@@ -926,7 +932,12 @@ class PersonalDevelopmentTracker:
             today_str = self.today_str()
             logged_today = len(self.entries.get(today_str, {}))
             fitness_today = self._session_counts_for_date(today_str)
-            stats_text = f"Today: {logged_today}/{len(self.categories)} life areas logged"
+            if logged_today == 0:
+                stats_text = "Today: no life-domain check-ins yet (optional)"
+            elif logged_today == 1:
+                stats_text = "Today: 1 life-domain check-in"
+            else:
+                stats_text = f"Today: {logged_today} life-domain check-ins"
             if fitness_today:
                 stats_text += f"  ·  {fitness_today} fitness session(s)"
             stats_text += f"  ·  {milestone_summary(self.milestones)}"
@@ -1114,7 +1125,12 @@ class PersonalDevelopmentTracker:
         fitness_today = self._session_counts_for_date(today_str)
         stats = ttk.Frame(main, padding=8)
         stats.grid(row=1, column=0, sticky="ew", padx=4)
-        stats_text = f"Today: {logged_today}/{len(self.categories)} life areas logged"
+        if logged_today == 0:
+            stats_text = "Today: no life-domain check-ins yet (optional)"
+        elif logged_today == 1:
+            stats_text = "Today: 1 life-domain check-in"
+        else:
+            stats_text = f"Today: {logged_today} life-domain check-ins"
         if fitness_today:
             stats_text += f"  ·  {fitness_today} fitness session(s)"
         stats_text += f"  ·  {milestone_summary(self.milestones)}"
