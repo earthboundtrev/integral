@@ -4,7 +4,7 @@
 
 ### Fixed
 
-- **Horizontal scroll stutter (#48)** — footer / toolbar strips coalesce geometry sync, rebind mousewheel only when children change, and avoid pack/unpack on every scroll notch; activity grid skips redraw when width is unchanged
+- **Instant UI / scroll harden (#50)** — soft Refresh skips guidance/categories rebuild when data unchanged; footer scroll no longer re-walks wheel bindings on every geometry Configure; Deep Work restores footer buttons in original pack order (hardening #47/#48)
 
 ### Changed
 
