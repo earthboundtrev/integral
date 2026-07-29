@@ -2,7 +2,13 @@
 
 ## Unreleased
 
-## 0.3.11.2 — 2026-07-25
+### Fixed
+
+- **Horizontal scroll stutter (#48)** — footer / toolbar strips coalesce geometry sync, rebind mousewheel only when children change, and avoid pack/unpack on every scroll notch; activity grid skips redraw when width is unchanged
+
+### Changed
+
+- **Snappier Overview refresh (#47)** — Refresh and day-rollover use soft dashboard updates instead of full UI tear-down; Deep Work end restores nav without rebuilding; fitness session counts are cached via a SQL aggregate instead of loading thousands of session rows each refresh
 
 ### Added
 

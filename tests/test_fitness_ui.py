@@ -120,3 +120,21 @@ def test_format_exercise_picker_label_includes_book_and_family():
 
 def test_format_exercise_picker_label_name_only():
     assert format_exercise_picker_label({"name": "Burpees"}) == "Burpees"
+
+
+def test_count_workout_sessions_by_date_aggregates(tmp_path):
+    repo = make_repo(tmp_path)
+    ensure_fitness_seeded(repo)
+    repo.initialize()
+    with repo.connect() as conn:
+        for session_id, day in (("a", "2026-07-01"), ("b", "2026-07-01"), ("c", "2026-07-02")):
+            conn.execute(
+                """
+                INSERT INTO workout_sessions (id, date, notes, duration_minutes, body_weight_kg)
+                VALUES (?, ?, '', NULL, NULL)
+                """,
+                (session_id, day),
+            )
+    counts = repo.count_workout_sessions_by_date(limit=2000)
+    assert counts["2026-07-01"] == 2
+    assert counts["2026-07-02"] == 1

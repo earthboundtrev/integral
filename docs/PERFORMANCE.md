@@ -32,9 +32,20 @@ Even then, prefer **Rust + Tauri** or a **compiled Python bundle (PyInstaller + 
 | Cold start (dashboard visible) | < 2 seconds |
 | Open log dialog | < 200ms |
 | Save entry | < 100ms |
+| Soft dashboard refresh (Refresh / after save) | < 100ms perceived — **no** full `create_dashboard` tear-down |
+| Footer / activity horizontal scroll | Smooth — coalesced layout, no wheel rebind thrash (#48) |
 | Open Graphs tab (first time) | < 3 seconds (matplotlib load) |
 | Graphs tab (subsequent) | < 500ms |
+| AI Insight | Exempt (Ollama / network) |
 | Memory (idle) | < 150 MB |
+
+## Hot-path rules (Instant UI — #47)
+
+- Prefer `refresh_dashboard(full=False)` over `create_dashboard()` for saves, Refresh, and day rollover.
+- Cache fitness session date→count (`count_workout_sessions_by_date` + `_session_counts_cache`); invalidate only when fitness data changes.
+- Do not load thousands of `WorkoutSession` objects just to paint the activity grid.
+- Horizontal scroll: coalesce geometry with `after_idle`; rebind mousewheel only when the descendant set changes (`ui_scroll.py`).
+- Activity grid: skip full redraw when canvas width is unchanged.
 
 ## Mandatory Lightweight Practices
 
