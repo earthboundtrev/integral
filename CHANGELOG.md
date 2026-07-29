@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- **Log Exercise draft recovery (#52)** — wrong exercise or queued set no longer forces Cancel: remove selected sets (Delete key too), clear exercise selection, and re-pick another movement while keeping the session draft
+
 - **Instant UI / scroll harden (#50)** — soft Refresh skips guidance/categories rebuild when data unchanged; footer scroll no longer re-walks wheel bindings on every geometry Configure; Deep Work restores footer buttons in original pack order (hardening #47/#48)
 
 ### Changed

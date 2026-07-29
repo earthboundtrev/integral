@@ -3,7 +3,9 @@ import pytest
 from fitness_ui import (
     ensure_fitness_seeded,
     format_exercise_picker_label,
+    format_pending_set_line,
     list_exercise_rows,
+    remove_pending_set_at,
     submit_performance,
 )
 from progression.db import FitnessRepository
@@ -120,6 +122,32 @@ def test_format_exercise_picker_label_includes_book_and_family():
 
 def test_format_exercise_picker_label_name_only():
     assert format_exercise_picker_label({"name": "Burpees"}) == "Burpees"
+
+
+def test_format_pending_set_line_basic_and_extras():
+    assert (
+        format_pending_set_line({"label": "Wall Push-ups (CC1)", "sets": 3, "reps": 10})
+        == "Wall Push-ups (CC1): 3x10"
+    )
+    assert (
+        format_pending_set_line(
+            {"name": "Plank", "sets": 1, "reps": 1, "hold_seconds": 30, "weight_kg": 5}
+        )
+        == "Plank: 1x1 (30s hold, 5 kg)"
+    )
+
+
+def test_remove_pending_set_at_mutates_and_guards():
+    pending = [
+        {"exercise_id": "a", "sets": 3, "reps": 10},
+        {"exercise_id": "b", "sets": 2, "reps": 8},
+        {"exercise_id": "c", "sets": 1, "reps": 5},
+    ]
+    assert remove_pending_set_at(pending, 1) is True
+    assert [p["exercise_id"] for p in pending] == ["a", "c"]
+    assert remove_pending_set_at(pending, 99) is False
+    assert remove_pending_set_at(pending, -1) is False
+    assert len(pending) == 2
 
 
 def test_count_workout_sessions_by_date_aggregates(tmp_path):
