@@ -11,6 +11,7 @@ import deep_work as dw
 import focus_shield
 import quick_capture
 import todos
+from category_picker import bind_category_typeahead, resolve_category_name
 from theme import FONTS, style_canvas, style_text_widget
 import ui_scroll
 from ui_scroll import refresh_scroll_region
@@ -191,11 +192,11 @@ def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
     date_var = tk.StringVar(value=tracker.today_str())
     ttk.Entry(row, textvariable=date_var, width=12).pack(side=tk.LEFT, padx=6)
     ttk.Label(row, text="Category").pack(side=tk.LEFT, padx=(8, 0))
-    cat_names = [""] + list(tracker.categories.keys())
+    cat_names = list(tracker.categories.keys())
     new_cat = tk.StringVar(value="")
-    ttk.Combobox(row, textvariable=new_cat, values=cat_names, width=22, state="readonly").pack(
-        side=tk.LEFT, padx=4
-    )
+    new_cat_combo = ttk.Combobox(row, textvariable=new_cat, width=22)
+    new_cat_combo.pack(side=tk.LEFT, padx=4)
+    bind_category_typeahead(new_cat_combo, cat_names, allow_blank=True)
 
     def persist_todos() -> None:
         tracker.todos = todos.normalize_todos(tracker.todos)
@@ -236,12 +237,22 @@ def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
         if not text:
             messagebox.showinfo("Todos", "Enter a todo.", parent=win)
             return
+        category = resolve_category_name(
+            new_cat.get(), list(tracker.categories.keys()), allow_blank=True
+        )
+        if category is None:
+            messagebox.showwarning(
+                "Todos",
+                "Pick a category from the list (or leave blank).",
+                parent=win,
+            )
+            return
         try:
             tracker.todos = todos.add_todo(
                 tracker.todos,
                 text=text,
                 work_date=date_var.get().strip() or tracker.today_str(),
-                category=new_cat.get().strip(),
+                category=category,
             )
         except ValueError as exc:
             messagebox.showwarning("Todos", str(exc), parent=win)
@@ -270,12 +281,9 @@ def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
     ttk.Label(log_box, text="Life domain (when applicable)", style="Muted.TLabel").pack(
         anchor="w", pady=(6, 0)
     )
-    ttk.Combobox(
-        log_box,
-        textvariable=log_cat,
-        values=list(tracker.categories.keys()),
-        state="readonly",
-    ).pack(fill=tk.X, pady=2)
+    log_cat_combo = ttk.Combobox(log_box, textvariable=log_cat)
+    log_cat_combo.pack(fill=tk.X, pady=2)
+    bind_category_typeahead(log_cat_combo, list(tracker.categories.keys()))
 
     def open_quick_log() -> None:
         label = log_type.get()
@@ -283,10 +291,15 @@ def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
         tracker.root.deiconify()
         tracker.root.lift()
         if kind == "life":
-            cat = log_cat.get().strip()
+            cat = resolve_category_name(log_cat.get(), list(tracker.categories.keys()))
             if not cat:
-                messagebox.showinfo("Quick log", "Pick a life domain.", parent=win)
+                messagebox.showinfo(
+                    "Quick log",
+                    "Pick a life domain from the list (type to filter, then select a match).",
+                    parent=win,
+                )
                 return
+            log_cat.set(cat)
             tracker.open_log_dialog(cat)
         elif kind == "journal":
             from journal_ui import show_journal_window
@@ -322,21 +335,26 @@ def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
     link_cat = tk.StringVar(value=list(tracker.categories.keys())[0] if tracker.categories else "")
     ttk.Entry(link_box, textvariable=url_var).pack(fill=tk.X, pady=2)
     ttk.Entry(link_box, textvariable=title_var).pack(fill=tk.X, pady=2)
-    ttk.Combobox(
-        link_box, textvariable=link_cat, values=list(tracker.categories.keys()), state="readonly"
-    ).pack(fill=tk.X, pady=2)
+    link_cat_combo = ttk.Combobox(link_box, textvariable=link_cat)
+    link_cat_combo.pack(fill=tk.X, pady=2)
+    bind_category_typeahead(link_cat_combo, list(tracker.categories.keys()))
     link_status = tk.StringVar(value="")
     ttk.Label(link_box, textvariable=link_status, style="Muted.TLabel", wraplength=360).pack(anchor="w")
 
     def save_link() -> None:
         url = url_var.get().strip()
-        category = link_cat.get().strip()
+        category = resolve_category_name(link_cat.get(), list(tracker.categories.keys()))
         if not url or not quick_capture.looks_like_url(url):
             messagebox.showinfo("Quick Capture", "Paste an http(s) URL.", parent=win)
             return
-        if category not in tracker.categories:
-            messagebox.showinfo("Quick Capture", "Pick a category.", parent=win)
+        if not category:
+            messagebox.showinfo(
+                "Quick Capture",
+                "Pick a category from the list (type to filter, then select a match).",
+                parent=win,
+            )
             return
+        link_cat.set(category)
         title = title_var.get().strip()
         if not title and quick_capture.is_youtube_url(url):
             fetched = quick_capture.fetch_youtube_title(url)
@@ -470,18 +488,28 @@ def _edit_todo_dialog(tracker, item, categories, on_saved, parent) -> None:
 
     ttk.Label(body, text="Category").pack(anchor="w")
     cat_var = tk.StringVar(value=item.get("category", ""))
-    ttk.Combobox(
-        body, textvariable=cat_var, values=[""] + list(categories or []), state="readonly"
-    ).pack(fill=tk.X, pady=(0, 6))
+    cat_combo = ttk.Combobox(body, textvariable=cat_var)
+    cat_combo.pack(fill=tk.X, pady=(0, 6))
+    bind_category_typeahead(cat_combo, list(categories or []), allow_blank=True)
 
     def save() -> None:
+        category = resolve_category_name(
+            cat_var.get(), list(categories or []), allow_blank=True
+        )
+        if category is None:
+            messagebox.showwarning(
+                "Edit todo",
+                "Pick a category from the list (or leave blank).",
+                parent=dlg,
+            )
+            return
         try:
             tracker.todos = todos.update_todo(
                 tracker.todos,
                 item["id"],
                 text=text_var.get().strip(),
                 work_date=date_var.get().strip(),
-                category=cat_var.get().strip(),
+                category=category,
             )
         except (ValueError, KeyError) as exc:
             messagebox.showwarning("Edit todo", str(exc), parent=dlg)

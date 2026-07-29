@@ -125,6 +125,18 @@ Document bodies are **not** stored in `data.json`. Files live under:
 
 On Windows (frozen or typical): `%APPDATA%\Integral\creative\...`
 
+### Settings: Today's Log pins
+
+Optional nested blob under `settings.todays_log` (normalized on load):
+
+```json
+{
+  "pinned_domains": ["Body & Presence", "Creative/Mental Work"]
+}
+```
+
+Max 5 names; unknown names are ignored at display time. Included automatically in JSON backup via `settings`.
+
 ### Backup / export coverage
 
 | Path | What it includes for creative |

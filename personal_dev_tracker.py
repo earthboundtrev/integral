@@ -55,64 +55,14 @@ from theme import (
 )
 import ui_scroll
 from vault import is_encrypted_file, load_data_file, save_data_file
-
-CATEGORY_SHORT_LABELS = {
-    "Money/Freedom": "Money",
-    "Career & Vocation": "Career",
-    "Body & Presence": "Body",
-    "Burnout Prevention & Energy Management": "Energy",
-    "Creative/Mental Work": "Creative",
-    "Learning & Intellectual Growth": "Learning",
-    "Family/Logistics": "Family",
-    "Relationships & Social Connection": "Relationships",
-    "Home & Environment": "Home",
-    "Search Practice": "Search",
-    "Spiritual Development": "Spiritual",
-    "Emotional Wellbeing": "Emotional",
-    "Community & Service": "Community",
-    "Cultural Life & Heritage": "Culture",
-    "What You Have Eaten": "Food",
-    "Art You Have Consumed": "Art",
-    "General Reading": "Reading",
-    "Content You Have Consumed": "Content",
-}
-
-
-def filter_todays_log_categories(
-    category_names: list[str],
-    *,
-    query: str = "",
-    status: str = "all",
-    logged_names: set[str] | frozenset[str] | None = None,
-    short_labels: dict[str, str] | None = None,
-) -> list[str]:
-    """Filter/sort domain names for the Today's Log button grid (pure, UI-safe)."""
-    labels = short_labels if short_labels is not None else CATEGORY_SHORT_LABELS
-    logged = logged_names or set()
-    needle = query.strip().lower()
-    status_key = (status or "all").strip().lower()
-    if status_key not in {"all", "unlogged", "logged"}:
-        status_key = "all"
-
-    matched: list[str] = []
-    for name in category_names:
-        is_logged = name in logged
-        if status_key == "unlogged" and is_logged:
-            continue
-        if status_key == "logged" and not is_logged:
-            continue
-        if needle:
-            blob = f"{name} {labels.get(name, name)}".lower()
-            if needle not in blob:
-                continue
-        matched.append(name)
-
-    if status_key == "all":
-        unlogged = [name for name in matched if name not in logged]
-        already = [name for name in matched if name in logged]
-        return unlogged + already
-    return matched
-
+from todays_log import (
+    CATEGORY_SHORT_LABELS,
+    apply_todays_log_settings,
+    filter_todays_log_categories,
+    pinned_domains,
+    prune_pinned_domains,
+    toggle_pinned_domain,
+)
 
 DATA_FILE = data_file()
 
@@ -618,6 +568,7 @@ class PersonalDevelopmentTracker:
                 self.settings,
                 quick_capture.normalize_quick_capture_settings(self.settings),
             )
+            self.settings = apply_todays_log_settings(self.settings)
             self.settings["fitness"] = get_fitness_settings(self.settings)
             self.sessions = migrated.get("sessions", [])
             self._invalidate_session_counts()
@@ -642,6 +593,7 @@ class PersonalDevelopmentTracker:
                 self.settings,
                 quick_capture.default_quick_capture_settings(),
             )
+            self.settings = apply_todays_log_settings(self.settings)
             self.settings["fitness"] = get_fitness_settings(self.settings)
             self.sessions = []
             self._invalidate_session_counts()
@@ -843,6 +795,10 @@ class PersonalDevelopmentTracker:
         logged_count, _total = self.count_today_logged()
         today_entries = self.entries.get(self.today_str(), {})
         logged_names = set(today_entries.keys())
+        pruned = prune_pinned_domains(self.settings, self.categories.keys())
+        if pruned.get("todays_log") != self.settings.get("todays_log"):
+            self.settings = pruned
+            self.save_data(flush=True)
 
         log_bar = ttk.LabelFrame(self.root, text="Today's Log", padding=14, style="Card.TLabelframe")
         self._log_bar = log_bar
@@ -885,6 +841,8 @@ class PersonalDevelopmentTracker:
 
         more = ttk.Menubutton(actions, text="More…")
         more_menu = tk.Menu(more, tearoff=0)
+        more_menu.add_command(label="Go to…", command=self.show_goto)
+        more_menu.add_separator()
         more_menu.add_command(label="Writing Projects", command=self.show_writing_projects)
         more_menu.add_command(label="Deep Work", command=self.show_deep_work)
         more_menu.add_command(
@@ -962,6 +920,8 @@ class PersonalDevelopmentTracker:
         def rebuild_domain_grid(*_args) -> None:
             self._todays_log_filter = filter_var.get()
             self._todays_log_status = status_var.get() or "all"
+            pins = pinned_domains(self.settings)
+            pin_set = set(pins)
             for child in btn_row.winfo_children():
                 child.destroy()
             names = filter_todays_log_categories(
@@ -969,6 +929,7 @@ class PersonalDevelopmentTracker:
                 query=self._todays_log_filter,
                 status=self._todays_log_status,
                 logged_names=logged_names,
+                pinned_names=pins,
             )
             total = len(self.categories)
             if not names:
@@ -980,29 +941,73 @@ class PersonalDevelopmentTracker:
                 match_hint.config(text="")
                 cat_canvas.yview_moveto(0)
                 return
+
+            def pin_menu(event, cat: str) -> None:
+                menu = tk.Menu(btn_row, tearoff=0)
+                if cat in pin_set:
+                    menu.add_command(
+                        label="Unpin domain",
+                        command=lambda: self._toggle_domain_pin(cat, rebuild_domain_grid),
+                    )
+                else:
+                    menu.add_command(
+                        label="Pin domain (up to 5)",
+                        command=lambda: self._toggle_domain_pin(cat, rebuild_domain_grid),
+                    )
+                try:
+                    menu.tk_popup(event.x_root, event.y_root)
+                finally:
+                    menu.grab_release()
+
             for index, cat_name in enumerate(names):
                 short = CATEGORY_SHORT_LABELS.get(cat_name, cat_name)
                 is_logged = cat_name in today_entries
                 rating = today_entries.get(cat_name, {}).get("rating", "")
-                label = f"✓ {short} ({rating}/10)" if is_logged else f"Log {short}"
+                star = "★ " if cat_name in pin_set else ""
+                if is_logged:
+                    label = f"{star}✓ {short} ({rating}/10)"
+                else:
+                    label = f"{star}Log {short}"
                 btn_style = "Logged.TButton" if is_logged else "TButton"
-                ttk.Button(
+                btn = ttk.Button(
                     btn_row,
                     text=label,
                     style=btn_style,
                     command=lambda c=cat_name: self.open_log_dialog(c),
-                ).grid(row=index // 4, column=index % 4, padx=4, pady=4, sticky="ew")
+                )
+                btn.grid(row=index // 4, column=index % 4, padx=4, pady=4, sticky="ew")
+                btn.bind("<Button-3>", lambda e, c=cat_name: pin_menu(e, c))
             for col in range(4):
                 btn_row.columnconfigure(col, weight=1)
+            bits: list[str] = []
+            if pins:
+                bits.append(f"{len(pins)} pinned")
             if len(names) < total or self._todays_log_filter.strip() or self._todays_log_status != "all":
-                match_hint.config(text=f"Showing {len(names)} of {total} domains")
-            else:
-                match_hint.config(text="Unlogged domains first — filter or use Unlogged to narrow")
+                bits.append(f"showing {len(names)} of {total}")
+            elif not pins:
+                bits.append("Unlogged first — right-click to pin favorites")
+            match_hint.config(text=" · ".join(bits))
             cat_canvas.yview_moveto(0)
 
         filter_var.trace_add("write", rebuild_domain_grid)
         status_var.trace_add("write", rebuild_domain_grid)
         rebuild_domain_grid()
+
+    def _toggle_domain_pin(self, cat_name: str, on_done=None) -> None:
+        from tkinter import messagebox
+
+        updated, err = toggle_pinned_domain(
+            self.settings,
+            cat_name,
+            valid_names=set(self.categories.keys()),
+        )
+        if err:
+            messagebox.showinfo("Pinned domains", err, parent=self.root)
+            return
+        self.settings = updated
+        self.save_data(flush=True)
+        if on_done:
+            on_done()
 
     def refresh_dashboard(self, *, full: bool = False, recompute: bool = True) -> None:
         if full or not self._dashboard_ready:
@@ -1168,14 +1173,11 @@ class PersonalDevelopmentTracker:
             text="Refresh",
             command=lambda: self.refresh_dashboard(full=False, recompute=False),
         ).pack(side=tk.LEFT)
+        ttk.Button(
+            nav, text="Go to…", style="Accent.TButton", command=self.show_goto
+        ).pack(side=tk.LEFT, padx=6)
         ttk.Button(nav, text="Guidance", command=self.show_guidance).pack(side=tk.LEFT, padx=6)
         ttk.Button(nav, text="Weekly Summary", command=self.show_weekly_summary).pack(side=tk.LEFT, padx=6)
-        ttk.Button(
-            nav,
-            text="AI Insight",
-            style="Accent.TButton",
-            command=lambda: self._show_ai_insight(default_days=7),
-        ).pack(side=tk.LEFT, padx=6)
         ttk.Button(nav, text="Full History", command=self.show_history).pack(side=tk.LEFT, padx=6)
         ttk.Button(nav, text="Search Notes", command=self.show_search).pack(side=tk.LEFT, padx=6)
         ttk.Button(nav, text="Graphs & Progress", command=self.show_graphs).pack(side=tk.LEFT, padx=6)
@@ -1194,11 +1196,6 @@ class PersonalDevelopmentTracker:
             style="Accent.TButton",
             command=self.toggle_quick_capture,
         ).pack(side=tk.LEFT, padx=6)
-        ttk.Button(nav, text="Plan Tomorrow", command=self.show_plan_tomorrow).pack(side=tk.LEFT, padx=6)
-        ttk.Button(nav, text="Log Exercise", style="Accent.TButton", command=self.show_log_exercise).pack(
-            side=tk.LEFT, padx=6
-        )
-        ttk.Button(nav, text="Fitness Hub", command=self.show_fitness_hub).pack(side=tk.LEFT, padx=6)
         ttk.Button(nav, text="Milestones", command=self.show_milestones).pack(side=tk.LEFT, padx=6)
         ttk.Button(nav, text="Export", command=self.show_export).pack(side=tk.LEFT, padx=6)
         ttk.Button(nav, text="Backup", command=self.show_backup).pack(side=tk.LEFT, padx=6)
@@ -1210,6 +1207,10 @@ class PersonalDevelopmentTracker:
         self._register_nav_buttons(nav)
         self._ensure_deep_work_banner(footer)
         self._apply_deep_work_chrome()
+        if not getattr(self, "_goto_shortcut_bound", False):
+            self.root.bind_all("<Control-k>", lambda _e: self.show_goto())
+            self.root.bind_all("<Control-K>", lambda _e: self.show_goto())
+            self._goto_shortcut_bound = True
         self._dashboard_ready = True
 
     def _build_overview_tab(self, parent: ttk.Frame) -> None:
@@ -2264,6 +2265,11 @@ class PersonalDevelopmentTracker:
 
     def show_security(self) -> None:
         show_security_dialog(self)
+
+    def show_goto(self) -> None:
+        from goto_ui import open_goto_palette
+
+        open_goto_palette(self)
 
     def show_search(self) -> None:
         window = tk.Toplevel(self.root)

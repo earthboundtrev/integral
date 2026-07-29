@@ -4,7 +4,9 @@
 
 ### Added
 
-- **Today's Log findability (#54)** — live Find filter (name + short label), All/Unlogged/Logged radios, unlogged-first ordering; overlapping actions tucked under **More…** (footer still has full nav); filter survives soft Refresh
+- **Go to… palette + findability follow-ups (#56)** — Ctrl+K / footer **Go to…** jumps to any screen or Log domain; footer drops More… duplicates (**AI Insight**, Plan Tomorrow, Log Exercise, Fitness Hub) while **Writing Projects** stays for Deep Work; Quick Capture domain Comboboxes typeahead; pin up to 5 Today's Log domains (right-click, `settings.todays_log.pinned_domains`)
+
+- **Today's Log findability (#54)** — live Find filter (name + short label), All/Unlogged/Logged radios, unlogged-first ordering; overlapping actions tucked under **More…**; filter survives soft Refresh
 
 ### Fixed
 

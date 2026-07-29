@@ -89,7 +89,8 @@ User data: `%APPDATA%\Integral\data.json` (encrypted optional via Data & Securit
 
 | Area | Features |
 |------|----------|
-| **Life domains (18)** | Ratings, checklists, metrics, notes, streaks, guidance — **optional depth**; one check-in is enough; never scored as N/18 completeness; **Today's Log** Find filter + All/Unlogged/Logged and a **More…** menu for secondary actions |
+| **Life domains (18)** | Ratings, checklists, metrics, notes, streaks, guidance — **optional depth**; one check-in is enough; never scored as N/18 completeness; **Today's Log** Find filter + All/Unlogged/Logged, pin up to 5 favorites (right-click), and a **More…** menu |
+| **Go to…** | Command palette (footer or Ctrl+K) to jump to any screen or Log a domain by typing |
 | **Domain templates** | One-click starter packs (**Gut Healing**, **Personal Health & Alignment**) add a coherent set of pre-configured domains; applied from onboarding or the category editor, never overwriting existing domains |
 | **Daily practices** | Log non-program routines (Five Tibetan Rites, Strong Medicine, breathing, wind-releasing yoga) with duration, reps/completions, hold time, quality (1–10), an optional per-movement breakdown, a subjective "effect" note, and free notes; reachable from Quick Capture **and** the Fitness Hub; flows into the linked life domain for history, streaks, and insights |
 | **Symptom correlations** | Guidance compares symptom metrics (gas, bloating, comfort, energy) on days *with* a logged practice vs *without*, surfacing patterns like "lower gas on practice days"; a "Gut & Symptom Patterns" AI insight goes deeper |
@@ -103,7 +104,7 @@ User data: `%APPDATA%\Integral\data.json` (encrypted optional via Data & Securit
 | **Activity** | GitHub-style contribution grid; click any day; smooth horizontal scroll |
 | **Snappy UI** | Soft Overview refresh (no full rebuild on Refresh/save paths); cached fitness day counts; footer scroll without hitching |
 | **Streak** | Overall streak counts life log, journal, or fitness for the day; updates as soon as you save; mid-day grace if today is still empty |
-| **Quick Capture** | Optional always-on-top panel (off by default): today’s todos + scheduled backlog with collapsible sections, inline edit, and drag-free ↑/↓ reordering; finish→category log line; link starters; Journal now; quick-log opener; Deep Work timer + Windows focus shield (minimize chosen apps) |
+| **Quick Capture** | Optional always-on-top panel (off by default): today’s todos + scheduled backlog with collapsible sections, inline edit, and drag-free ↑/↓ reordering; finish→category log line; link starters; Journal now; quick-log opener; **domain typeahead** on category pickers; Deep Work timer + Windows focus shield (minimize chosen apps) |
 | **Fitness Hub** | CC1/CC2/SS/SM/OG/EC/FTR — nested book → program → steps; **Log Exercise** lets you re-pick exercises and remove queued sets without Canceling the draft |
 | **Fitness skill tree** | Progressive logging DAG for full CC1 Big Six, full CC2 ladders, and Strong Medicine resistance progressions (squat→barbell, sumo DL, DB bench/press, statue row, plank core) from official Hub tables |
 | **Safety net** | Export CSV (+ creative docs zip), full zip backup (data + `creative/` + fitness), optional vault encryption |

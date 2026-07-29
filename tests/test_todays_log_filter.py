@@ -1,6 +1,13 @@
-"""Tests for Today's Log domain filter / sort helpers (#54)."""
+"""Tests for Today's Log domain filter / pins / settings (#54, #56)."""
 
-from personal_dev_tracker import CATEGORY_SHORT_LABELS, filter_todays_log_categories
+from todays_log import (
+    CATEGORY_SHORT_LABELS,
+    MAX_PINNED_DOMAINS,
+    apply_todays_log_settings,
+    filter_todays_log_categories,
+    normalize_todays_log_settings,
+    toggle_pinned_domain,
+)
 
 
 NAMES = [
@@ -65,3 +72,57 @@ def test_filter_uses_custom_short_labels():
     assert filter_todays_log_categories(
         NAMES, query="cash", short_labels=labels
     ) == ["Money/Freedom"]
+
+
+def test_filter_pins_sort_first_then_unlogged():
+    logged = {"Body & Presence"}
+    result = filter_todays_log_categories(
+        NAMES,
+        logged_names=logged,
+        pinned_names=["Money/Freedom", "Body & Presence"],
+    )
+    assert result[:2] == ["Money/Freedom", "Body & Presence"]
+    assert result[2:] == ["Creative/Mental Work", "Emotional Wellbeing"]
+
+
+def test_normalize_and_toggle_pins():
+    settings = normalize_todays_log_settings({})
+    assert settings["pinned_domains"] == []
+    settings = apply_todays_log_settings({}, {"pinned_domains": NAMES + NAMES})
+    assert settings["todays_log"]["pinned_domains"] == NAMES[:MAX_PINNED_DOMAINS]
+
+    updated, err = toggle_pinned_domain({}, "Body & Presence", valid_names=set(NAMES))
+    assert err is None
+    assert updated["todays_log"]["pinned_domains"] == ["Body & Presence"]
+    updated, err = toggle_pinned_domain(updated, "Body & Presence", valid_names=set(NAMES))
+    assert err is None
+    assert updated["todays_log"]["pinned_domains"] == []
+
+    five = [
+        "Body & Presence",
+        "Creative/Mental Work",
+        "Money/Freedom",
+        "Emotional Wellbeing",
+        "Career & Vocation",
+    ]
+    filled = apply_todays_log_settings({}, {"pinned_domains": five})
+    assert len(filled["todays_log"]["pinned_domains"]) == MAX_PINNED_DOMAINS
+    _, err = toggle_pinned_domain(
+        filled,
+        "Home & Environment",
+        valid_names=set(five) | {"Home & Environment"},
+    )
+    assert err is not None
+    assert "up to" in err.lower()
+
+    stale = apply_todays_log_settings(
+        {},
+        {"pinned_domains": ["Gone Domain", "Body & Presence"]},
+    )
+    updated, err = toggle_pinned_domain(
+        stale,
+        "Money/Freedom",
+        valid_names={"Body & Presence", "Money/Freedom"},
+    )
+    assert err is None
+    assert updated["todays_log"]["pinned_domains"] == ["Body & Presence", "Money/Freedom"]

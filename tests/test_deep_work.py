@@ -54,5 +54,8 @@ def test_normalize_clamps_invalid_minutes():
 
 def test_chrome_policy_sets():
     assert "Graphs & Progress" in dw.DEEP_WORK_HIDDEN_NAV_LABELS
+    assert "Go to…" in dw.DEEP_WORK_HIDDEN_NAV_LABELS
     assert "Writing Projects" in dw.DEEP_WORK_KEEP_NAV_LABELS
     assert "Journal" in dw.DEEP_WORK_KEEP_NAV_LABELS
+    assert "Quick Capture" in dw.DEEP_WORK_KEEP_NAV_LABELS
+    assert "AI Insight" not in dw.DEEP_WORK_HIDDEN_NAV_LABELS  # removed from footer
