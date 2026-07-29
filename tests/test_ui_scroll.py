@@ -68,7 +68,8 @@ def test_coalesce_scroll_batches_units():
     assert calls == [("scroll", 4, "units")]
 
 
-def test_coalesce_scroll_moveto_flushes_pending():
+def test_coalesce_scroll_moveto_keeps_latest():
+    """Fast scrollbar drags coalesce to the latest moveto only (#68)."""
     calls: list[tuple] = []
 
     def scroll_command(*args):
@@ -77,9 +78,11 @@ def test_coalesce_scroll_moveto_flushes_pending():
     sched = _FakeScheduler()
     wrapped = coalesce_scroll_command(scroll_command, sched, interval_ms=50)
     wrapped("scroll", 3, "units")
-    wrapped("moveto", 0.5)
-    assert ("scroll", 3, "units") in calls
-    assert ("moveto", 0.5) in calls
+    wrapped("moveto", 0.2)
+    wrapped("moveto", 0.8)
+    assert calls == []
+    sched.run_pending()
+    assert calls == [("moveto", 0.8)]
 
 
 def test_coalesce_scroll_cancel_drops_pending():
@@ -127,7 +130,7 @@ def test_horizontal_scroll_xview_does_not_toggle_scrollbar_pack():
         host_parent.pack(fill=tk.X)
         host_parent.pack_propagate(False)
 
-        host, inner, canvas = make_horizontal_scroll_row(host_parent)
+        host, inner, view = make_horizontal_scroll_row(host_parent)
         host.pack(fill=tk.X)
         for label in [f"Btn{i}" for i in range(16)]:
             ttk.Button(inner, text=label).pack(side=tk.LEFT, padx=6)
@@ -136,15 +139,16 @@ def test_horizontal_scroll_xview_does_not_toggle_scrollbar_pack():
         root.update()
         for _ in range(5):
             root.update_idletasks()
+        view.refresh_metrics()
 
-        viewport = canvas.master
-        bars_before = [w for w in viewport.winfo_children() if isinstance(w, ttk.Scrollbar)]
+        strip = view.master
+        bars_before = [w for w in strip.winfo_children() if isinstance(w, ttk.Scrollbar)]
         assert bars_before, "expected overflow scrollbar to be managed"
 
         for frac in (0.2, 0.4, 0.6, 0.8, 1.0):
-            canvas.xview_moveto(frac)
+            view.xview_moveto(frac)
             root.update_idletasks()
-            bars = [w for w in viewport.winfo_children() if isinstance(w, ttk.Scrollbar)]
+            bars = [w for w in strip.winfo_children() if isinstance(w, ttk.Scrollbar)]
             assert len(bars) == len(bars_before)
     finally:
         root.destroy()
@@ -162,7 +166,7 @@ def test_horizontal_scroll_row_preserves_overflow_for_trailing_actions():
         host_parent.pack(fill=tk.X)
         host_parent.pack_propagate(False)
 
-        host, inner, canvas = make_horizontal_scroll_row(host_parent, overflow_hint="Scroll for more →")
+        host, inner, view = make_horizontal_scroll_row(host_parent, overflow_hint="Scroll for more →")
         host.pack(fill=tk.X)
 
         labels = [
@@ -193,21 +197,22 @@ def test_horizontal_scroll_row_preserves_overflow_for_trailing_actions():
         root.update()
         for _ in range(5):
             root.update_idletasks()
+        view.refresh_metrics()
 
-        bbox = canvas.bbox("all")
+        bbox = view.bbox("all")
         assert bbox is not None
         content_width = bbox[2] - bbox[0]
-        visible_width = max(canvas.winfo_width(), 1)
+        visible_width = max(view.winfo_width(), 1)
         assert content_width > visible_width + 2, (
             f"expected horizontal overflow (content={content_width}, visible={visible_width})"
         )
 
-        left_before, right_before = canvas.xview()
+        left_before, right_before = view.xview()
         assert float(right_before) < 0.99
 
-        canvas.xview_moveto(1.0)
+        view.xview_moveto(1.0)
         root.update_idletasks()
-        left_after, right_after = canvas.xview()
+        left_after, right_after = view.xview()
         assert float(right_after) >= 0.99
         assert float(left_after) > float(left_before)
     finally:
