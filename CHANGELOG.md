@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- **Clickable streak details (#58)** — header streak pill shows a “details” affordance and opens a day-by-day breakdown (life / journal / fitness); category cards expose the same for domain streaks
+
 ## 0.3.11.3 — 2026-07-29
 
 ### Added

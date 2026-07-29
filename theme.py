@@ -228,18 +228,42 @@ def make_card(parent: tk.Misc, theme: dict, accent: str | None = None, padding: 
     return outer, inner
 
 
-def streak_badge(parent: tk.Misc, theme: dict, text: str) -> tk.Frame:
+def streak_badge(
+    parent: tk.Misc,
+    theme: dict,
+    text: str,
+    *,
+    command=None,
+    clickable_hint: str = " · details",
+) -> tk.Frame:
+    """Header streak pill. When command is set, show a details affordance and hand cursor."""
     frame = tk.Frame(parent, bg=theme["bg"])
+    label_text = f"{text}{clickable_hint}" if command else text
     pill = tk.Label(
         frame,
-        text=text,
+        text=label_text,
         font=FONTS["stat"],
         fg="#FFFFFF",
         bg=theme["streak"],
         padx=12,
         pady=4,
+        cursor="hand2" if command else "",
+        relief=tk.FLAT,
+        borderwidth=0,
     )
     pill.pack()
+    if command:
+        pill.bind("<Button-1>", lambda _e: command())
+        frame.bind("<Button-1>", lambda _e: command())
+
+        def on_enter(_e=None) -> None:
+            pill.configure(relief=tk.GROOVE, borderwidth=1)
+
+        def on_leave(_e=None) -> None:
+            pill.configure(relief=tk.FLAT, borderwidth=0)
+
+        pill.bind("<Enter>", on_enter)
+        pill.bind("<Leave>", on_leave)
     return frame
 
 

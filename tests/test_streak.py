@@ -119,5 +119,53 @@ def test_gap_repair_hint_absent_when_yesterday_logged():
     assert streak.gap_repair_hint(today=today, entries=entries) is None
 
 
+def test_engagement_breakdown_and_reasons():
+    today = _today()
+    date_str = today.strftime("%Y-%m-%d")
+    entries = {date_str: {"Body & Presence": {"rating": 5}, "Money/Freedom": {"rating": 4}}}
+    j = journal.empty_journal()
+    journal.upsert_entry(j, journal.create_entry(date_str, "Showed up."))
+    sessions = [{"date": date_str, "program_id": "CC1"}]
+    breakdown = streak.engagement_breakdown(
+        entries, today, journal=j, sessions=sessions
+    )
+    assert breakdown["engaged"] is True
+    assert breakdown["life"] == ["Body & Presence", "Money/Freedom"]
+    assert breakdown["journal_count"] == 1
+    assert breakdown["fitness_count"] == 1
+    reasons = streak.format_engagement_reasons(breakdown)
+    assert "life:" in reasons
+    assert "journal" in reasons
+    assert "fitness" in reasons
+
+
+def test_format_streak_detail_includes_recent_days():
+    today = _today()
+    entries = {
+        today.strftime("%Y-%m-%d"): {"Body & Presence": {"rating": 5}},
+        (today - timedelta(days=1)).strftime("%Y-%m-%d"): {"Body & Presence": {"rating": 6}},
+    }
+    text = streak.format_streak_detail_text(
+        overall_streak=2,
+        entries=entries,
+        today=today,
+        lookback_days=3,
+    )
+    assert "Overall streak: 2 days" in text
+    assert today.strftime("%Y-%m-%d") in text
+    assert "Body & Presence" in text
+
+    cat_text = streak.format_streak_detail_text(
+        overall_streak=2,
+        entries=entries,
+        today=today,
+        category="Body & Presence",
+        category_streak=2,
+        lookback_days=3,
+    )
+    assert "Domain streak: 2 days" in cat_text
+    assert "logged" in cat_text
+
+
 def test_gap_prompt_in_defaults():
     assert journal.GAP_PROMPT in journal.DEFAULT_PROMPTS

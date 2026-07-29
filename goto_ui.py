@@ -17,6 +17,12 @@ def build_goto_destinations(tracker: Any) -> list[dict[str, Any]]:
     """
     destinations: list[dict[str, Any]] = [
         {
+            "label": "Streak details",
+            "group": "Nav",
+            "keywords": "streak presence continuity journal fitness life",
+            "action": tracker.show_streak_details,
+        },
+        {
             "label": "Refresh Overview",
             "group": "Nav",
             "keywords": "refresh reload",
