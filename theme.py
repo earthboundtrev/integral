@@ -295,5 +295,13 @@ def style_listbox(widget: tk.Listbox, theme: dict) -> None:
     )
 
 
-def style_canvas(widget: tk.Canvas, theme: dict) -> None:
-    widget.configure(bg=theme["bg"], highlightthickness=0)
+def style_canvas(widget, theme: dict) -> None:
+    """Theme a Canvas or place-based scroll viewport (#68)."""
+    bg = theme["bg"]
+    try:
+        widget.configure(bg=bg, highlightthickness=0)
+    except tk.TclError:
+        try:
+            widget.configure(background=bg)
+        except tk.TclError:
+            pass
