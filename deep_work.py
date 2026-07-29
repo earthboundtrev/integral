@@ -83,15 +83,12 @@ def apply_deep_work_settings(settings: dict, deep_work: dict) -> dict:
 # Nav button labels hidden during Deep Work (MVP chrome policy)
 DEEP_WORK_HIDDEN_NAV_LABELS = frozenset(
     {
+        "Go to…",
         "Guidance",
         "Weekly Summary",
-        "AI Insight",
         "Full History",
         "Search Notes",
         "Graphs & Progress",
-        "Plan Tomorrow",
-        "Log Exercise",
-        "Fitness Hub",
         "Milestones",
         "Export",
         "Backup",
@@ -108,5 +105,6 @@ DEEP_WORK_KEEP_NAV_LABELS = frozenset(
         "Journal",
         "Writing Projects",
         "Deep Work",
+        "Quick Capture",
     }
 )
