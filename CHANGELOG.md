@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- **Today's Log findability (#54)** — live Find filter (name + short label), All/Unlogged/Logged radios, unlogged-first ordering; overlapping actions tucked under **More…** (footer still has full nav); filter survives soft Refresh
+
 ### Fixed
 
 - **Log Exercise draft recovery (#52)** — wrong exercise or queued set no longer forces Cancel: remove selected sets (Delete key too), clear exercise selection, and re-pick another movement while keeping the session draft

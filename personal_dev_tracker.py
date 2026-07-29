@@ -78,6 +78,42 @@ CATEGORY_SHORT_LABELS = {
 }
 
 
+def filter_todays_log_categories(
+    category_names: list[str],
+    *,
+    query: str = "",
+    status: str = "all",
+    logged_names: set[str] | frozenset[str] | None = None,
+    short_labels: dict[str, str] | None = None,
+) -> list[str]:
+    """Filter/sort domain names for the Today's Log button grid (pure, UI-safe)."""
+    labels = short_labels if short_labels is not None else CATEGORY_SHORT_LABELS
+    logged = logged_names or set()
+    needle = query.strip().lower()
+    status_key = (status or "all").strip().lower()
+    if status_key not in {"all", "unlogged", "logged"}:
+        status_key = "all"
+
+    matched: list[str] = []
+    for name in category_names:
+        is_logged = name in logged
+        if status_key == "unlogged" and is_logged:
+            continue
+        if status_key == "logged" and not is_logged:
+            continue
+        if needle:
+            blob = f"{name} {labels.get(name, name)}".lower()
+            if needle not in blob:
+                continue
+        matched.append(name)
+
+    if status_key == "all":
+        unlogged = [name for name in matched if name not in logged]
+        already = [name for name in matched if name in logged]
+        return unlogged + already
+    return matched
+
+
 DATA_FILE = data_file()
 
 
@@ -112,6 +148,8 @@ class PersonalDevelopmentTracker:
         self._categories_tab_built = False
         self._theme_dark: bool | None = None
         self._log_bar: ttk.LabelFrame | None = None
+        self._todays_log_filter = ""
+        self._todays_log_status = "all"
         self._activity_grid: ContributionGrid | None = None
         self._guidance_panel: ttk.LabelFrame | None = None
         self._streak_pill: tk.Label | None = None
@@ -804,6 +842,7 @@ class PersonalDevelopmentTracker:
     def create_todays_log_bar(self) -> None:
         logged_count, _total = self.count_today_logged()
         today_entries = self.entries.get(self.today_str(), {})
+        logged_names = set(today_entries.keys())
 
         log_bar = ttk.LabelFrame(self.root, text="Today's Log", padding=14, style="Card.TLabelframe")
         self._log_bar = log_bar
@@ -843,27 +882,21 @@ class PersonalDevelopmentTracker:
         ttk.Button(
             actions, text="Journal", style="Accent.TButton", command=self.show_journal
         ).pack(side=tk.LEFT, padx=(0, 8))
-        ttk.Button(
-            actions, text="Writing Projects", command=self.show_writing_projects
-        ).pack(side=tk.LEFT, padx=(0, 8))
-        ttk.Button(
-            actions, text="Deep Work", style="Accent.TButton", command=self.show_deep_work
-        ).pack(side=tk.LEFT, padx=(0, 8))
-        ttk.Button(
-            actions,
-            text="AI Insight",
-            style="Accent.TButton",
+
+        more = ttk.Menubutton(actions, text="More…")
+        more_menu = tk.Menu(more, tearoff=0)
+        more_menu.add_command(label="Writing Projects", command=self.show_writing_projects)
+        more_menu.add_command(label="Deep Work", command=self.show_deep_work)
+        more_menu.add_command(
+            label="AI Insight",
             command=lambda: self._show_ai_insight(default_days=7),
-        ).pack(side=tk.LEFT, padx=(0, 8))
-        ttk.Button(
-            actions, text="Plan Tomorrow", command=self.show_plan_tomorrow
-        ).pack(side=tk.LEFT, padx=(0, 8))
-        ttk.Button(
-            actions, text="Log Exercise", style="Accent.TButton", command=self.show_log_exercise
-        ).pack(side=tk.LEFT, padx=(0, 8))
-        ttk.Button(
-            actions, text="Fitness Hub", command=self.show_fitness_hub
-        ).pack(side=tk.LEFT)
+        )
+        more_menu.add_command(label="Plan Tomorrow", command=self.show_plan_tomorrow)
+        more_menu.add_separator()
+        more_menu.add_command(label="Log Exercise", command=self.show_log_exercise)
+        more_menu.add_command(label="Fitness Hub", command=self.show_fitness_hub)
+        more["menu"] = more_menu
+        more.pack(side=tk.LEFT)
 
         today_plan = day_plans.plan_for_date(self.day_plans, self.today_str())
         if today_plan:
@@ -886,29 +919,90 @@ class PersonalDevelopmentTracker:
                 command=lambda: show_plan_comparison_window(self, self.today_str()),
             ).pack(side=tk.RIGHT)
 
+        filter_row = ttk.Frame(log_bar, style="Surface.TFrame")
+        filter_row.pack(fill=tk.X, pady=(12, 0))
+        ttk.Label(filter_row, text="Find:", style="OnSurfaceMuted.TLabel").pack(
+            side=tk.LEFT, padx=(0, 6)
+        )
+        filter_var = tk.StringVar(value=self._todays_log_filter)
+        filter_entry = ttk.Entry(filter_row, textvariable=filter_var, width=28)
+        filter_entry.pack(side=tk.LEFT, padx=(0, 8))
+        status_var = tk.StringVar(value=self._todays_log_status or "all")
+        for value, label in (
+            ("all", "All"),
+            ("unlogged", "Unlogged"),
+            ("logged", "Logged"),
+        ):
+            ttk.Radiobutton(
+                filter_row,
+                text=label,
+                value=value,
+                variable=status_var,
+            ).pack(side=tk.LEFT, padx=(0, 4))
+
+        def clear_filter() -> None:
+            filter_var.set("")
+            status_var.set("all")
+            filter_entry.focus_set()
+
+        ttk.Button(filter_row, text="Clear", command=clear_filter).pack(side=tk.LEFT, padx=(8, 0))
+
         # ~3 rows of category buttons visible by default; mousewheel scrolls the rest
         cat_scroll_host = ttk.Frame(log_bar, style="Surface.TFrame")
-        cat_scroll_host.pack(fill=tk.X, pady=(12, 0))
-        _cat_wrap, btn_row, _cat_canvas = ui_scroll.make_bounded_vertical_scroll(
+        cat_scroll_host.pack(fill=tk.X, pady=(8, 0))
+        _cat_wrap, btn_row, cat_canvas = ui_scroll.make_bounded_vertical_scroll(
             cat_scroll_host,
             max_height=252,
             overflow_hint="↓ Scroll for more categories",
         )
         _cat_wrap.pack(fill=tk.X)
-        for index, cat_name in enumerate(self.categories):
-            short = CATEGORY_SHORT_LABELS.get(cat_name, cat_name)
-            is_logged = cat_name in today_entries
-            rating = today_entries.get(cat_name, {}).get("rating", "")
-            label = f"✓ {short} ({rating}/10)" if is_logged else f"Log {short}"
-            btn_style = "Logged.TButton" if is_logged else "TButton"
-            ttk.Button(
-                btn_row,
-                text=label,
-                style=btn_style,
-                command=lambda c=cat_name: self.open_log_dialog(c),
-            ).grid(row=index // 4, column=index % 4, padx=4, pady=4, sticky="ew")
-        for col in range(4):
-            btn_row.columnconfigure(col, weight=1)
+        match_hint = ttk.Label(log_bar, text="", style="OnSurfaceMuted.TLabel")
+        match_hint.pack(anchor="w", pady=(4, 0))
+
+        def rebuild_domain_grid(*_args) -> None:
+            self._todays_log_filter = filter_var.get()
+            self._todays_log_status = status_var.get() or "all"
+            for child in btn_row.winfo_children():
+                child.destroy()
+            names = filter_todays_log_categories(
+                list(self.categories.keys()),
+                query=self._todays_log_filter,
+                status=self._todays_log_status,
+                logged_names=logged_names,
+            )
+            total = len(self.categories)
+            if not names:
+                ttk.Label(
+                    btn_row,
+                    text="No domains match — clear the filter or switch to All.",
+                    style="OnSurfaceMuted.TLabel",
+                ).grid(row=0, column=0, columnspan=4, sticky="w", padx=4, pady=8)
+                match_hint.config(text="")
+                cat_canvas.yview_moveto(0)
+                return
+            for index, cat_name in enumerate(names):
+                short = CATEGORY_SHORT_LABELS.get(cat_name, cat_name)
+                is_logged = cat_name in today_entries
+                rating = today_entries.get(cat_name, {}).get("rating", "")
+                label = f"✓ {short} ({rating}/10)" if is_logged else f"Log {short}"
+                btn_style = "Logged.TButton" if is_logged else "TButton"
+                ttk.Button(
+                    btn_row,
+                    text=label,
+                    style=btn_style,
+                    command=lambda c=cat_name: self.open_log_dialog(c),
+                ).grid(row=index // 4, column=index % 4, padx=4, pady=4, sticky="ew")
+            for col in range(4):
+                btn_row.columnconfigure(col, weight=1)
+            if len(names) < total or self._todays_log_filter.strip() or self._todays_log_status != "all":
+                match_hint.config(text=f"Showing {len(names)} of {total} domains")
+            else:
+                match_hint.config(text="Unlogged domains first — filter or use Unlogged to narrow")
+            cat_canvas.yview_moveto(0)
+
+        filter_var.trace_add("write", rebuild_domain_grid)
+        status_var.trace_add("write", rebuild_domain_grid)
+        rebuild_domain_grid()
 
     def refresh_dashboard(self, *, full: bool = False, recompute: bool = True) -> None:
         if full or not self._dashboard_ready:
