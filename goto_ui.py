@@ -17,15 +17,15 @@ def build_goto_destinations(tracker: Any) -> list[dict[str, Any]]:
     """
     destinations: list[dict[str, Any]] = [
         {
-            "label": "Streak details",
+            "label": "Overview & Categories",
             "group": "Nav",
-            "keywords": "streak presence continuity journal fitness life",
+            "keywords": "streak details overview categories activity grid guidance",
             "action": tracker.show_streak_details,
         },
         {
-            "label": "Refresh Overview",
+            "label": "Refresh",
             "group": "Nav",
-            "keywords": "refresh reload",
+            "keywords": "refresh reload overview",
             "action": lambda: tracker.refresh_dashboard(full=False, recompute=False),
         },
         {
