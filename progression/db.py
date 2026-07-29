@@ -486,6 +486,25 @@ class FitnessRepository:
             for row in rows
         ]
 
+    def count_workout_sessions_by_date(self, *, limit: int = 2000) -> dict[str, int]:
+        """Aggregate session counts by date without hydrating WorkoutSession rows."""
+        self.initialize()
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT date, COUNT(*) AS n
+                FROM (
+                    SELECT date
+                    FROM workout_sessions
+                    ORDER BY date DESC, id DESC
+                    LIMIT ?
+                ) AS recent
+                GROUP BY date
+                """,
+                (limit,),
+            ).fetchall()
+        return {row["date"]: int(row["n"]) for row in rows if row["date"]}
+
     def list_workout_sets(self, session_id: str) -> list[WorkoutSet]:
         self.initialize()
         with self.connect() as conn:

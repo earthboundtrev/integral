@@ -100,7 +100,8 @@ User data: `%APPDATA%\Integral\data.json` (encrypted optional via Data & Securit
 | **Writing Projects** | Novels/scripts library — inspiration + manuscript in separate windows; debounced autosave; stored under `%APPDATA%\Integral\creative\` |
 | **Creative/Mental Work** | Open Writing Projects from the category log; **Log writing session** marks creative progress for the day |
 | **Deep Work** | Focus timer (25 / 50 / 90 / custom); quieter nav; optional open a writing project; +10 min or end early |
-| **Activity** | GitHub-style contribution grid; click any day |
+| **Activity** | GitHub-style contribution grid; click any day; smooth horizontal scroll |
+| **Snappy UI** | Soft Overview refresh (no full rebuild on Refresh/save paths); cached fitness day counts; footer scroll without hitching |
 | **Streak** | Overall streak counts life log, journal, or fitness for the day; updates as soon as you save; mid-day grace if today is still empty |
 | **Quick Capture** | Optional always-on-top panel (off by default): today’s todos + scheduled backlog with collapsible sections, inline edit, and drag-free ↑/↓ reordering; finish→category log line; link starters; Journal now; quick-log opener; Deep Work timer + Windows focus shield (minimize chosen apps) |
 | **Fitness Hub** | CC1/CC2/SS/SM/OG/EC/FTR — nested book → program → steps |

@@ -104,6 +104,7 @@ class PersonalDevelopmentTracker:
         self.theme = get_theme(False)
         self._insights_cache = None
         self._streak_cache: dict[str, int] = {}
+        self._session_counts_cache: dict[str, int] | None = None
         self._save_after_id: str | None = None
         self._pending_save_payload: dict | None = None
         self._fitness_state_dirty = False
@@ -459,6 +460,9 @@ class PersonalDevelopmentTracker:
         self._insights_cache = None
         self._streak_cache.clear()
 
+    def _invalidate_session_counts(self) -> None:
+        self._session_counts_cache = None
+
     def _get_insights(self):
         if self._insights_cache is None:
             self._insights_cache = analyze_all(
@@ -514,7 +518,7 @@ class PersonalDevelopmentTracker:
         del previous_day, new_day
         if self._reminder_scheduler is not None:
             self._reminder_scheduler.reset_for_new_day()
-        self.refresh_dashboard(full=True)
+        self.refresh_dashboard(full=False, recompute=True)
 
     def toggle_dark_mode(self) -> None:
         self.settings["dark_mode"] = not self.settings.get("dark_mode", False)
@@ -577,6 +581,7 @@ class PersonalDevelopmentTracker:
             )
             self.settings["fitness"] = get_fitness_settings(self.settings)
             self.sessions = migrated.get("sessions", [])
+            self._invalidate_session_counts()
             self.milestones = merge_milestones(migrated.get("milestones"))
             self.journal = journal.normalize_journal(migrated.get("journal"))
             self.creative_projects = creative_projects.normalize_creative_projects(
@@ -600,6 +605,7 @@ class PersonalDevelopmentTracker:
             )
             self.settings["fitness"] = get_fitness_settings(self.settings)
             self.sessions = []
+            self._invalidate_session_counts()
             self.milestones = merge_milestones(None)
             self.journal = journal.empty_journal()
             self.creative_projects = creative_projects.empty_creative_projects()
@@ -671,6 +677,7 @@ class PersonalDevelopmentTracker:
 
     def save_fitness_data(self) -> None:
         self._fitness_state_dirty = True
+        self._invalidate_session_counts()
         self.save_data(recompute_fitness=True)
 
     def get_streak(self, category: str | None = None) -> int:
@@ -902,12 +909,13 @@ class PersonalDevelopmentTracker:
         for col in range(4):
             btn_row.columnconfigure(col, weight=1)
 
-    def refresh_dashboard(self, *, full: bool = False) -> None:
+    def refresh_dashboard(self, *, full: bool = False, recompute: bool = True) -> None:
         if full or not self._dashboard_ready:
             self.create_dashboard()
             return
 
-        self._invalidate_caches()
+        if recompute:
+            self._invalidate_caches()
         self.insights = self._get_insights()
 
         if self._streak_pill is not None:
@@ -955,6 +963,8 @@ class PersonalDevelopmentTracker:
         return self._activity_session_counts().get(date_str, 0)
 
     def _activity_session_counts(self) -> dict[str, int]:
+        if self._session_counts_cache is not None:
+            return self._session_counts_cache
         counts: dict[str, int] = {}
         for session in self.sessions:
             date_str = session.get("date")
@@ -963,10 +973,12 @@ class PersonalDevelopmentTracker:
         try:
             from fitness_ui import get_profile_repo
 
-            for session in get_profile_repo().list_workout_sessions(limit=2000):
-                counts[session.date] = counts.get(session.date, 0) + 1
+            db_counts = get_profile_repo().count_workout_sessions_by_date(limit=2000)
+            for date_str, n in db_counts.items():
+                counts[date_str] = counts.get(date_str, 0) + int(n)
         except Exception:
             pass
+        self._session_counts_cache = counts
         return counts
 
     def _refresh_activity_grid(self) -> None:
@@ -1054,7 +1066,11 @@ class PersonalDevelopmentTracker:
 
         self._build_overview_tab(overview)
 
-        ttk.Button(nav, text="Refresh", command=self.create_dashboard).pack(side=tk.LEFT)
+        ttk.Button(
+            nav,
+            text="Refresh",
+            command=lambda: self.refresh_dashboard(full=False, recompute=False),
+        ).pack(side=tk.LEFT)
         ttk.Button(nav, text="Guidance", command=self.show_guidance).pack(side=tk.LEFT, padx=6)
         ttk.Button(nav, text="Weekly Summary", command=self.show_weekly_summary).pack(side=tk.LEFT, padx=6)
         ttk.Button(
@@ -2012,9 +2028,15 @@ class PersonalDevelopmentTracker:
         if self._deep_work_session is not None:
             self._deep_work_session.cancel()
         self._deep_work_session = None
+        if self._deep_work_banner is not None:
+            try:
+                self._deep_work_banner.destroy()
+            except tk.TclError:
+                pass
         self._deep_work_banner = None
         self._deep_work_timer_label = None
-        self.create_dashboard()
+        # Restore packed nav without tearing down the dashboard (#47).
+        self._apply_deep_work_chrome()
         self.sync_quick_capture_panel()
         if completed:
             show_windows_notification("Deep Work", "Session complete. Nice focus.")
@@ -2071,11 +2093,22 @@ class PersonalDevelopmentTracker:
                 continue
             if label in deep_work.DEEP_WORK_KEEP_NAV_LABELS:
                 continue
-            if active and (
+            should_hide = active and (
                 label in deep_work.DEEP_WORK_HIDDEN_NAV_LABELS
                 or label not in deep_work.DEEP_WORK_KEEP_NAV_LABELS
-            ):
+            )
+            if should_hide:
                 widget.pack_forget()
+                continue
+            if widget.winfo_ismapped():
+                continue
+            # Restore after Deep Work without rebuilding the whole dashboard.
+            if label in {"Light Mode", "Dark Mode"}:
+                widget.pack(side=tk.RIGHT)
+            elif label == "Refresh":
+                widget.pack(side=tk.LEFT)
+            else:
+                widget.pack(side=tk.LEFT, padx=6)
         if self._deep_work_banner is not None:
             try:
                 if active:
@@ -2279,6 +2312,7 @@ class PersonalDevelopmentTracker:
     def _on_fitness_session_saved(self, session_date: str) -> None:
         bridge_fitness_to_daily_entries(self.entries, session_date)
         self._fitness_state_dirty = True
+        self._invalidate_session_counts()
         self._invalidate_caches()
         self.refresh_dashboard()
         self.save_data(recompute_fitness=True)
