@@ -1019,7 +1019,7 @@ class PersonalDevelopmentTracker:
         self.insights = self._get_insights()
 
         if self._streak_pill is not None:
-            self._streak_pill.config(text=f"🔥 {self.get_streak()} day streak")
+            self._streak_pill.config(text=f"🔥 {self.get_streak()} day streak · details")
 
         if self._date_label is not None:
             self._date_label.config(text=f"Today · {datetime.now().strftime('%B %d, %Y')}")
@@ -1127,7 +1127,12 @@ class PersonalDevelopmentTracker:
 
         right_header = ttk.Frame(header)
         right_header.pack(side=tk.RIGHT)
-        streak_frame = streak_badge(right_header, self.theme, f"🔥 {self.get_streak()} day streak")
+        streak_frame = streak_badge(
+            right_header,
+            self.theme,
+            f"🔥 {self.get_streak()} day streak",
+            command=self.show_streak_details,
+        )
         streak_frame.pack(side=tk.RIGHT, padx=(12, 0))
         for child in streak_frame.winfo_children():
             if isinstance(child, tk.Label):
@@ -1394,14 +1399,20 @@ class PersonalDevelopmentTracker:
             fg=self.theme["fg"],
             anchor="w",
         ).pack(fill=tk.X)
-        tk.Label(
+        streak_label = tk.Label(
             inner,
-            text=f"Streak: {self.get_streak(cat_name)} days",
+            text=f"Streak: {self.get_streak(cat_name)} days · details",
             font=FONTS["body"],
             bg=surface,
-            fg=self.theme["muted"],
+            fg=self.theme["link"],
             anchor="w",
-        ).pack(fill=tk.X, pady=(4, 0))
+            cursor="hand2",
+        )
+        streak_label.pack(fill=tk.X, pady=(4, 0))
+        streak_label.bind(
+            "<Button-1>",
+            lambda _e, c=cat_name: self.show_streak_details(category=c),
+        )
 
         today_str = datetime.now().strftime("%Y-%m-%d")
         today_entry = self.entries.get(today_str, {}).get(cat_name, {})
@@ -2265,6 +2276,60 @@ class PersonalDevelopmentTracker:
 
     def show_security(self) -> None:
         show_security_dialog(self)
+
+    def show_streak_details(self, category: str | None = None) -> None:
+        """Open a readable breakdown of what kept the streak going."""
+        window = tk.Toplevel(self.root)
+        title = f"Streak · {category}" if category else "Streak details"
+        window.title(title)
+        window.geometry("640x520")
+        window.minsize(420, 360)
+        window.transient(self.root)
+        window.configure(bg=self.theme["bg"])
+
+        footer = ttk.Frame(window, padding=(12, 10))
+        footer.pack(side=tk.BOTTOM, fill=tk.X)
+        if not category:
+            gap = streak.gap_repair_hint(
+                entries=self.entries,
+                journal=self.journal,
+                sessions=self.sessions,
+            )
+            if gap:
+                ttk.Button(
+                    footer,
+                    text="Journal for yesterday",
+                    style="Accent.TButton",
+                    command=lambda: (window.destroy(), self.open_gap_repair_journal()),
+                ).pack(side=tk.LEFT)
+        ttk.Button(footer, text="Close", command=window.destroy).pack(side=tk.RIGHT)
+
+        ttk.Label(
+            window,
+            text="Click any streak badge to reopen this view.",
+            style="Muted.TLabel",
+        ).pack(side=tk.TOP, anchor="w", padx=12, pady=(12, 0))
+
+        text = scrolledtext.ScrolledText(window, wrap=tk.WORD, font=("Consolas", 10))
+        style_text_widget(text, self.theme)
+        text.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=12, pady=12)
+
+        if category:
+            body = streak.format_streak_detail_text(
+                overall_streak=self.get_streak(category),
+                entries=self.entries,
+                category=category,
+                category_streak=self.get_streak(category),
+            )
+        else:
+            body = streak.format_streak_detail_text(
+                overall_streak=self.get_streak(),
+                entries=self.entries,
+                journal=self.journal,
+                sessions=self.sessions,
+            )
+        text.insert(tk.END, body)
+        text.configure(state=tk.DISABLED)
 
     def show_goto(self) -> None:
         from goto_ui import open_goto_palette
