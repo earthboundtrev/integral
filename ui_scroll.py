@@ -9,9 +9,8 @@ from typing import Callable
 _dialog_scroll_refs: dict[int, int] = {}
 _wheel_bound_widgets: set[int] = set()
 
-# Paint at ~120Hz max so full-speed input still lands as one place move (#66/#68).
-_SCROLL_FLUSH_MS = 8
-_WHEEL_PIXELS = 28
+# Cap paint rate during fast flicks so canvas-embedded buttons do not ghost (#66).
+_SCROLL_FLUSH_MS = 16
 
 
 def _scroll_amount(event) -> int:
@@ -44,82 +43,71 @@ def coalesce_scroll_command(
     interval_ms: int = _SCROLL_FLUSH_MS,
 ) -> Callable[..., object]:
     """
-    Batch rapid scroll/moveto calls into one flush per interval.
+    Batch rapid scroll("scroll", n, "units") calls into one flush per interval.
 
-    Relative ``scroll`` units accumulate; absolute ``moveto`` keeps only the
-    latest fraction (critical for fast scrollbar drags — #68).
+    Fast trackpad/wheel bursts otherwise drive canvas.create_window embeds faster
+    than Windows can paint ttk buttons, which looks like bleeding/overlapping chrome.
     """
-    state: dict = {"amount": 0, "moveto": None, "after_id": None}
+    state: dict = {"amount": 0, "after_id": None}
 
     def flush() -> None:
         state["after_id"] = None
-        moveto = state["moveto"]
         amount = state["amount"]
-        state["moveto"] = None
         state["amount"] = 0
+        if not amount:
+            return
         try:
             if not schedule_widget.winfo_exists():
                 return
-            if moveto is not None:
-                scroll_command("moveto", moveto)
-            elif amount:
-                scroll_command("scroll", amount, "units")
+            scroll_command("scroll", amount, "units")
         except tk.TclError:
             return
 
     def cancel() -> None:
-        """Drop pending deltas without applying (e.g. before external moveto)."""
+        """Drop pending wheel delta without applying (e.g. before external moveto)."""
         after_id = state["after_id"]
         state["after_id"] = None
         state["amount"] = 0
-        state["moveto"] = None
         if after_id is not None:
             try:
                 schedule_widget.after_cancel(after_id)
             except (tk.TclError, ValueError):
                 pass
 
-    def _schedule() -> None:
-        if state["after_id"] is not None:
-            return
-        try:
-            state["after_id"] = schedule_widget.after(interval_ms, flush)
-        except tk.TclError:
-            flush()
-
     def wrapped(*args):
-        if not args:
+        # Direct moveto / set / fraction paths — apply immediately.
+        if not args or args[0] != "scroll":
+            # Flush pending relative scroll first so a late after() cannot
+            # jump past a scrollbar drag / programmatic moveto (#66).
+            if state["after_id"] is not None or state["amount"]:
+                if state["after_id"] is not None:
+                    try:
+                        schedule_widget.after_cancel(state["after_id"])
+                    except (tk.TclError, ValueError):
+                        pass
+                    state["after_id"] = None
+                pending = state["amount"]
+                state["amount"] = 0
+                if pending:
+                    try:
+                        scroll_command("scroll", pending, "units")
+                    except tk.TclError:
+                        pass
             return scroll_command(*args)
 
-        cmd = args[0]
-        if cmd == "scroll":
+        # ("scroll", amount, "units"|"pages")
+        try:
+            amount = int(args[1])
+        except (TypeError, ValueError, IndexError):
+            return scroll_command(*args)
+        state["amount"] += amount
+        if state["after_id"] is None:
             try:
-                amount = int(args[1])
-            except (TypeError, ValueError, IndexError):
+                state["after_id"] = schedule_widget.after(interval_ms, flush)
+            except tk.TclError:
+                state["amount"] = 0
                 return scroll_command(*args)
-            # Relative scroll after a pending moveto: apply moveto first conceptually
-            # by dropping relative into amount only when no moveto pending.
-            if state["moveto"] is not None:
-                # Convert to a nudge after the absolute position on flush — just
-                # accumulate units; flush prefers moveto. Clear amount if moveto wins.
-                state["amount"] += amount
-            else:
-                state["amount"] += amount
-            _schedule()
-            return None
-
-        if cmd == "moveto":
-            try:
-                state["moveto"] = float(args[1])
-            except (TypeError, ValueError, IndexError):
-                return scroll_command(*args)
-            state["amount"] = 0
-            _schedule()
-            return None
-
-        # Other commands (e.g. scroll pages already handled): flush then pass through.
-        cancel()
-        return scroll_command(*args)
+        return None
 
     wrapped.flush = flush  # type: ignore[attr-defined]
     wrapped.cancel = cancel  # type: ignore[attr-defined]
@@ -149,7 +137,7 @@ def bind_mousewheel(
     exposes ``.coalesced_scroll`` — use that for scrollbar ``command=`` so a
     pending wheel flush cannot jump after a drag (#66).
 
-    Wheel motion is coalesced so fast flicks do not tear embedded buttons (#66/#68).
+    Wheel motion is coalesced (~60fps) so fast flicks do not tear embedded buttons (#66).
     """
     coalesced = coalesce_scroll_command(scroll_command, container)
 
@@ -211,11 +199,11 @@ def bind_mousewheel(
     return refresh_bindings
 
 
-def activate_dialog_scrolling(toplevel: tk.Misc, canvas: tk.Misc) -> None:
-    """Bind wheel scrolling to one dialog scroll view without global bind_all."""
+def activate_dialog_scrolling(toplevel: tk.Misc, canvas: tk.Canvas) -> None:
+    """Bind wheel scrolling to one dialog canvas without global bind_all."""
     key = id(toplevel)
     _dialog_scroll_refs[key] = _dialog_scroll_refs.get(key, 0) + 1
-    outer = getattr(canvas, "master", canvas)
+    outer = canvas.master
 
     def on_destroy(event):
         if event.widget is not toplevel:
@@ -227,22 +215,16 @@ def activate_dialog_scrolling(toplevel: tk.Misc, canvas: tk.Misc) -> None:
             _dialog_scroll_refs[key] = remaining
 
     if _dialog_scroll_refs[key] == 1:
-        yview = getattr(canvas, "yview", None)
-        if yview is not None:
-            bind_mousewheel(outer, yview, watch_configure=canvas)
+        bind_mousewheel(outer, canvas.yview, watch_configure=canvas)
     toplevel.bind("<Destroy>", on_destroy, add="+")
 
 
-def refresh_scroll_region(view: tk.Misc, inner: tk.Misc) -> None:
-    refresh = getattr(view, "refresh_metrics", None)
-    if callable(refresh):
-        refresh()
-        return
+def refresh_scroll_region(canvas: tk.Canvas, inner: tk.Misc) -> None:
     inner.update_idletasks()
-    view.update_idletasks()
-    bbox = view.bbox("all")
+    canvas.update_idletasks()
+    bbox = canvas.bbox("all")
     if bbox:
-        view.configure(scrollregion=bbox)
+        canvas.configure(scrollregion=bbox)
 
 
 def configure_treeview_scroll(tree) -> None:
@@ -250,234 +232,37 @@ def configure_treeview_scroll(tree) -> None:
     bind_mousewheel(tree, tree.yview)
 
 
-class PlaceScrollView:
-    """
-    Canvas-compatible scroll facade: one clipped viewport + place()'d inner frame.
-
-    Moving a single frame (instead of canvas.create_window + xview/yview) lets
-    Windows keep ttk buttons coherent at full scrollbar / wheel speed (#68).
-    """
-
-    def __init__(
-        self,
-        viewport: tk.Frame,
-        inner: tk.Misc,
-        *,
-        horizontal: bool,
-        unit_pixels: int = _WHEEL_PIXELS,
-    ) -> None:
-        self._viewport = viewport
-        self._inner = inner
-        self._horizontal = horizontal
-        self._unit_pixels = unit_pixels
-        self._offset = 0
-        self._content = 1
-        self._visible = 1
-        self._scrollcommand: Callable[..., object] | None = None
-        self._layout_pending = False
-        if horizontal:
-            inner.place(x=0, y=0, relheight=1)
-        else:
-            inner.place(x=0, y=0, relwidth=1)
-
-    # --- tk widget passthrough used by callers / style_canvas ---
-    def configure(self, cnf=None, **kw):
-        if cnf and isinstance(cnf, dict):
-            kw = {**cnf, **kw}
-        # scrollregion is meaningful only for Canvas; ignore on place view.
-        kw.pop("scrollregion", None)
-        kw.pop("xscrollcommand", None)
-        kw.pop("yscrollcommand", None)
-        if "bg" in kw or "background" in kw or "highlightthickness" in kw:
-            return self._viewport.configure(**{k: v for k, v in kw.items() if k in ("bg", "background", "highlightthickness")})
-        return None
-
-    config = configure
-
-    def cget(self, key):
-        if key in ("bg", "background", "highlightthickness"):
-            return self._viewport.cget(key)
-        if key == "scrollregion":
-            if self._horizontal:
-                return f"0 0 {self._content} {self._visible}"
-            return f"0 0 {self._visible} {self._content}"
-        raise tk.TclError(f"unknown option '{key}'")
-
-    def winfo_exists(self):
-        return self._viewport.winfo_exists()
-
-    def winfo_width(self):
-        return self._viewport.winfo_width()
-
-    def winfo_height(self):
-        return self._viewport.winfo_height()
-
-    def after(self, *args, **kwargs):
-        return self._viewport.after(*args, **kwargs)
-
-    def after_cancel(self, *args, **kwargs):
-        return self._viewport.after_cancel(*args, **kwargs)
-
-    def after_idle(self, *args, **kwargs):
-        return self._viewport.after_idle(*args, **kwargs)
-
-    def bind(self, *args, **kwargs):
-        return self._viewport.bind(*args, **kwargs)
-
-    def bbox(self, _what="all"):
-        if self._horizontal:
-            return (0, 0, max(self._content, self._visible), max(self._visible, 1))
-        return (0, 0, max(self._visible, 1), max(self._content, self._visible))
-
-    @property
-    def master(self):
-        return self._viewport.master
-
-    def refresh_metrics(self) -> None:
-        if not self._viewport.winfo_exists():
-            return
-        self._inner.update_idletasks()
-        if self._horizontal:
-            self._visible = max(self._viewport.winfo_width(), 1)
-            self._content = max(self._inner.winfo_reqwidth(), 1)
-            # Keep inner at least viewport-tall for hit targets.
-            self._inner.place_configure(height=max(self._viewport.winfo_height(), 1))
-        else:
-            self._visible = max(self._viewport.winfo_height(), 1)
-            self._content = max(self._inner.winfo_reqheight(), 1)
-            self._inner.place_configure(width=max(self._viewport.winfo_width(), 1))
-        self._apply_offset(self._offset, force=True)
-
-    def schedule_layout(self, _event=None) -> None:
-        if self._layout_pending:
-            return
-        self._layout_pending = True
-
-        def run() -> None:
-            self._layout_pending = False
-            self.refresh_metrics()
-
-        try:
-            self._viewport.after_idle(run)
-        except tk.TclError:
-            self._layout_pending = False
-
-    def _max_offset(self) -> int:
-        return max(0, self._content - self._visible)
-
-    def _fractions(self) -> tuple[str, str]:
-        max_off = self._max_offset()
-        if max_off <= 0 or self._content <= 0:
-            return ("0.0", "1.0")
-        first = self._offset / self._content
-        last = (self._offset + self._visible) / self._content
-        return (f"{first:.6f}", f"{min(last, 1.0):.6f}")
-
-    def _emit(self) -> None:
-        if self._scrollcommand is None:
-            return
-        first, last = self._fractions()
-        try:
-            self._scrollcommand(first, last)
-        except tk.TclError:
-            pass
-
-    def _apply_offset(self, offset: int, *, force: bool = False) -> None:
-        offset = max(0, min(int(offset), self._max_offset()))
-        if not force and offset == self._offset:
-            self._emit()
-            return
-        self._offset = offset
-        try:
-            if self._horizontal:
-                self._inner.place_configure(x=-offset)
-            else:
-                self._inner.place_configure(y=-offset)
-        except tk.TclError:
-            return
-        self._emit()
-
-    def set_scrollcommand(self, command: Callable[..., object] | None) -> None:
-        self._scrollcommand = command
-        self._emit()
-
-    def xview(self, *args):
-        if not self._horizontal:
-            return self._fractions() if not args else None
-        if not args:
-            return self._fractions()
-        return self._view_cmd(*args)
-
-    def yview(self, *args):
-        if self._horizontal:
-            return self._fractions() if not args else None
-        if not args:
-            return self._fractions()
-        return self._view_cmd(*args)
-
-    def xview_moveto(self, fraction) -> None:
-        if self._horizontal:
-            self._view_cmd("moveto", fraction)
-
-    def yview_moveto(self, fraction) -> None:
-        if not self._horizontal:
-            self._view_cmd("moveto", fraction)
-
-    def _view_cmd(self, *args):
-        if not args:
-            return self._fractions()
-        cmd = args[0]
-        if cmd == "moveto":
-            try:
-                frac = float(args[1])
-            except (TypeError, ValueError, IndexError):
-                return None
-            self._apply_offset(int(frac * self._content))
-            return None
-        if cmd == "scroll":
-            try:
-                amount = int(args[1])
-            except (TypeError, ValueError, IndexError):
-                return None
-            unit = args[2] if len(args) > 2 else "units"
-            if unit == "pages":
-                delta = amount * max(self._visible - self._unit_pixels, self._unit_pixels)
-            else:
-                # Match Canvas xview/yview: one "unit" ≈ 1/10 of the visible span.
-                span = max(self._visible // 10, self._unit_pixels)
-                delta = amount * span
-            self._apply_offset(self._offset + delta)
-            return None
-        return None
-
-
 def make_horizontal_scroll_row(parent, *, height: int = 44, overflow_hint: str = "Scroll for more →"):
     """
     Horizontal strip for toolbars that overflow on narrow windows.
 
-    Returns (host, inner, view). Pack buttons into inner with side=tk.LEFT.
+    Returns (host, inner, canvas). Pack buttons into inner with side=tk.LEFT.
 
-    Uses a clipped place() viewport (not canvas.create_window) so full-speed
-    scrollbar / wheel motion does not ghost ttk buttons (#68).
+    The embedded window keeps its *natural* content width so trailing actions
+    (e.g. Export) stay reachable via scrollbar / mousewheel. Only the height is
+    matched to the canvas — forcing width to the viewport (as vertical scroll
+    areas do) collapses overflow and hides later buttons.
+
+    Geometry sync and wheel rebinds are coalesced / child-set gated so scrolling
+    does not thrash layout (#48).
     """
     host = ttk.Frame(parent)
     hint = ttk.Label(host, text="", style="Muted.TLabel")
     hint.pack(side=tk.RIGHT, padx=(6, 0))
 
-    strip = ttk.Frame(host)
-    strip.pack(side=tk.LEFT, fill=tk.X, expand=True)
+    viewport = ttk.Frame(host)
+    viewport.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
-    viewport = tk.Frame(strip, height=height, highlightthickness=0, bd=0)
-    viewport.pack(side=tk.TOP, fill=tk.X, expand=True)
-    viewport.pack_propagate(False)
-
-    scrollbar = ttk.Scrollbar(strip, orient=tk.HORIZONTAL)
-    inner = ttk.Frame(viewport)
-    view = PlaceScrollView(viewport, inner, horizontal=True)
+    canvas = tk.Canvas(viewport, height=height, highlightthickness=0, bd=0)
+    scrollbar = ttk.Scrollbar(viewport, orient=tk.HORIZONTAL)
+    inner = ttk.Frame(canvas)
+    window_id = canvas.create_window((0, 0), window=inner, anchor="nw")
 
     state: dict = {
+        "geom": None,
         "scrollbar_shown": False,
         "hint_text": "",
+        "layout_pending": False,
     }
 
     def _set_overflow_chrome(show_bar: bool, hint_text: str) -> None:
@@ -491,50 +276,96 @@ def make_horizontal_scroll_row(parent, *, height: int = 44, overflow_hint: str =
             state["hint_text"] = hint_text
             hint.config(text=hint_text)
 
+    def _apply_geometry() -> None:
+        # One idle pass is enough; avoid re-entrant update_idletasks on xscroll.
+        inner.update_idletasks()
+        visible_w = max(canvas.winfo_width(), 1)
+        visible_h = max(canvas.winfo_height(), height)
+        content_w = max(inner.winfo_reqwidth(), 1)
+        target_w = max(content_w, visible_w) if content_w <= visible_w else content_w
+        geom = (target_w, visible_h, content_w, visible_w)
+        if geom != state["geom"]:
+            state["geom"] = geom
+            canvas.itemconfigure(window_id, width=target_w, height=visible_h)
+            bbox = canvas.bbox("all")
+            if bbox:
+                canvas.configure(scrollregion=bbox)
+
+        bbox = canvas.bbox("all")
+        if not bbox:
+            _set_overflow_chrome(False, "")
+            return
+        content_width = bbox[2] - bbox[0]
+        overflow = content_width > visible_w + 2
+        if overflow:
+            _left, right = canvas.xview()
+            _set_overflow_chrome(True, overflow_hint if right < 0.99 else "")
+        else:
+            _set_overflow_chrome(False, "")
+
     def on_xscroll(first, last) -> None:
         scrollbar.set(first, last)
+        # Hint only — never geometry sync or pack/unpack on the scroll path.
+        # Defer hint text so rapid xview paints are not paired with Label.configure (#66).
         state["scroll_last"] = last
         if state.get("hint_after_id") is not None:
             return
 
         def apply_hint() -> None:
             state["hint_after_id"] = None
-            if not viewport.winfo_exists():
+            if not canvas.winfo_exists():
                 return
-            view.refresh_metrics()
-            overflow = view._content > view._visible + 2
-            if not overflow:
-                _set_overflow_chrome(False, "")
+            if not state["scrollbar_shown"]:
+                if state["hint_text"]:
+                    state["hint_text"] = ""
+                    hint.config(text="")
                 return
             try:
                 right = float(state.get("scroll_last", last))
             except (TypeError, ValueError):
-                _left, right = view.xview()
+                _left, right = canvas.xview()
                 right = float(right)
-            _set_overflow_chrome(True, overflow_hint if right < 0.99 else "")
+            desired = overflow_hint if right < 0.99 else ""
+            if desired != state["hint_text"]:
+                state["hint_text"] = desired
+                hint.config(text=desired)
 
         try:
-            state["hint_after_id"] = viewport.after(_SCROLL_FLUSH_MS, apply_hint)
+            state["hint_after_id"] = canvas.after(_SCROLL_FLUSH_MS, apply_hint)
         except tk.TclError:
             apply_hint()
 
-    view.set_scrollcommand(on_xscroll)
-
     refresh_wheel = bind_mousewheel(
-        strip,
-        view.xview,
+        viewport,
+        canvas.xview,
         horizontal=True,
         watch_configure=inner,
     )
     scrollbar.configure(command=refresh_wheel.coalesced_scroll)
 
-    def on_layout(_event=None) -> None:
-        view.schedule_layout()
+    def schedule_layout(_event=None) -> None:
+        if state["layout_pending"]:
+            return
+        state["layout_pending"] = True
 
-    inner.bind("<Configure>", on_layout)
-    viewport.bind("<Configure>", on_layout)
-    view.schedule_layout()
-    return host, inner, view
+        def run() -> None:
+            state["layout_pending"] = False
+            if not canvas.winfo_exists():
+                return
+            # Geometry only — wheel rebinds are gated by child-set changes via
+            # watch_configure on inner (calling refresh_wheel here re-walked the
+            # tree on every Configure and caused scroll hitching).
+            _apply_geometry()
+
+        canvas.after_idle(run)
+
+    inner.bind("<Configure>", schedule_layout)
+    canvas.bind("<Configure>", schedule_layout)
+    canvas.configure(xscrollcommand=on_xscroll)
+
+    canvas.pack(side=tk.TOP, fill=tk.X, expand=True)
+    schedule_layout()
+    return host, inner, canvas
 
 
 def make_bounded_vertical_scroll(
@@ -546,26 +377,31 @@ def make_bounded_vertical_scroll(
     """
     Vertical scroll area with a fixed max height and an overflow hint label.
 
-    Returns (wrapper, inner, view).
+    Returns (wrapper, inner, canvas).
     """
     wrapper = ttk.Frame(parent)
     hint = ttk.Label(wrapper, text="", style="Muted.TLabel")
     hint.pack(side=tk.BOTTOM, anchor="e", pady=(2, 0))
 
-    outer, inner, view = make_scrollable_frame(wrapper, height=max_height)
+    outer, inner, canvas = make_scrollable_frame(wrapper, height=max_height)
     outer.pack(fill=tk.X, expand=False)
 
     scrollbar = next((w for w in outer.winfo_children() if isinstance(w, ttk.Scrollbar)), None)
     state = {"hint": "", "pending": False}
 
     def update_hint() -> None:
-        view.refresh_metrics()
-        content_height = view._content
-        visible_height = view._visible
+        bbox = canvas.bbox("all")
+        if not bbox:
+            if state["hint"]:
+                state["hint"] = ""
+                hint.config(text="")
+            return
+        content_height = bbox[3] - bbox[1]
+        visible_height = max(canvas.winfo_height(), 1)
         desired = ""
         if content_height > visible_height + 2:
-            _top, bottom = view.yview()
-            desired = overflow_hint if float(bottom) < 0.99 else ""
+            _top, bottom = canvas.yview()
+            desired = overflow_hint if bottom < 0.99 else ""
         if desired != state["hint"]:
             state["hint"] = desired
             hint.config(text=desired)
@@ -577,10 +413,10 @@ def make_bounded_vertical_scroll(
 
         def run() -> None:
             state["pending"] = False
-            if view.winfo_exists():
+            if canvas.winfo_exists():
                 update_hint()
 
-        view.after_idle(run)
+        canvas.after_idle(run)
 
     def on_yscroll(first, last):
         if scrollbar is not None:
@@ -591,49 +427,60 @@ def make_bounded_vertical_scroll(
 
         def apply_hint() -> None:
             state["hint_after_id"] = None
-            if view.winfo_exists():
+            if canvas.winfo_exists():
                 update_hint()
 
         try:
-            state["hint_after_id"] = view.after(_SCROLL_FLUSH_MS, apply_hint)
+            state["hint_after_id"] = canvas.after(_SCROLL_FLUSH_MS, apply_hint)
         except tk.TclError:
             update_hint()
 
-    view.set_scrollcommand(on_yscroll)
+    canvas.configure(yscrollcommand=on_yscroll)
     inner.bind("<Configure>", schedule_hint, add="+")
-    view.bind("<Configure>", schedule_hint, add="+")
+    canvas.bind("<Configure>", schedule_hint, add="+")
     schedule_hint()
-    return wrapper, inner, view
+    return wrapper, inner, canvas
 
 
 def make_scrollable_frame(parent, *, width=None, height=None):
     """
-    Return (outer_frame, inner_frame, view).
-
+    Return (outer_frame, inner_frame, canvas).
     Pack/grid widgets into inner_frame; outer_frame fills the parent.
-    Place-based clipped scrolling keeps ttk chrome coherent at full speed (#68).
     """
     outer = tk.Frame(parent)
-    viewport = tk.Frame(outer, highlightthickness=0, bd=0, width=width, height=height)
+    canvas = tk.Canvas(outer, highlightthickness=0, width=width, height=height)
     scrollbar = ttk.Scrollbar(outer, orient=tk.VERTICAL)
-    inner = tk.Frame(viewport)
-    view = PlaceScrollView(viewport, inner, horizontal=False)
+    inner = tk.Frame(canvas)
 
-    if height is not None:
-        viewport.configure(height=height)
-        viewport.pack_propagate(False)
+    pending = {"active": False}
 
-    viewport.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-    scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+    def _on_inner_configure(_event):
+        if pending["active"]:
+            return
+        pending["active"] = True
 
-    view.set_scrollcommand(scrollbar.set)
-    refresh_wheel = bind_mousewheel(outer, view.yview, watch_configure=inner)
+        def run() -> None:
+            pending["active"] = False
+            if canvas.winfo_exists():
+                refresh_scroll_region(canvas, inner)
+
+        canvas.after_idle(run)
+
+    inner.bind("<Configure>", _on_inner_configure)
+    window_id = canvas.create_window((0, 0), window=inner, anchor="nw")
+    canvas.configure(yscrollcommand=scrollbar.set)
+
+    def _resize_inner(event):
+        canvas.itemconfigure(window_id, width=max(event.width, 1))
+
+    canvas.bind("<Configure>", _resize_inner)
+    refresh_wheel = bind_mousewheel(outer, canvas.yview, watch_configure=inner)
     scrollbar.configure(command=refresh_wheel.coalesced_scroll)
 
-    inner.bind("<Configure>", view.schedule_layout)
-    viewport.bind("<Configure>", view.schedule_layout)
-    view.schedule_layout()
-    return outer, inner, view
+    canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+    return outer, inner, canvas
 
 
 def create_dialog_shell(
@@ -645,11 +492,11 @@ def create_dialog_shell(
     bg: str | None = None,
     transient: bool = True,
     grab: bool = False,
-) -> tuple[tk.Toplevel, ttk.Frame, ttk.Frame, PlaceScrollView, Callable[[], None]]:
+) -> tuple[tk.Toplevel, ttk.Frame, ttk.Frame, tk.Canvas, Callable[[], None]]:
     """
     Standard scrollable dialog layout with a pinned footer.
 
-    Returns (dialog, inner, footer, view, refresh_scroll).
+    Returns (dialog, inner, footer, canvas, refresh_scroll).
     Pack header into dialog before the scroll host, or into inner for scrolling headers.
     """
     dialog = tk.Toplevel(parent)
@@ -670,10 +517,10 @@ def create_dialog_shell(
     scroll_host = ttk.Frame(dialog)
     scroll_host.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
-    outer, inner, view = make_scrollable_frame(scroll_host)
+    outer, inner, canvas = make_scrollable_frame(scroll_host)
     outer.pack(fill=tk.BOTH, expand=True)
 
     def refresh_scroll() -> None:
-        refresh_scroll_region(view, inner)
+        refresh_scroll_region(canvas, inner)
 
-    return dialog, inner, footer, view, refresh_scroll
+    return dialog, inner, footer, canvas, refresh_scroll

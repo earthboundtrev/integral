@@ -2,10 +2,6 @@
 
 ## Unreleased
 
-### Fixed
-
-- **Full-speed scroll ghosting (#68)** — shared scroll hosts now move one clipped frame (`place`) instead of `canvas.create_window` embeds; scrollbar `moveto` coalesces to the latest position so footer / Today's Log / dialogs stay coherent at full mouse speed (follow-up to #66)
-
 ## 0.3.11.5.2 — 2026-07-29
 
 ### Fixed
