@@ -18,13 +18,20 @@ def _scroll_amount(event) -> int:
     return 0
 
 
+def _descendant_ids(widget: tk.Misc) -> tuple[int, ...]:
+    ids: list[int] = [id(widget)]
+    for child in widget.winfo_children():
+        ids.extend(_descendant_ids(child))
+    return tuple(ids)
+
+
 def bind_mousewheel(
     container: tk.Misc,
     scroll_command: Callable[..., object],
     *,
     horizontal: bool = False,
     watch_configure: tk.Misc | None = None,
-) -> None:
+) -> Callable[[], None]:
     """
     Bind wheel scrolling to a container and its descendants only.
 
@@ -33,6 +40,10 @@ def bind_mousewheel(
 
     Pass horizontal=True when scroll_command is an xview handler; Shift+wheel
     is bound as well for trackpads that emit that sequence.
+
+    If watch_configure is set, rebinds only when the descendant widget set
+    changes (not on every geometry Configure). Returns a callable that forces
+    a binding refresh after children are packed.
     """
 
     def on_mousewheel(event):
@@ -51,25 +62,45 @@ def bind_mousewheel(
         widget.bind("<Button-5>", on_mousewheel, add="+")
         if horizontal:
             widget.bind("<Shift-MouseWheel>", on_mousewheel, add="+")
-        widget.bind("<Destroy>", lambda event, wid=widget_id: _wheel_bound_widgets.discard(wid), add="+")
+        widget.bind(
+            "<Destroy>",
+            lambda event, wid=widget_id: _wheel_bound_widgets.discard(wid),
+            add="+",
+        )
 
     def bind_tree(widget: tk.Misc) -> None:
         bind_widget(widget)
         for child in widget.winfo_children():
             bind_tree(child)
 
+    bound_sig: dict[str, tuple[int, ...] | None] = {"value": None}
+    pending = {"active": False}
+
     def refresh_bindings(_event=None) -> None:
-        if container.winfo_exists():
-            bind_tree(container)
+        if not container.winfo_exists():
+            return
+        sig = _descendant_ids(container)
+        if sig == bound_sig["value"]:
+            return
+        bound_sig["value"] = sig
+        bind_tree(container)
+
+    def schedule_refresh(_event=None) -> None:
+        if pending["active"]:
+            return
+        pending["active"] = True
+
+        def run() -> None:
+            pending["active"] = False
+            refresh_bindings()
+
+        container.after_idle(run)
 
     refresh_bindings()
-    container.bind("<Map>", refresh_bindings, add="+")
+    container.bind("<Map>", schedule_refresh, add="+")
     if watch_configure is not None:
-        watch_configure.bind(
-            "<Configure>",
-            lambda _event: container.after_idle(refresh_bindings),
-            add="+",
-        )
+        watch_configure.bind("<Configure>", schedule_refresh, add="+")
+    return refresh_bindings
 
 
 def activate_dialog_scrolling(toplevel: tk.Misc, canvas: tk.Canvas) -> None:
@@ -115,6 +146,9 @@ def make_horizontal_scroll_row(parent, *, height: int = 44, overflow_hint: str =
     (e.g. Export) stay reachable via scrollbar / mousewheel. Only the height is
     matched to the canvas — forcing width to the viewport (as vertical scroll
     areas do) collapses overflow and hides later buttons.
+
+    Geometry sync and wheel rebinds are coalesced / child-set gated so scrolling
+    does not thrash layout (#48).
     """
     host = ttk.Frame(parent)
     hint = ttk.Label(host, text="", style="Muted.TLabel")
@@ -128,84 +162,92 @@ def make_horizontal_scroll_row(parent, *, height: int = 44, overflow_hint: str =
     inner = ttk.Frame(canvas)
     window_id = canvas.create_window((0, 0), window=inner, anchor="nw")
 
-    def _sync_window_geometry() -> None:
-        """Size the embedded window: natural width, canvas height; pad if short."""
-        canvas.update_idletasks()
+    state: dict = {
+        "geom": None,
+        "scrollbar_shown": False,
+        "hint_text": "",
+        "layout_pending": False,
+    }
+
+    def _set_overflow_chrome(show_bar: bool, hint_text: str) -> None:
+        if show_bar != state["scrollbar_shown"]:
+            state["scrollbar_shown"] = show_bar
+            if show_bar:
+                scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
+            else:
+                scrollbar.pack_forget()
+        if hint_text != state["hint_text"]:
+            state["hint_text"] = hint_text
+            hint.config(text=hint_text)
+
+    def _apply_geometry() -> None:
+        # One idle pass is enough; avoid re-entrant update_idletasks on xscroll.
         inner.update_idletasks()
         visible_w = max(canvas.winfo_width(), 1)
         visible_h = max(canvas.winfo_height(), height)
-        # reqwidth reflects packed children; do not clamp to the viewport.
         content_w = max(inner.winfo_reqwidth(), 1)
-        canvas.itemconfigure(
-            window_id,
-            width=max(content_w, visible_w) if content_w <= visible_w else content_w,
-            height=visible_h,
-        )
-        bbox = canvas.bbox("all")
-        if bbox:
-            canvas.configure(scrollregion=bbox)
+        target_w = max(content_w, visible_w) if content_w <= visible_w else content_w
+        geom = (target_w, visible_h, content_w, visible_w)
+        if geom != state["geom"]:
+            state["geom"] = geom
+            canvas.itemconfigure(window_id, width=target_w, height=visible_h)
+            bbox = canvas.bbox("all")
+            if bbox:
+                canvas.configure(scrollregion=bbox)
 
-    def update_hint() -> None:
-        _sync_window_geometry()
         bbox = canvas.bbox("all")
         if not bbox:
-            hint.config(text="")
-            scrollbar.pack_forget()
+            _set_overflow_chrome(False, "")
             return
         content_width = bbox[2] - bbox[0]
-        visible_width = max(canvas.winfo_width(), 1)
-        overflow = content_width > visible_width + 2
+        overflow = content_width > visible_w + 2
         if overflow:
-            scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
             _left, right = canvas.xview()
-            hint.config(text=overflow_hint if right < 0.99 else "")
+            _set_overflow_chrome(True, overflow_hint if right < 0.99 else "")
         else:
-            scrollbar.pack_forget()
-            hint.config(text="")
+            _set_overflow_chrome(False, "")
 
-    def on_inner_configure(_event):
-        update_hint()
-
-    def on_canvas_configure(_event):
-        # Height only from viewport — never shrink content width to fit.
-        update_hint()
-
-    def on_xscroll(first, last):
+    def on_xscroll(first, last) -> None:
         scrollbar.set(first, last)
-        # Hint only (avoid re-entrant geometry sync on every xview tick).
-        bbox = canvas.bbox("all")
-        if not bbox:
-            hint.config(text="")
+        # Hint only — never geometry sync or pack/unpack on the scroll path.
+        if not state["scrollbar_shown"]:
+            if state["hint_text"]:
+                state["hint_text"] = ""
+                hint.config(text="")
             return
-        content_width = bbox[2] - bbox[0]
-        visible_width = max(canvas.winfo_width(), 1)
-        if content_width > visible_width + 2:
-            _left, right = float(first), float(last)
-            hint.config(text=overflow_hint if right < 0.99 else "")
-        else:
-            hint.config(text="")
+        right = float(last)
+        desired = overflow_hint if right < 0.99 else ""
+        if desired != state["hint_text"]:
+            state["hint_text"] = desired
+            hint.config(text=desired)
 
-    inner.bind("<Configure>", on_inner_configure)
-    canvas.bind("<Configure>", on_canvas_configure)
+    refresh_wheel = bind_mousewheel(
+        viewport,
+        canvas.xview,
+        horizontal=True,
+        watch_configure=inner,
+    )
+
+    def schedule_layout(_event=None) -> None:
+        if state["layout_pending"]:
+            return
+        state["layout_pending"] = True
+
+        def run() -> None:
+            state["layout_pending"] = False
+            if not canvas.winfo_exists():
+                return
+            _apply_geometry()
+            refresh_wheel()
+
+        canvas.after_idle(run)
+
+    inner.bind("<Configure>", schedule_layout)
+    canvas.bind("<Configure>", schedule_layout)
     canvas.configure(xscrollcommand=on_xscroll)
 
-    def on_wheel(event):
-        bbox = canvas.bbox("all")
-        if not bbox or bbox[2] - bbox[0] <= canvas.winfo_width() + 2:
-            return
-        amount = _scroll_amount(event)
-        if amount:
-            canvas.xview_scroll(amount, "units")
-        return "break"
-
-    # Wheel over the footer scrolls horizontally (Shift+wheel also bound).
-    bind_mousewheel(viewport, canvas.xview, horizontal=True, watch_configure=inner)
-    for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>", "<Shift-MouseWheel>"):
-        canvas.bind(seq, on_wheel, add="+")
-        inner.bind(seq, on_wheel, add="+")
-
     canvas.pack(side=tk.TOP, fill=tk.X, expand=True)
-    update_hint()
+    schedule_layout()
     return host, inner, canvas
 
 
@@ -228,20 +270,36 @@ def make_bounded_vertical_scroll(
     outer.pack(fill=tk.X, expand=False)
 
     scrollbar = next((w for w in outer.winfo_children() if isinstance(w, ttk.Scrollbar)), None)
+    state = {"hint": "", "pending": False}
 
     def update_hint() -> None:
-        canvas.update_idletasks()
         bbox = canvas.bbox("all")
         if not bbox:
-            hint.config(text="")
+            if state["hint"]:
+                state["hint"] = ""
+                hint.config(text="")
             return
         content_height = bbox[3] - bbox[1]
         visible_height = max(canvas.winfo_height(), 1)
+        desired = ""
         if content_height > visible_height + 2:
             _top, bottom = canvas.yview()
-            hint.config(text=overflow_hint if bottom < 0.99 else "")
-        else:
-            hint.config(text="")
+            desired = overflow_hint if bottom < 0.99 else ""
+        if desired != state["hint"]:
+            state["hint"] = desired
+            hint.config(text=desired)
+
+    def schedule_hint(_event=None) -> None:
+        if state["pending"]:
+            return
+        state["pending"] = True
+
+        def run() -> None:
+            state["pending"] = False
+            if canvas.winfo_exists():
+                update_hint()
+
+        canvas.after_idle(run)
 
     def on_yscroll(first, last):
         if scrollbar is not None:
@@ -249,9 +307,9 @@ def make_bounded_vertical_scroll(
         update_hint()
 
     canvas.configure(yscrollcommand=on_yscroll)
-    inner.bind("<Configure>", lambda _event: update_hint(), add="+")
-    canvas.bind("<Configure>", lambda _event: update_hint(), add="+")
-    update_hint()
+    inner.bind("<Configure>", schedule_hint, add="+")
+    canvas.bind("<Configure>", schedule_hint, add="+")
+    schedule_hint()
     return wrapper, inner, canvas
 
 
@@ -265,8 +323,19 @@ def make_scrollable_frame(parent, *, width=None, height=None):
     scrollbar = ttk.Scrollbar(outer, orient=tk.VERTICAL, command=canvas.yview)
     inner = tk.Frame(canvas)
 
+    pending = {"active": False}
+
     def _on_inner_configure(_event):
-        refresh_scroll_region(canvas, inner)
+        if pending["active"]:
+            return
+        pending["active"] = True
+
+        def run() -> None:
+            pending["active"] = False
+            if canvas.winfo_exists():
+                refresh_scroll_region(canvas, inner)
+
+        canvas.after_idle(run)
 
     inner.bind("<Configure>", _on_inner_configure)
     window_id = canvas.create_window((0, 0), window=inner, anchor="nw")

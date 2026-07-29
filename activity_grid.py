@@ -132,12 +132,15 @@ class ContributionGrid(ttk.Frame):
         self._tooltip: tk.Toplevel | None = None
         self._journal_counts: dict[str, int] = {}
         self._session_counts: dict[str, int] = {}
+        self._draw_pending = False
+        self._last_draw_width: int | None = None
+        self._draw_generation = 0
         self._rebuild_source_indexes()
         self._build_controls()
         self._canvas = tk.Canvas(self, highlightthickness=0, height=130, bg=theme["bg"])
         self._canvas.pack(fill=tk.X, pady=(8, 0))
-        self._canvas.bind("<Configure>", lambda _event: self._draw())
-        self.category_filter.trace_add("write", lambda *_args: self._draw())
+        self._canvas.bind("<Configure>", self._on_canvas_configure)
+        self.category_filter.trace_add("write", lambda *_args: self._schedule_draw(force=True))
 
         from ui_scroll import bind_mousewheel
 
@@ -184,7 +187,32 @@ class ContributionGrid(ttk.Frame):
         self.sessions = sessions or []
         self._session_counts_override = session_counts
         self._rebuild_source_indexes()
-        self._draw()
+        self._schedule_draw(force=True)
+
+    def _on_canvas_configure(self, event: tk.Event) -> None:
+        if event.widget is not self._canvas:
+            return
+        width = int(event.width)
+        if self._last_draw_width == width and self._draw_generation > 0:
+            return
+        self._schedule_draw(force=False)
+
+    def _schedule_draw(self, *, force: bool = False) -> None:
+        if force:
+            self._draw_generation += 1
+            self._draw_pending = False
+            self._draw()
+            return
+        if self._draw_pending:
+            return
+        self._draw_pending = True
+
+        def run() -> None:
+            self._draw_pending = False
+            if self._canvas.winfo_exists():
+                self._draw()
+
+        self.after_idle(run)
 
     def _scroll_to_current_week(self) -> None:
         """Keep the latest week (including today) in view — like GitHub's graph."""
@@ -304,6 +332,8 @@ class ContributionGrid(ttk.Frame):
         canvas.tag_bind("cell", "<Button-1>", self._on_click)
 
         self._total_label.config(text=f"{total} contributions in the last year")
+        self._last_draw_width = max(canvas.winfo_width(), 1)
+        self._draw_generation += 1
         self._scroll_to_current_week()
 
     def _on_enter(self, event: tk.Event) -> None:
