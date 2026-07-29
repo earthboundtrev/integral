@@ -233,7 +233,7 @@ def make_horizontal_scroll_row(parent, *, height: int = 44, overflow_hint: str =
             return
         state["layout_pending"] = True
 
-                def run() -> None:
+        def run() -> None:
             state["layout_pending"] = False
             if not canvas.winfo_exists():
                 return

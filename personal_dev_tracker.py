@@ -910,7 +910,7 @@ class PersonalDevelopmentTracker:
         for col in range(4):
             btn_row.columnconfigure(col, weight=1)
 
-        def refresh_dashboard(self, *, full: bool = False, recompute: bool = True) -> None:
+    def refresh_dashboard(self, *, full: bool = False, recompute: bool = True) -> None:
         if full or not self._dashboard_ready:
             self.create_dashboard()
             return
@@ -2054,7 +2054,7 @@ class PersonalDevelopmentTracker:
         self._apply_deep_work_chrome()
         self._update_deep_work_banner()
 
-        def _register_nav_buttons(self, nav: ttk.Frame) -> None:
+    def _register_nav_buttons(self, nav: ttk.Frame) -> None:
         self._nav_buttons = {}
         self._nav_pack_order = []
         for child in nav.winfo_children():
@@ -2088,7 +2088,7 @@ class PersonalDevelopmentTracker:
             side=tk.LEFT
         )
 
-        def _apply_deep_work_chrome(self) -> None:
+    def _apply_deep_work_chrome(self) -> None:
         active = bool(self._deep_work_session and self._deep_work_session.running)
         labels = self._nav_pack_order or list(self._nav_buttons.keys())
         for label in labels:
