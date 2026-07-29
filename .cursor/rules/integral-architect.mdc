@@ -1,42 +1,54 @@
 ---
-description: Integral Architect — pre-merge review gate
+description: Integral Architect — pre-merge review gate (after implement, Bugbot, tests)
 alwaysApply: true
 ---
 
 # Integral Architect
 
-Layers: **`docs/architecture.md`** + **`.cursor/rules/architecture.mdc`**. Roadmap: **`docs/ROADMAP.md`**.
+Layers: **`docs/architecture.md`** + **`.cursor/rules/architecture.mdc`**. Roadmap: **`docs/ROADMAP.md`**. Specs/ADRs: **`docs/CONSTITUTION.md`**, **`docs/specs/`**.
 
 ## Role in the pipeline
 
-**Product direction** is decided by the human (issue/PR). Architect review is a **pre-merge quality gate**, not approval to build.
+**Product direction** is decided by the human (issue/PR + approved specs). Architect review is a **pre-merge quality gate**, not approval to build.
 
-**Default order** (`.cursor/rules/core.mdc`):
+**Pipeline pointer** (`.cursor/rules/ticket-lifecycle-loop.mdc`):
 
-1. Implement (focused diff)
-2. Tests (`tests/test_*.py`)
-3. **Pre-merge architect review** (this rule)
-4. Validate → PR → merge when user asks
+```
+IMPLEMENT → BUGBOT → TESTS → ARCHITECT → DEPLOY
+```
 
-Skip upfront design unless the user requests it for large changes (schema v3, encryption, sync, AI layer).
+1. **IMPLEMENT** — default/fast Agent
+2. **BUGBOT** — `/review-bugbot`; fix → re-run until clean
+3. **TESTS** — after Bugbot clean; failures → rewind **BUGBOT**
+4. **ARCHITECT** — `/review-architect`; **blockers → rewind BUGBOT**, then TESTS → ARCHITECT again
+5. **DEPLOY** — validate, push, PR; human merge/sign-off exits
 
-## Pre-merge architect review
+Skip upfront architect design unless the user explicitly requests it for large changes (schema migration, encryption, sync, AI layer).
 
-Run **after** tests are in place, **before** push/PR.
+## Before code (lightweight only)
 
-Cover:
+1. Acknowledge **GitHub issue `#N`** and acceptance criteria (and approved spec if required).
+2. **Git sync** per `.cursor/rules/core.mdc`.
+3. Skim affected modules and `docs/architecture.md` — no full write-up unless asked.
 
-- **AC coverage** — each criterion met; call out gaps
-- **Architecture** — correct module (`insights/`, `fitness/`, `paths.py`); no UI logic in engines
+## Pre-merge architect review (required for every ticket)
+
+Run **after** Bugbot is clean and tests pass, **before** push/PR.
+
+Produce a concise review covering:
+
+- **AC coverage** — each criterion met; call out gaps (issue AC and/or `docs/specs/` §4)
+- **Architecture** — correct module (`insights/`, `fitness/`, `paths.py`, `ui_scroll.py`); no UI logic in engines
 - **Local-first** — no accidental cloud calls, telemetry, or committed user data
-- **Export/import** — if schema, storage, vault, or sidecars changed: JSON backup/restore + CSV (and zip profile artifacts if touched) still work per `.cursor/rules/backup-export.mdc`; call out gaps as blockers
-- **UX friction** — logging still fast; rating + Save path preserved
-- **Fitness tables** — standards match official program JSON; no invented progression rules
-- **Docs** — `README.md` features + `docs/` updated per **`.cursor/rules/documentation.mdc`**
-- **Roadmap** — if shipping Phase B–E work, `docs/ROADMAP.md` checkboxes updated
+- **Export/import** — if schema, storage, vault, or sidecars changed: JSON backup/restore + CSV (+ zip profile artifacts) still work per `.cursor/rules/backup-export.mdc`; gaps are blockers
+- **UX friction** — logging still fast; rating + Save path preserved; performance hot paths per `docs/PERFORMANCE.md`
+- **Fitness tables** — standards match official `programs/*.json`; no invented progression rules
+- **Docs / README** — `README.md` Features / “What you get” + `docs/` per `.cursor/rules/documentation.mdc`
+- **Roadmap** — if shipping Phase B–E / roadmap-tier work, `docs/ROADMAP.md` checkboxes updated
+- **Risks & tech debt** — what could bite the next ticket or a release build
 - **Verdict** — merge-ready, or list blockers
 
-**Fix blockers** before opening the PR. Re-run tests after architect-driven fixes.
+**Fix blockers** before opening the PR. After any code fix: rewind to **BUGBOT**, then TESTS → ARCHITECT again.
 
 ## Risky changes
 
@@ -47,9 +59,10 @@ For encryption, sync, AI integration, or schema migration: run **`.cursor/rules/
 - Minimal diffs; reuse `paths.py`, `theme.py`, existing dialog patterns
 - Do not add dependencies without justification (stay stdlib + matplotlib + build tools)
 - Windows exe must still build via `.\build.ps1` after structural changes
+- Tests after Bugbot, before this review (`.cursor/rules/ticket-lifecycle-loop.mdc`)
 
 ## Response format (substantive tasks)
 
-**Implementation** → **Tests** → **Architect Review** → **Docs / README** → **Validate** → **PR**
+**Pipeline pointer** (`IMPLEMENT` | `BUGBOT` | `TESTS` | `ARCHITECT` | `DEPLOY`) → work current stage → report Bugbot/tests/architect/deploy status → advance or rewind per `.cursor/rules/ticket-lifecycle-loop.mdc`.
 
 Be direct; optimize for low-energy daily use and long-term maintainability as an open source product.

@@ -22,35 +22,138 @@ alwaysApply: true
 ## Scope and quality
 
 - **Minimal diffs** — change only what the task requires; match existing naming and patterns.
-- After Python changes: `python -m py_compile` on touched modules and `python -m unittest discover -s tests -v`.
+- After Python changes: `python -m py_compile` on touched modules; prefer `python -m pytest` (targeted) over full suite when iterating.
 - Prefer focused modules over growing `personal_dev_tracker.py` without reason.
+- **Ticket workflow:** pointer pipeline `IMPLEMENT → BUGBOT → TESTS → ARCHITECT → DEPLOY` until human sign-off — `.cursor/rules/ticket-lifecycle-loop.mdc`. Any code fix rewinds to **BUGBOT**.
+
+## Model strategy (ticket work)
+
+Human approval happens at **issue/PR intent** (and approved specs) — not via a pre-code architect gate. Use model capacity accordingly:
+
+| Phase | Stage | Who / what | Purpose |
+|-------|-------|------------|---------|
+| **Implement** | IMPLEMENT | Default Agent (fast model) | Ship against AC; small diffs |
+| **Bugbot** | BUGBOT | `review-bugbot` skill | Logic bugs, edge cases, AC gaps — **re-run until clean** |
+| **Tests** | TESTS | Same session | Lock behavior; map ACs to `tests/test_*.py` |
+| **Architect** | ARCHITECT | `review-architect` skill; prefer premium model | Layers, export/import, README, merge-ready |
+| **Deploy** | DEPLOY | Default Agent | Validate, push, PR; checks until human merge |
+| **Security** | (within BUGBOT→DEPLOY) | `security-review` when risky | Encryption, vault, AI, data (`.cursor/rules/security-review.mdc`) |
+
+**Architect blockers → rewind pointer to BUGBOT**, then forward through TESTS and ARCHITECT again. Full rules: `.cursor/rules/ticket-lifecycle-loop.mdc`.
+
+Do **not** run the heavy architect review before implementation unless the user explicitly asks for upfront design on a large/cross-cutting change.
 
 ## Git workflow (GitHub)
 
-**Before new work**, sync with `main`:
+**Before writing code** for a GitHub issue or feature branch, sync with `main`.
+
+### 1. Load issue context
+
+- Run `gh issue view {N}` (or read the issue) for acceptance criteria.
+- Note the issue number for commits and PR description (`Closes #N`).
+- If a feature needs a new approved spec, finish ADR-007 / spec approval before IMPLEMENT.
+
+### 2. Update local `main`
 
 ```powershell
 git fetch origin
 git checkout main
 git pull origin main
-git checkout -b feature/short-description
 ```
 
-- Implement on a feature branch — never commit directly to `main` unless the user explicitly asks.
-- Use **merge** (not rebase) unless the user requests rebase.
-- PRs should reference issues when applicable (`Closes #N`).
+### 3. Branch — new or existing
+
+**New work (default):**
+
+```powershell
+git checkout -b feature/short-description-{N}
+```
+
+**Continuing existing branch:** sync with `main` before more commits:
+
+```powershell
+git checkout feature/your-existing-branch
+git merge origin/main
+```
+
+Use **merge** (not rebase) unless the user explicitly requests rebase. Resolve conflicts now — do not defer to PR time.
+
+### 4. If merge conflicts occur
+
+1. Run `git status` — list conflicted files.
+2. Resolve markers intentionally (do not blindly pick one side).
+3. Run `python -m py_compile` on touched modules and relevant tests.
+4. `git add` resolved files → `git commit` (merge commit is fine).
+
+### 5. During implementation
+
+- Implement against the issue acceptance criteria on the feature branch only — never commit directly to `main` unless the user explicitly asks.
+- Keep commits focused; do not open the PR until §5a and §5b are complete.
 - **Never** commit `data/`, secrets, or API keys.
 
-### Quality gate (before PR)
+### 5a. BUGBOT & TESTS stages
 
-1. **Implement** — small, focused diff against acceptance criteria
-2. **Tests** — add/update `tests/test_*.py` for behavior changes
-3. **Export/import** — if data schema, storage paths, vault, or sidecars changed, follow `.cursor/rules/backup-export.mdc` (JSON backup + CSV + zip artifacts must still roundtrip)
-4. **Review** — self-review or architect pass per `.cursor/rules/integral-architect.mdc`
-5. **Validate** — `python -m unittest discover -s tests -v` + manual smoke of affected UI
-6. **PR** — push branch; open PR to `main` when user asks
+Pipeline: `.cursor/rules/ticket-lifecycle-loop.mdc`. Pointer must reach **TESTS** only after **BUGBOT** is clean on the current diff.
 
-For risky changes (encryption, sync, AI, data migration): also follow `.cursor/rules/security-review.mdc`.
+#### BUGBOT (repeat until clean)
+
+- Launch **Bugbot** per Cursor `review-bugbot` skill (`Diff: branch changes`).
+- **Fix valid findings** → stay at **BUGBOT**, re-run on updated diff.
+- Do not advance to **TESTS** or **ARCHITECT** while substantive Bugbot findings remain.
+
+#### TESTS (after Bugbot clean)
+
+- Map ACs to tests under `tests/`; name regression tests with the issue number when practical (`test_*_45.py` or clear issue refs in the test module docstring).
+- Run `python -m py_compile` on touched modules and `python -m pytest` for the relevant suites (add `tests/test_backup.py` / `tests/test_integral_io.py` when persistence changed).
+- Failures or material test-driven code changes → rewind pointer to **BUGBOT**.
+
+### 5b. ARCHITECT stage
+
+**After BUGBOT clean and TESTS pass.** Architect blockers fixed → **rewind to BUGBOT** (not ARCHITECT-only), then forward through TESTS → ARCHITECT again.
+
+Run **`review-architect`** (`/review-architect`) or an explicit pass per **`.cursor/rules/integral-architect.mdc`**. Prefer a reasoning-capable / premium model.
+
+Check against:
+
+- `docs/architecture.md` and `.cursor/rules/architecture.mdc`
+- Acceptance criteria fully met; no scope creep
+- Export/import continuity when data touched (`.cursor/rules/backup-export.mdc`)
+- Docs/README Features if user-facing (`.cursor/rules/documentation.mdc`) — see §5b.1
+- Obvious tech debt, duplication, or wrong-layer code
+
+**Fix substantive findings** before opening the PR. For encryption, vault, sync, AI, or schema migration: also run **security-review** per `.cursor/rules/security-review.mdc`.
+
+#### 5b.1 README Features audit
+
+During the architect pass (not a separate agent step). Compare shipped behavior to root `README.md` **Features** / **What you get**.
+
+| Do | Don't |
+|----|--------|
+| Add a concise bullet/row when the ticket introduces **new product behavior** a user would name as a feature | Rewrite tagline, license, or other portfolio prose casually |
+| Keep install/download accurate | Put implementation detail in README — that belongs in `docs/` |
+| Include README edits in the same PR as the feature | Update README for every bug fix or internal refactor |
+
+**Examples that need a README mention:** full zip backup with creative docs, soft Overview refresh, a new Fitness Hub surface. **Examples that skip:** typo fix, pure performance internal cache with no UX copy change already covered, test-only work.
+
+### 5c. DEPLOY stage
+
+**Only after ARCHITECT merge-ready.**
+
+1. Proportionate validate (`pytest` targeted + `py_compile`; full suite when risky).
+2. Push; open/update PR with `Closes #N`.
+3. Watch CI / PR comments — code changes → **IMPLEMENT**, then **BUGBOT** before skipping ahead.
+4. Merge/close **only when the human explicitly asks**.
+5. Until merge/sign-off, keep reporting pipeline pointer; do not mark ticket done.
+
+### 6. Confirm before coding
+
+```powershell
+git branch --show-current
+git log --oneline -1 origin/main
+git status -sb
+```
+
+Working tree should be clean (or only intentional WIP). Branch should include latest `main` before new changes.
 
 ## Documentation
 
@@ -80,8 +183,11 @@ Full checklist and PowerShell examples: `.cursor/rules/build-release.mdc` → **
 
 ## AI collaboration
 
-- **Architect review:** `.cursor/rules/integral-architect.mdc`
+- **Ticket pipeline:** `IMPLEMENT → BUGBOT → TESTS → ARCHITECT → DEPLOY` — `.cursor/rules/ticket-lifecycle-loop.mdc` (rewind to **BUGBOT** on any code fix)
+- **Integral Architect (pre-merge):** `review-architect` skill (`/review-architect`) · `.cursor/agents/integral-architect.md` · `.cursor/rules/integral-architect.mdc`
+- **Bugbot:** Cursor `review-bugbot` skill
 - **Layer boundaries:** `.cursor/rules/architecture.mdc` + `docs/architecture.md`
 - **Python/Tkinter conventions:** `.cursor/rules/python-best-practices.mdc`
 - **Security (encryption, sync, AI):** `.cursor/rules/security-review.mdc`
 - **Docs policy:** `.cursor/rules/documentation.mdc`
+- **Spec loop:** `.cursor/rules/spec-driven-workflow.mdc` + `docs/WORKFLOW.md`

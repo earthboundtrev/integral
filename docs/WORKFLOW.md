@@ -1,6 +1,10 @@
 # Spec-Driven Development Workflow
 
 > Based on [Gauntlet Night School: Specs, ADRs, and Building Loops](https://youtu.be/ayHy7YHddak) — Ash Tilawat
+>
+> **Shipping loop (current):** Bugbot-cycle pointer pipeline adapted from SmartAstro —
+> `IMPLEMENT → BUGBOT → TESTS → ARCHITECT → DEPLOY` (`.cursor/rules/ticket-lifecycle-loop.mdc`).
+> Specs/ADRs still define *what* to build; the pointer pipeline defines *how agents harden and ship*.
 
 ## Philosophy
 
@@ -9,6 +13,26 @@
 If the code is wrong, fix the spec first — then re-run the agent. Never patch code in ways that drift from the documented contract, or the next agent session will "correct" your hotfix back to broken state.
 
 **The human owns outcomes; agents implement.** You do not write application code. You write and approve specs, ADRs, and acceptance criteria. Agents implement, verify, and loop until criteria pass.
+
+## Ticket pipeline (Bugbot cycle)
+
+For active GitHub issue / PR work, agents track a **pipeline pointer**. Advance only when the stage passes. **Any code fix rewinds to `BUGBOT`**, then walks forward again.
+
+```
+IMPLEMENT → BUGBOT → TESTS → ARCHITECT → DEPLOY
+                ↑_______________|
+         (any code fix rewinds here)
+```
+
+| Stage | Agent focus |
+|-------|-------------|
+| **IMPLEMENT** | Code/docs against issue AC (+ approved spec) |
+| **BUGBOT** | Logic/edge cases — cycle until clean (`/review-bugbot`) |
+| **TESTS** | Lock AC in `tests/test_*.py`; `py_compile` + `pytest` |
+| **ARCHITECT** | Layers, export/import, README Features (`/review-architect`) |
+| **DEPLOY** | Push + PR; human merge/sign-off exits |
+
+Full rules: `.cursor/rules/ticket-lifecycle-loop.mdc`, `.cursor/rules/core.mdc`.
 
 ## Document Hierarchy
 

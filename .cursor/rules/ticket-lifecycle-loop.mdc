@@ -1,0 +1,63 @@
+---
+description: Pointer-based ticket pipeline — implement through ship until human sign-off
+alwaysApply: true
+---
+
+# Ticket pipeline (pointer)
+
+Active **GitHub issue `#N`** and/or **open PR** work follows a **fixed stage order**. Track a **pointer** to the current stage. Advance forward only when that stage passes. **Any code fix rewinds the pointer to `BUGBOT`** (then move forward again).
+
+This mirrors SmartAstro’s Bugbot-cycle pipeline, adapted for Integral (GitHub + Python + Tkinter + spec/ADR gate).
+
+## Stages (in order)
+
+```
+IMPLEMENT → BUGBOT → TESTS → ARCHITECT → DEPLOY
+```
+
+| Stage | What happens | Advance when |
+|-------|----------------|--------------|
+| **IMPLEMENT** | Ship code/docs for AC (and approved `docs/specs/` when required), review feedback, or CI fixes | Chunk ready for review → **BUGBOT** |
+| **BUGBOT** | `/review-bugbot` · `Diff: branch changes` | **Clean** on current diff → **TESTS** |
+| **TESTS** | `tests/test_*.py` (prefer `test_*_{N}.py` or issue refs in names for regressions); `python -m py_compile` on touched modules; `python -m pytest` (targeted, then broader if risky) | **Pass** → **ARCHITECT** |
+| **ARCHITECT** | `/review-architect` pre-merge gate (`.cursor/rules/integral-architect.mdc`) | **Merge-ready** → **DEPLOY** |
+| **DEPLOY** | Validate, push, PR with `Closes #N`, watch checks | Human **merge/sign-off** → **exit** |
+
+## Rewind rules (mandatory)
+
+| Situation | Pointer moves to |
+|-----------|------------------|
+| Bugbot reports findings | Stay **BUGBOT** — fix, re-run Bugbot until clean |
+| Tests fail or test fixes change behavior | **BUGBOT** |
+| Architect reports blockers | **BUGBOT** — fix, re-run Bugbot → Tests → Architect |
+| PR/CI/human review needs code changes | **IMPLEMENT** — then **BUGBOT** before skipping ahead |
+
+**Never skip BUGBOT** after a code change, including “phase 2”, session resume, or post-architect fixes.
+
+## Spec / ADR gate (Integral-specific)
+
+- If the change is a **new user-facing feature** without an approved spec, create/amend `docs/specs/...` first (`status: approved`) per ADR-007 / `.cursor/rules/spec-driven-workflow.mdc` — then **IMPLEMENT**.
+- Bug fixes and docs/rules-only work may skip a new spec when no ADR/spec conflict exists.
+- Spec AC is the product contract; Bugbot/tests/architect verify it.
+
+## Exit (human sign-off only)
+
+1. Issue **closed** or PR **merged**
+2. Human says ticket is **done** / approves merge
+3. **Pause** (blocked on human input) — report pointer position; do not claim finished
+
+## Session resume
+
+1. Sync git + read issue/PR (`gh issue view` / `gh pr view`).
+2. If the branch diff changed since last **clean Bugbot**, set pointer to **BUGBOT** (not IMPLEMENT-only).
+3. Report: `Pipeline pointer: <STAGE>`.
+
+## Standalone `/review-bugbot` or `/review-architect`
+
+No active ticket → report findings only unless the user asks to fix. Ticket work always uses this pipeline.
+
+## Response format (active ticket)
+
+End substantive work with:
+
+**Pipeline:** `IMPLEMENT` | `BUGBOT` | `TESTS` | `ARCHITECT` | `DEPLOY` — plus one line each for Bugbot (clean / N fixed), tests (pass/fail), architect (merge-ready / blockers), deploy/PR/CI state, and **next stage**.
