@@ -9,13 +9,24 @@ from typing import Callable
 _dialog_scroll_refs: dict[int, int] = {}
 _wheel_bound_widgets: set[int] = set()
 
+# Cap paint rate during fast flicks so canvas-embedded buttons do not ghost (#66).
+_SCROLL_FLUSH_MS = 16
+
 
 def _scroll_amount(event) -> int:
-    if event.num == 5 or event.delta < 0:
+    num = getattr(event, "num", None)
+    delta = getattr(event, "delta", 0) or 0
+    if num == 5:
         return 1
-    if event.num == 4 or event.delta > 0:
+    if num == 4:
         return -1
-    return 0
+    if not delta:
+        return 0
+    steps = int(delta / 120)
+    if steps == 0:
+        steps = 1 if delta > 0 else -1
+    # Positive Windows delta → scroll up → negative Tk units.
+    return -steps
 
 
 def _descendant_ids(widget: tk.Misc) -> tuple[int, ...]:
@@ -23,6 +34,70 @@ def _descendant_ids(widget: tk.Misc) -> tuple[int, ...]:
     for child in widget.winfo_children():
         ids.extend(_descendant_ids(child))
     return tuple(ids)
+
+
+def coalesce_scroll_command(
+    scroll_command: Callable[..., object],
+    schedule_widget: tk.Misc,
+    *,
+    interval_ms: int = _SCROLL_FLUSH_MS,
+) -> Callable[..., object]:
+    """
+    Batch rapid scroll("scroll", n, "units") calls into one flush per interval.
+
+    Fast trackpad/wheel bursts otherwise drive canvas.create_window embeds faster
+    than Windows can paint ttk buttons, which looks like bleeding/overlapping chrome.
+    """
+    state: dict = {"amount": 0, "after_id": None}
+
+    def flush() -> None:
+        state["after_id"] = None
+        amount = state["amount"]
+        state["amount"] = 0
+        if not amount:
+            return
+        try:
+            if not schedule_widget.winfo_exists():
+                return
+            scroll_command("scroll", amount, "units")
+        except tk.TclError:
+            return
+
+    def wrapped(*args):
+        # Direct moveto / set / fraction paths — apply immediately.
+        if not args or args[0] != "scroll":
+            if state["after_id"] is not None:
+                try:
+                    schedule_widget.after_cancel(state["after_id"])
+                except (tk.TclError, ValueError):
+                    pass
+                state["after_id"] = None
+                pending = state["amount"]
+                state["amount"] = 0
+                if pending:
+                    try:
+                        scroll_command("scroll", pending, "units")
+                    except tk.TclError:
+                        pass
+            return scroll_command(*args)
+
+        # ("scroll", amount, "units"|"pages")
+        try:
+            amount = int(args[1])
+        except (TypeError, ValueError, IndexError):
+            return scroll_command(*args)
+        state["amount"] += amount
+        if state["after_id"] is None:
+            try:
+                state["after_id"] = schedule_widget.after(interval_ms, flush)
+            except tk.TclError:
+                state["amount"] = 0
+                return scroll_command(*args)
+        return None
+
+    wrapped.flush = flush  # type: ignore[attr-defined]
+    wrapped._coalesce_state = state  # type: ignore[attr-defined]
+    return wrapped
 
 
 def bind_mousewheel(
@@ -44,12 +119,15 @@ def bind_mousewheel(
     If watch_configure is set, rebinds only when the descendant widget set
     changes (not on every geometry Configure). Returns a callable that forces
     a binding refresh after children are packed.
+
+    Wheel motion is coalesced (~60fps) so fast flicks do not tear embedded buttons (#66).
     """
+    coalesced = coalesce_scroll_command(scroll_command, container)
 
     def on_mousewheel(event):
         amount = _scroll_amount(event)
         if amount:
-            scroll_command("scroll", amount, "units")
+            coalesced("scroll", amount, "units")
         return "break"
 
     def bind_widget(widget: tk.Misc) -> None:
@@ -210,16 +288,34 @@ def make_horizontal_scroll_row(parent, *, height: int = 44, overflow_hint: str =
     def on_xscroll(first, last) -> None:
         scrollbar.set(first, last)
         # Hint only — never geometry sync or pack/unpack on the scroll path.
-        if not state["scrollbar_shown"]:
-            if state["hint_text"]:
-                state["hint_text"] = ""
-                hint.config(text="")
+        # Defer hint text so rapid xview paints are not paired with Label.configure (#66).
+        state["scroll_last"] = last
+        if state.get("hint_after_id") is not None:
             return
-        right = float(last)
-        desired = overflow_hint if right < 0.99 else ""
-        if desired != state["hint_text"]:
-            state["hint_text"] = desired
-            hint.config(text=desired)
+
+        def apply_hint() -> None:
+            state["hint_after_id"] = None
+            if not canvas.winfo_exists():
+                return
+            if not state["scrollbar_shown"]:
+                if state["hint_text"]:
+                    state["hint_text"] = ""
+                    hint.config(text="")
+                return
+            try:
+                right = float(state.get("scroll_last", last))
+            except (TypeError, ValueError):
+                _left, right = canvas.xview()
+                right = float(right)
+            desired = overflow_hint if right < 0.99 else ""
+            if desired != state["hint_text"]:
+                state["hint_text"] = desired
+                hint.config(text=desired)
+
+        try:
+            state["hint_after_id"] = canvas.after(_SCROLL_FLUSH_MS, apply_hint)
+        except tk.TclError:
+            apply_hint()
 
     refresh_wheel = bind_mousewheel(
         viewport,
@@ -306,7 +402,19 @@ def make_bounded_vertical_scroll(
     def on_yscroll(first, last):
         if scrollbar is not None:
             scrollbar.set(first, last)
-        update_hint()
+        state["scroll_last"] = last
+        if state.get("hint_after_id") is not None:
+            return
+
+        def apply_hint() -> None:
+            state["hint_after_id"] = None
+            if canvas.winfo_exists():
+                update_hint()
+
+        try:
+            state["hint_after_id"] = canvas.after(_SCROLL_FLUSH_MS, apply_hint)
+        except tk.TclError:
+            update_hint()
 
     canvas.configure(yscrollcommand=on_yscroll)
     inner.bind("<Configure>", schedule_hint, add="+")

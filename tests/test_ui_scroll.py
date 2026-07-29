@@ -1,4 +1,9 @@
-from ui_scroll import _descendant_ids, _scroll_amount, make_horizontal_scroll_row
+from ui_scroll import (
+    _descendant_ids,
+    _scroll_amount,
+    coalesce_scroll_command,
+    make_horizontal_scroll_row,
+)
 
 
 class _WheelEvent:
@@ -12,9 +17,69 @@ def test_scroll_amount_windows_delta():
     assert _scroll_amount(_WheelEvent(delta=-120)) == 1
 
 
+def test_scroll_amount_windows_large_delta():
+    assert _scroll_amount(_WheelEvent(delta=240)) == -2
+    assert _scroll_amount(_WheelEvent(delta=-360)) == 3
+
+
 def test_scroll_amount_linux_buttons():
     assert _scroll_amount(_WheelEvent(delta=0, num=4)) == -1
     assert _scroll_amount(_WheelEvent(delta=0, num=5)) == 1
+
+
+class _FakeScheduler:
+    """Minimal stand-in for Tk after/winfo_exists used by coalesce_scroll_command."""
+
+    def __init__(self):
+        self.pending: list = []
+        self.alive = True
+
+    def winfo_exists(self):
+        return self.alive
+
+    def after(self, _ms, callback):
+        self.pending.append(callback)
+        return id(callback)
+
+    def after_cancel(self, _after_id):
+        self.pending.clear()
+
+    def run_pending(self):
+        while self.pending:
+            cb = self.pending.pop(0)
+            cb()
+
+
+def test_coalesce_scroll_batches_units():
+    """Rapid scroll units flush once with the summed amount (#66)."""
+    calls: list[tuple] = []
+
+    def scroll_command(*args):
+        calls.append(args)
+
+    sched = _FakeScheduler()
+    wrapped = coalesce_scroll_command(scroll_command, sched, interval_ms=50)
+    wrapped("scroll", 1, "units")
+    wrapped("scroll", 1, "units")
+    wrapped("scroll", 2, "units")
+    assert calls == []
+    assert len(sched.pending) == 1
+    sched.run_pending()
+    assert calls == [("scroll", 4, "units")]
+
+
+def test_coalesce_scroll_moveto_flushes_pending():
+    calls: list[tuple] = []
+
+    def scroll_command(*args):
+        calls.append(args)
+
+    sched = _FakeScheduler()
+    wrapped = coalesce_scroll_command(scroll_command, sched, interval_ms=50)
+    wrapped("scroll", 3, "units")
+    wrapped("moveto", 0.5)
+    assert ("scroll", 3, "units") in calls
+    assert ("moveto", 0.5) in calls
 
 
 def test_descendant_ids_stable_without_child_changes():

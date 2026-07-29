@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- **Fast-scroll button bleed (#66)** — mousewheel / trackpad bursts are coalesced (~60fps) across shared scroll hosts so footer, Today's Log, and dialog strips no longer ghost or “bleed” buttons while catching up
+
 ## 0.3.11.5.1 — 2026-07-29
 
 ### Fixed
