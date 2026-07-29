@@ -2,9 +2,17 @@
 
 ## Unreleased
 
+## 0.3.11.5.2 — 2026-07-29
+
 ### Fixed
 
 - **Fast-scroll button bleed (#66)** — mousewheel / trackpad bursts are coalesced (~60fps) across shared scroll hosts so footer, Today's Log, and dialog strips no longer ghost or “bleed” buttons while catching up
+
+### Build
+
+- Windows app: `dist/Integral/Integral.exe`
+- Release zip: `Integral-v0.3.11.5.2-windows.zip`
+- User data: `%APPDATA%\Integral\data.json`
 
 ## 0.3.11.5.1 — 2026-07-29
 
