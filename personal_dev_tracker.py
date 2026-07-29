@@ -130,7 +130,7 @@ class PersonalDevelopmentTracker:
         self._focus_shield_after_id: str | None = None
         self.todos: dict = todos.empty_todos()
         self.practices: dict = practices.empty_practices()
-                self._nav_buttons: dict[str, ttk.Widget] = {}
+        self._nav_buttons: dict[str, ttk.Widget] = {}
         self._nav_pack_order: list[str] = []
         self._nav_frame: ttk.Frame | None = None
 
@@ -1005,7 +1005,7 @@ class PersonalDevelopmentTracker:
         self._dashboard_ready = False
         self._deep_work_banner = None
         self._deep_work_timer_label = None
-                self._nav_buttons = {}
+        self._nav_buttons = {}
         self._nav_pack_order = []
         self._nav_frame = None
 
