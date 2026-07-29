@@ -1,5 +1,7 @@
 # Architecture
 
+Agent shipping loop (issue → Bugbot cycle → tests → architect → PR): see `docs/WORKFLOW.md` and `.cursor/rules/ticket-lifecycle-loop.mdc`.
+
 ## Current State (Phase 1)
 
 Single-file Python desktop app using Tkinter.

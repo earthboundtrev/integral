@@ -7,6 +7,9 @@ alwaysApply: false
 
 Use after implementation or when human says "verify SPEC-NNN".
 
+On active tickets, this harness sits inside the **TESTS** / **ARCHITECT** stages of
+`.cursor/rules/ticket-lifecycle-loop.mdc`. Prefer **BUGBOT clean** before treating AC as done.
+
 ## Review Loop
 
 1. Read spec §4 Acceptance Criteria
@@ -21,7 +24,7 @@ Use after implementation or when human says "verify SPEC-NNN".
 
 ## If Any Fail
 
-- **Code wrong, spec clear** → send back to implement harness
+- **Code wrong, spec clear** → fix code, set pipeline pointer to **BUGBOT**, re-run Bugbot → tests
 - **Spec wrong** → spec author harness amends spec first (ADR-007)
 - **Flaky test** → fix test or spec verification method
 
@@ -35,6 +38,7 @@ matplotlib should NOT appear in startup import chain until graphs opened.
 
 ## Mark Done
 
-Only when all AC pass: update spec frontmatter `status: done`.
+Only when all AC pass **and** (for ticket work) pipeline reaches human sign-off on **DEPLOY**:
+update spec frontmatter `status: done`.
 
 Human does not need to read code — AC table is the review artifact.
