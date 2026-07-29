@@ -144,7 +144,9 @@ class ContributionGrid(ttk.Frame):
 
         from ui_scroll import bind_mousewheel
 
-        bind_mousewheel(self._canvas, self._canvas.xview, horizontal=True)
+        self._wheel_refresh = bind_mousewheel(
+            self._canvas, self._canvas.xview, horizontal=True
+        )
 
         legend_row = ttk.Frame(self)
         legend_row.pack(fill=tk.X, pady=(6, 0))
@@ -227,6 +229,9 @@ class ContributionGrid(ttk.Frame):
         total_width = float(parts[2])
         view_width = canvas.winfo_width()
         if total_width > view_width:
+            coalesced = getattr(getattr(self, "_wheel_refresh", None), "coalesced_scroll", None)
+            if coalesced is not None:
+                coalesced.cancel()
             canvas.xview_moveto(1.0)
 
     def _build_controls(self) -> None:
