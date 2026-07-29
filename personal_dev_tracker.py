@@ -109,6 +109,7 @@ class PersonalDevelopmentTracker:
         self._day_watch: DayWatch | None = None
         self._categories_tab_frame: ttk.Frame | None = None
         self._notebook: ttk.Notebook | None = None
+        self._streak_details_window: tk.Toplevel | None = None
         self._deep_work_session: deep_work.DeepWorkSession | None = None
         self._deep_work_after_id: str | None = None
         self._deep_work_banner: ttk.Frame | None = None
@@ -802,7 +803,7 @@ class PersonalDevelopmentTracker:
 
         log_bar = ttk.LabelFrame(self.root, text="Today's Log", padding=14, style="Card.TLabelframe")
         self._log_bar = log_bar
-        log_bar.pack(fill=tk.X, padx=16, pady=(0, 10))
+        log_bar.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=16, pady=(0, 10))
 
         ttk.Label(
             log_bar,
@@ -1028,37 +1029,40 @@ class PersonalDevelopmentTracker:
             self._log_bar.destroy()
         self.create_todays_log_bar()
 
-        if self._activity_grid is not None:
-            self._refresh_activity_grid()
+        try:
+            if self._activity_grid is not None:
+                self._refresh_activity_grid()
 
-        # Guidance + Categories rebuild only when data may have changed (#47 / #50).
-        if recompute and self._guidance_panel is not None:
-            for child in self._guidance_panel.winfo_children():
-                child.destroy()
-            self._fill_guidance_panel(self._guidance_panel)
+            # Guidance + Categories rebuild only when data may have changed (#47 / #50).
+            if recompute and self._guidance_panel is not None:
+                for child in self._guidance_panel.winfo_children():
+                    child.destroy()
+                self._fill_guidance_panel(self._guidance_panel)
 
-        if self._overview_stats_label is not None:
-            today_str = self.today_str()
-            logged_today = len(self.entries.get(today_str, {}))
-            fitness_today = self._session_counts_for_date(today_str)
-            if logged_today == 0:
-                stats_text = "Today: no life-domain check-ins yet (optional)"
-            elif logged_today == 1:
-                stats_text = "Today: 1 life-domain check-in"
-            else:
-                stats_text = f"Today: {logged_today} life-domain check-ins"
-            if fitness_today:
-                stats_text += f"  ·  {fitness_today} fitness session(s)"
-            stats_text += f"  ·  {milestone_summary(self.milestones)}"
-            self._overview_stats_label.config(text=stats_text)
+            if self._overview_stats_label is not None:
+                today_str = self.today_str()
+                logged_today = len(self.entries.get(today_str, {}))
+                fitness_today = self._session_counts_for_date(today_str)
+                if logged_today == 0:
+                    stats_text = "Today: no life-domain check-ins yet (optional)"
+                elif logged_today == 1:
+                    stats_text = "Today: 1 life-domain check-in"
+                else:
+                    stats_text = f"Today: {logged_today} life-domain check-ins"
+                if fitness_today:
+                    stats_text += f"  ·  {fitness_today} fitness session(s)"
+                stats_text += f"  ·  {milestone_summary(self.milestones)}"
+                self._overview_stats_label.config(text=stats_text)
 
-        if recompute and self._categories_tab_built and self._categories_tab_frame is not None:
-            for child in self._categories_tab_frame.winfo_children():
-                child.destroy()
-            self._categories_tab_built = False
-            if self._notebook is not None and self._notebook.index("current") == 1:
-                self._build_categories_tab(self._categories_tab_frame)
-                self._categories_tab_built = True
+            if recompute and self._categories_tab_built and self._categories_tab_frame is not None:
+                for child in self._categories_tab_frame.winfo_children():
+                    child.destroy()
+                self._categories_tab_built = False
+                if self._notebook is not None and self._notebook.index("current") == 1:
+                    self._build_categories_tab(self._categories_tab_frame)
+                    self._categories_tab_built = True
+        except tk.TclError:
+            self._close_streak_details_window()
 
     def _session_counts_for_date(self, date_str: str) -> int:
         return self._activity_session_counts().get(date_str, 0)
@@ -1107,6 +1111,7 @@ class PersonalDevelopmentTracker:
         self._nav_buttons = {}
         self._nav_pack_order = []
         self._nav_frame = None
+        self._close_streak_details_window()
 
         for widget in self.root.winfo_children():
             widget.destroy()
@@ -1158,20 +1163,6 @@ class PersonalDevelopmentTracker:
 
         self._invalidate_caches()
         self.insights = self._get_insights()
-
-        notebook = ttk.Notebook(self.root)
-        self._notebook = notebook
-        notebook.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=16, pady=(0, 8))
-
-        overview = ttk.Frame(notebook)
-        categories_tab = ttk.Frame(notebook)
-        self._categories_tab_frame = categories_tab
-        self._categories_tab_built = False
-        notebook.add(overview, text="Overview")
-        notebook.add(categories_tab, text="Categories")
-        notebook.bind("<<NotebookTabChanged>>", self._on_notebook_tab_changed)
-
-        self._build_overview_tab(overview)
 
         ttk.Button(
             nav,
@@ -2263,14 +2254,88 @@ class PersonalDevelopmentTracker:
     def show_security(self) -> None:
         show_security_dialog(self)
 
+    def _clear_streak_details_refs(self) -> None:
+        self._streak_details_window = None
+        self._notebook = None
+        self._categories_tab_frame = None
+        self._categories_tab_built = False
+        self._activity_grid = None
+        self._guidance_panel = None
+        self._overview_stats_label = None
+
+    def _close_streak_details_window(self) -> None:
+        win = self._streak_details_window
+        self._clear_streak_details_refs()
+        if win is None:
+            return
+        try:
+            if win.winfo_exists():
+                win.destroy()
+        except tk.TclError:
+            pass
+
+    def _mount_overview_categories_notebook(
+        self,
+        parent: tk.Misc,
+        *,
+        select_categories: bool = False,
+    ) -> ttk.Notebook:
+        """Build the Overview / Categories notebook (lives in the streak details window)."""
+        self._invalidate_caches()
+        self.insights = self._get_insights()
+
+        notebook = ttk.Notebook(parent)
+        self._notebook = notebook
+        notebook.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=12, pady=(8, 8))
+
+        overview = ttk.Frame(notebook)
+        categories_tab = ttk.Frame(notebook)
+        self._categories_tab_frame = categories_tab
+        self._categories_tab_built = False
+        notebook.add(overview, text="Overview")
+        notebook.add(categories_tab, text="Categories")
+        notebook.bind("<<NotebookTabChanged>>", self._on_notebook_tab_changed)
+
+        self._build_overview_tab(overview)
+        if select_categories:
+            notebook.select(1)
+            self._build_categories_tab(categories_tab)
+            self._categories_tab_built = True
+        return notebook
+
     def show_streak_details(self, category: str | None = None) -> None:
-        """Open streak context off the main Overview/Categories surfaces."""
+        """Open Overview / Categories in a separate window (not crushed under Today's Log)."""
+        existing = getattr(self, "_streak_details_window", None)
+        if existing is not None:
+            try:
+                if existing.winfo_exists():
+                    existing.lift()
+                    existing.focus_force()
+                    if category and self._notebook is not None:
+                        self._notebook.select(1)
+                        if not self._categories_tab_built and self._categories_tab_frame is not None:
+                            self._build_categories_tab(self._categories_tab_frame)
+                            self._categories_tab_built = True
+                    return
+            except tk.TclError:
+                self._clear_streak_details_refs()
+
         window = tk.Toplevel(self.root)
-        window.title("Streak details")
-        window.geometry("640x560")
-        window.minsize(420, 360)
+        self._streak_details_window = window
+        window.title(f"Overview & Categories · {self.get_streak()} day streak")
+        window.geometry("980x720")
+        window.minsize(720, 520)
         window.transient(self.root)
         window.configure(bg=self.theme["bg"])
+
+        def close_details() -> None:
+            try:
+                window.destroy()
+            except tk.TclError:
+                pass
+            self._clear_streak_details_refs()
+
+        window.protocol("WM_DELETE_WINDOW", close_details)
 
         footer = ttk.Frame(window, padding=(12, 10))
         footer.pack(side=tk.BOTTOM, fill=tk.X)
@@ -2284,39 +2349,28 @@ class PersonalDevelopmentTracker:
                 footer,
                 text="Journal for yesterday",
                 style="Accent.TButton",
-                command=lambda: (window.destroy(), self.open_gap_repair_journal()),
+                command=lambda: (close_details(), self.open_gap_repair_journal()),
             ).pack(side=tk.LEFT)
-        ttk.Button(footer, text="Close", command=window.destroy).pack(side=tk.RIGHT)
+        ttk.Button(footer, text="Close", command=close_details).pack(side=tk.RIGHT)
 
+        header = ttk.Frame(window, padding=(12, 12))
+        header.pack(side=tk.TOP, fill=tk.X)
         ttk.Label(
-            window,
-            text="Streak context lives here — Overview and Categories stay uncluttered.",
+            header,
+            text=f"🔥 {self.get_streak()} day streak",
+            style="Heading.TLabel",
+        ).pack(side=tk.LEFT)
+        ttk.Label(
+            header,
+            text="Activity grid, guidance, and domain cards — full size so you can actually read them.",
             style="Muted.TLabel",
-            wraplength=600,
-        ).pack(side=tk.TOP, anchor="w", padx=12, pady=(12, 0))
+            wraplength=700,
+        ).pack(side=tk.LEFT, padx=(12, 0))
 
-        text = scrolledtext.ScrolledText(window, wrap=tk.WORD, font=("Consolas", 10))
-        style_text_widget(text, self.theme)
-        text.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=12, pady=12)
-
-        # Always show the full report (overall + domain streaks). Optional category
-        # focus still appends a focused section when opened from Go to… / tests.
-        body = streak.format_streak_detail_text(
-            overall_streak=self.get_streak(),
-            entries=self.entries,
-            journal=self.journal,
-            sessions=self.sessions,
-            category_names=list(self.categories.keys()),
+        self._mount_overview_categories_notebook(
+            window,
+            select_categories=bool(category),
         )
-        if category:
-            body += "\n\n" + streak.format_streak_detail_text(
-                overall_streak=self.get_streak(category),
-                entries=self.entries,
-                category=category,
-                category_streak=self.get_streak(category),
-            )
-        text.insert(tk.END, body)
-        text.configure(state=tk.DISABLED)
 
     def show_goto(self) -> None:
         from goto_ui import open_goto_palette

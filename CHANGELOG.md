@@ -2,9 +2,23 @@
 
 ## Unreleased
 
+## 0.3.11.5.1 — 2026-07-29
+
+### Fixed
+
+- **Overview/Categories crushed under Today's Log (#64)** — remove the Overview + Categories notebook from the main dashboard (it was unusably short even fullscreen); click the header streak pill (**· details**) to open the same Overview/Categories UI in a full-size window. Bugfix for the #58/#60 streak-details UX.
+
+### Build
+
+- Windows app: `dist/Integral/Integral.exe`
+- Release zip: `Integral-v0.3.11.5.1-windows.zip`
+- User data: `%APPDATA%\Integral\data.json`
+
+## 0.3.11.5 — 2026-07-29
+
 ### Changed
 
-- **Streak details only via the header pill (#60)** — per-domain streak lines removed from Categories cards; domain streaks + day-by-day “what counted” live in the streak **details** dialog so Overview/Categories stay clean (corrects #58 UX)
+- **Streak details only via the header pill (#60)** — per-domain streak lines removed from Categories cards (superseded by #64 for where Overview/Categories live)
 
 ## 0.3.11.4 — 2026-07-29
 
