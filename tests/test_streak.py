@@ -150,10 +150,12 @@ def test_format_streak_detail_includes_recent_days():
         entries=entries,
         today=today,
         lookback_days=3,
+        category_names=["Body & Presence", "Money/Freedom"],
     )
     assert "Overall streak: 2 days" in text
     assert today.strftime("%Y-%m-%d") in text
     assert "Body & Presence" in text
+    assert "Domain streaks" in text
 
     cat_text = streak.format_streak_detail_text(
         overall_streak=2,

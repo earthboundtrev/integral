@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- **Streak details only via the header pill (#60)** — per-domain streak lines removed from Categories cards; domain streaks + day-by-day “what counted” live in the streak **details** dialog so Overview/Categories stay clean (corrects #58 UX)
+
 ## 0.3.11.4 — 2026-07-29
 
 ### Added
