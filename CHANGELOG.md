@@ -8,6 +8,10 @@
 
 - **Fast-scroll button bleed (#66)** — mousewheel / trackpad bursts are coalesced (~60fps) across shared scroll hosts so footer, Today's Log, and dialog strips no longer ghost or “bleed” buttons while catching up
 
+### Notes
+
+- **0.3.11.5.3 yanked** — place-clipped scroll rewrite (#68) made scrolling worse; `main` rolled back to this 0.3.11.5.2 build
+
 ### Build
 
 - Windows app: `dist/Integral/Integral.exe`
