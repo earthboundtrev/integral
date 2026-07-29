@@ -89,6 +89,30 @@ def format_exercise_picker_label(row: dict) -> str:
     return name
 
 
+def format_pending_set_line(item: dict) -> str:
+    """One-line preview for a queued set in Log Exercise Session."""
+    label = item.get("label") or item.get("name") or "Exercise"
+    sets = item.get("sets", 0)
+    reps = item.get("reps", 0)
+    extras: list[str] = []
+    if item.get("hold_seconds"):
+        extras.append(f"{item['hold_seconds']}s hold")
+    if item.get("weight_kg"):
+        extras.append(f"{item['weight_kg']} kg")
+    base = f"{label}: {sets}x{reps}"
+    if extras:
+        return f"{base} ({', '.join(str(x) for x in extras)})"
+    return base
+
+
+def remove_pending_set_at(pending_sets: list[dict], index: int) -> bool:
+    """Remove one queued set by index. Returns True if removed."""
+    if 0 <= index < len(pending_sets):
+        pending_sets.pop(index)
+        return True
+    return False
+
+
 def mount_live_exercise_search(
     parent,
     rows: list[dict],
@@ -126,6 +150,7 @@ def mount_live_exercise_search(
     ttk.Label(container, textvariable=status_var, style="Muted.TLabel").pack(anchor="w", pady=(4, 0))
 
     filtered_rows: list[dict] = []
+    require_explicit_selection = False
 
     def refresh(*_args) -> None:
         nonlocal filtered_rows
@@ -142,7 +167,7 @@ def mount_live_exercise_search(
             )
         else:
             status_var.set(f"{total} exercises — type to filter instantly")
-        if filtered_rows:
+        if filtered_rows and not require_explicit_selection:
             listbox.selection_set(0)
             listbox.activate(0)
             listbox.see(0)
@@ -150,6 +175,8 @@ def mount_live_exercise_search(
     def get_selected_row() -> dict | None:
         selection = listbox.curselection()
         if not selection:
+            if require_explicit_selection:
+                return None
             if len(filtered_rows) == 1:
                 return filtered_rows[0]
             return None
@@ -158,15 +185,29 @@ def mount_live_exercise_search(
             return filtered_rows[index]
         return None
 
+    def clear_selection() -> None:
+        nonlocal require_explicit_selection
+        require_explicit_selection = True
+        listbox.selection_clear(0, tk.END)
+
+    def mark_explicit_pick(_event=None) -> None:
+        nonlocal require_explicit_selection
+        if listbox.curselection():
+            require_explicit_selection = False
+
     def focus_results(_event=None):
-        if filtered_rows:
-            listbox.focus_set()
-            listbox.selection_set(0)
-            listbox.activate(0)
+        if not filtered_rows:
+            return
+        listbox.focus_set()
+        if require_explicit_selection:
+            return
+        listbox.selection_set(0)
+        listbox.activate(0)
 
     search_var.trace_add("write", refresh)
     search_entry.bind("<Down>", focus_results)
     search_entry.bind("<Return>", lambda _e: focus_results())
+    listbox.bind("<<ListboxSelect>>", mark_explicit_pick)
     refresh()
     if focus:
         search_entry.focus_set()
@@ -177,6 +218,7 @@ def mount_live_exercise_search(
         "search_entry": search_entry,
         "listbox": listbox,
         "get_selected_row": get_selected_row,
+        "clear_selection": clear_selection,
         "refresh": refresh,
     }
 
@@ -416,9 +458,14 @@ def open_new_session_dialog(
         ttk.Label(row, text=f"{label}:", width=16).pack(side=tk.LEFT)
         ttk.Entry(row, textvariable=var, width=28).pack(side=tk.LEFT)
 
-    ttk.Label(form, text="Search for an exercise, pick it, add sets, then Save Session.").pack(
-        anchor="w", pady=6
-    )
+    ttk.Label(
+        form,
+        text=(
+            "Search and click an exercise, Add Set for each movement, then Save Session. "
+            "Wrong pick? Choose another row, Clear selection, or Remove a queued set — no need to Cancel."
+        ),
+        wraplength=500,
+    ).pack(anchor="w", pady=6)
 
     set_frame = ttk.LabelFrame(form, text="Add Set", padding=8)
     set_frame.pack(fill=tk.BOTH, expand=True, pady=4)
@@ -441,23 +488,32 @@ def open_new_session_dialog(
         ttk.Entry(row, textvariable=var, width=10).pack(side=tk.LEFT)
 
     pending_sets: list[dict] = []
-    preview = tk.Listbox(form, height=6)
-    preview.pack(fill=tk.BOTH, expand=True, pady=6)
+    ttk.Label(form, text="Queued sets (this session)").pack(anchor="w", pady=(8, 2))
+    preview = tk.Listbox(form, height=6, exportselection=False)
+    preview.pack(fill=tk.BOTH, expand=True, pady=(0, 4))
     ui_scroll.bind_mousewheel(preview, preview.yview)
+
+    draft_btns = ttk.Frame(form)
+    draft_btns.pack(fill=tk.X, pady=(0, 4))
+
+    def rebuild_preview() -> None:
+        preview.delete(0, tk.END)
+        for item in pending_sets:
+            preview.insert(tk.END, format_pending_set_line(item))
 
     def add_set():
         row = picker["get_selected_row"]()
         if row is None:
             messagebox.showinfo(
                 "Exercise",
-                "Type to search, then click an exercise in the list (or narrow to one match).",
+                "Type to search, then click an exercise in the list to select it.",
                 parent=dialog,
             )
             return
-        name = row["name"]
         item = {
             "exercise_id": row["id"],
-            "name": name,
+            "name": row["name"],
+            "label": format_exercise_picker_label(row),
             "sets": sets_var.get(),
             "reps": reps_var.get(),
         }
@@ -466,9 +522,33 @@ def open_new_session_dialog(
         if set_weight_var.get() > 0:
             item["weight_kg"] = set_weight_var.get()
         pending_sets.append(item)
-        preview.insert(tk.END, f"{format_exercise_picker_label(row)}: {item.get('sets')}x{item.get('reps')}")
+        rebuild_preview()
+
+    def remove_selected_set() -> None:
+        selection = preview.curselection()
+        if not selection:
+            messagebox.showinfo(
+                "Queued sets",
+                "Select a queued set in the list, then Remove selected set.",
+                parent=dialog,
+            )
+            return
+        if remove_pending_set_at(pending_sets, int(selection[0])):
+            rebuild_preview()
+
+    def clear_exercise_selection() -> None:
+        picker["clear_selection"]()
+        picker["search_entry"].focus_set()
 
     picker["listbox"].bind("<Double-1>", lambda _e: add_set())
+    preview.bind("<Delete>", lambda _e: remove_selected_set())
+
+    ttk.Button(draft_btns, text="Remove selected set", command=remove_selected_set).pack(
+        side=tk.LEFT
+    )
+    ttk.Button(
+        draft_btns, text="Clear exercise selection", command=clear_exercise_selection
+    ).pack(side=tk.LEFT, padx=6)
 
     def save_session():
         if not pending_sets:

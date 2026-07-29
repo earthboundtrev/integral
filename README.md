@@ -104,7 +104,7 @@ User data: `%APPDATA%\Integral\data.json` (encrypted optional via Data & Securit
 | **Snappy UI** | Soft Overview refresh (no full rebuild on Refresh/save paths); cached fitness day counts; footer scroll without hitching |
 | **Streak** | Overall streak counts life log, journal, or fitness for the day; updates as soon as you save; mid-day grace if today is still empty |
 | **Quick Capture** | Optional always-on-top panel (off by default): today’s todos + scheduled backlog with collapsible sections, inline edit, and drag-free ↑/↓ reordering; finish→category log line; link starters; Journal now; quick-log opener; Deep Work timer + Windows focus shield (minimize chosen apps) |
-| **Fitness Hub** | CC1/CC2/SS/SM/OG/EC/FTR — nested book → program → steps |
+| **Fitness Hub** | CC1/CC2/SS/SM/OG/EC/FTR — nested book → program → steps; **Log Exercise** lets you re-pick exercises and remove queued sets without Canceling the draft |
 | **Fitness skill tree** | Progressive logging DAG for full CC1 Big Six, full CC2 ladders, and Strong Medicine resistance progressions (squat→barbell, sumo DL, DB bench/press, statue row, plank core) from official Hub tables |
 | **Safety net** | Export CSV (+ creative docs zip), full zip backup (data + `creative/` + fitness), optional vault encryption |
 | **Reminders** | Windows toasts while Integral is running; optional Start with Windows + minimize-on-close so reminders keep working |
