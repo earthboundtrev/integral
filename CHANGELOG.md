@@ -2,9 +2,17 @@
 
 ## Unreleased
 
+## 0.3.11.4 — 2026-07-29
+
 ### Added
 
 - **Clickable streak details (#58)** — header streak pill shows a “details” affordance and opens a day-by-day breakdown (life / journal / fitness); category cards expose the same for domain streaks
+
+### Build
+
+- Windows app: `dist/Integral/Integral.exe`
+- Release zip: `Integral-v0.3.11.4-windows.zip`
+- User data: `%APPDATA%\Integral\data.json`
 
 ## 0.3.11.3 — 2026-07-29
 
