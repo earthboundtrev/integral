@@ -114,6 +114,7 @@ def format_streak_detail_text(
     lookback_days: int = 14,
     category: str | None = None,
     category_streak: int | None = None,
+    category_names: list[str] | None = None,
 ) -> str:
     """Plain-text report for the streak details dialog."""
     today = today or datetime.now().date()
@@ -151,6 +152,22 @@ def format_streak_detail_text(
     if gap and not category:
         lines.append("")
         lines.append(gap)
+
+    if not category and category_names:
+        rows = []
+        for name in category_names:
+            n = get_streak(entries, name, today=today)
+            if n > 0:
+                rows.append((name, n))
+        rows.sort(key=lambda item: (-item[1], item[0]))
+        lines.append("")
+        lines.append("Domain streaks (life log only)")
+        lines.append("-" * 40)
+        if rows:
+            for name, n in rows:
+                lines.append(f"{n:>3}  {name}")
+        else:
+            lines.append("(none yet — log a domain to start one)")
 
     lines.append("")
     lines.append(f"Last {lookback_days} days")
