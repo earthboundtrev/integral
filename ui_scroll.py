@@ -443,7 +443,9 @@ class PlaceScrollView:
             if unit == "pages":
                 delta = amount * max(self._visible - self._unit_pixels, self._unit_pixels)
             else:
-                delta = amount * self._unit_pixels
+                # Match Canvas xview/yview: one "unit" ≈ 1/10 of the visible span.
+                span = max(self._visible // 10, self._unit_pixels)
+                delta = amount * span
             self._apply_offset(self._offset + delta)
             return None
         return None
