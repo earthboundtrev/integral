@@ -63,15 +63,29 @@ def coalesce_scroll_command(
         except tk.TclError:
             return
 
+    def cancel() -> None:
+        """Drop pending wheel delta without applying (e.g. before external moveto)."""
+        after_id = state["after_id"]
+        state["after_id"] = None
+        state["amount"] = 0
+        if after_id is not None:
+            try:
+                schedule_widget.after_cancel(after_id)
+            except (tk.TclError, ValueError):
+                pass
+
     def wrapped(*args):
         # Direct moveto / set / fraction paths — apply immediately.
         if not args or args[0] != "scroll":
-            if state["after_id"] is not None:
-                try:
-                    schedule_widget.after_cancel(state["after_id"])
-                except (tk.TclError, ValueError):
-                    pass
-                state["after_id"] = None
+            # Flush pending relative scroll first so a late after() cannot
+            # jump past a scrollbar drag / programmatic moveto (#66).
+            if state["after_id"] is not None or state["amount"]:
+                if state["after_id"] is not None:
+                    try:
+                        schedule_widget.after_cancel(state["after_id"])
+                    except (tk.TclError, ValueError):
+                        pass
+                    state["after_id"] = None
                 pending = state["amount"]
                 state["amount"] = 0
                 if pending:
@@ -96,6 +110,7 @@ def coalesce_scroll_command(
         return None
 
     wrapped.flush = flush  # type: ignore[attr-defined]
+    wrapped.cancel = cancel  # type: ignore[attr-defined]
     wrapped._coalesce_state = state  # type: ignore[attr-defined]
     return wrapped
 
@@ -118,7 +133,9 @@ def bind_mousewheel(
 
     If watch_configure is set, rebinds only when the descendant widget set
     changes (not on every geometry Configure). Returns a callable that forces
-    a binding refresh after children are packed.
+    a binding refresh after children are packed. The returned callable also
+    exposes ``.coalesced_scroll`` — use that for scrollbar ``command=`` so a
+    pending wheel flush cannot jump after a drag (#66).
 
     Wheel motion is coalesced (~60fps) so fast flicks do not tear embedded buttons (#66).
     """
@@ -178,6 +195,7 @@ def bind_mousewheel(
     container.bind("<Map>", schedule_refresh, add="+")
     if watch_configure is not None:
         watch_configure.bind("<Configure>", schedule_refresh, add="+")
+    refresh_bindings.coalesced_scroll = coalesced  # type: ignore[attr-defined]
     return refresh_bindings
 
 
@@ -236,7 +254,7 @@ def make_horizontal_scroll_row(parent, *, height: int = 44, overflow_hint: str =
     viewport.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
     canvas = tk.Canvas(viewport, height=height, highlightthickness=0, bd=0)
-    scrollbar = ttk.Scrollbar(viewport, orient=tk.HORIZONTAL, command=canvas.xview)
+    scrollbar = ttk.Scrollbar(viewport, orient=tk.HORIZONTAL)
     inner = ttk.Frame(canvas)
     window_id = canvas.create_window((0, 0), window=inner, anchor="nw")
 
@@ -323,6 +341,7 @@ def make_horizontal_scroll_row(parent, *, height: int = 44, overflow_hint: str =
         horizontal=True,
         watch_configure=inner,
     )
+    scrollbar.configure(command=refresh_wheel.coalesced_scroll)
 
     def schedule_layout(_event=None) -> None:
         if state["layout_pending"]:
@@ -430,7 +449,7 @@ def make_scrollable_frame(parent, *, width=None, height=None):
     """
     outer = tk.Frame(parent)
     canvas = tk.Canvas(outer, highlightthickness=0, width=width, height=height)
-    scrollbar = ttk.Scrollbar(outer, orient=tk.VERTICAL, command=canvas.yview)
+    scrollbar = ttk.Scrollbar(outer, orient=tk.VERTICAL)
     inner = tk.Frame(canvas)
 
     pending = {"active": False}
@@ -455,7 +474,8 @@ def make_scrollable_frame(parent, *, width=None, height=None):
         canvas.itemconfigure(window_id, width=max(event.width, 1))
 
     canvas.bind("<Configure>", _resize_inner)
-    bind_mousewheel(outer, canvas.yview, watch_configure=inner)
+    refresh_wheel = bind_mousewheel(outer, canvas.yview, watch_configure=inner)
+    scrollbar.configure(command=refresh_wheel.coalesced_scroll)
 
     canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
     scrollbar.pack(side=tk.RIGHT, fill=tk.Y)

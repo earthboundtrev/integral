@@ -82,6 +82,20 @@ def test_coalesce_scroll_moveto_flushes_pending():
     assert ("moveto", 0.5) in calls
 
 
+def test_coalesce_scroll_cancel_drops_pending():
+    calls: list[tuple] = []
+
+    def scroll_command(*args):
+        calls.append(args)
+
+    sched = _FakeScheduler()
+    wrapped = coalesce_scroll_command(scroll_command, sched, interval_ms=50)
+    wrapped("scroll", 5, "units")
+    wrapped.cancel()
+    sched.run_pending()
+    assert calls == []
+
+
 def test_descendant_ids_stable_without_child_changes():
     import tkinter as tk
     from tkinter import ttk
