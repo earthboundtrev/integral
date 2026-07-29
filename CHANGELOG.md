@@ -2,21 +2,30 @@
 
 ## Unreleased
 
+## 0.3.11.3 — 2026-07-29
+
 ### Added
 
 - **Go to… palette + findability follow-ups (#56)** — Ctrl+K / footer **Go to…** jumps to any screen or Log domain; footer drops More… duplicates (**AI Insight**, Plan Tomorrow, Log Exercise, Fitness Hub) while **Writing Projects** stays for Deep Work; Quick Capture domain Comboboxes typeahead; pin up to 5 Today's Log domains (right-click, `settings.todays_log.pinned_domains`)
-
 - **Today's Log findability (#54)** — live Find filter (name + short label), All/Unlogged/Logged radios, unlogged-first ordering; overlapping actions tucked under **More…**; filter survives soft Refresh
 
 ### Fixed
 
 - **Log Exercise draft recovery (#52)** — wrong exercise or queued set no longer forces Cancel: remove selected sets (Delete key too), clear exercise selection, and re-pick another movement while keeping the session draft
-
 - **Instant UI / scroll harden (#50)** — soft Refresh skips guidance/categories rebuild when data unchanged; footer scroll no longer re-walks wheel bindings on every geometry Configure; Deep Work restores footer buttons in original pack order (hardening #47/#48)
 
 ### Changed
 
 - **Snappier Overview refresh (#47)** — Refresh and day-rollover use soft dashboard updates instead of full UI tear-down; Deep Work end restores nav without rebuilding; fitness session counts are cached via a SQL aggregate instead of loading thousands of session rows each refresh
+- **Smoother horizontal scroll (#48)** — coalesced layout and gated wheel rebinds so the footer/activity strips hitch less while scrolling
+
+### Build
+
+- Windows app: `dist/Integral/Integral.exe`
+- Release zip: `Integral-v0.3.11.3-windows.zip`
+- User data: `%APPDATA%\Integral\data.json`
+
+## 0.3.11.2 — 2026-07-25
 
 ### Added
 
