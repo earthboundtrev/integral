@@ -131,6 +131,7 @@ class PersonalDevelopmentTracker:
         self.todos: dict = todos.empty_todos()
         self.practices: dict = practices.empty_practices()
         self._nav_buttons: dict[str, ttk.Widget] = {}
+        self._nav_pack_order: list[str] = []
         self._nav_frame: ttk.Frame | None = None
 
         if is_encrypted_file(DATA_FILE) and not prompt_vault_unlock(self):
@@ -931,7 +932,8 @@ class PersonalDevelopmentTracker:
         if self._activity_grid is not None:
             self._refresh_activity_grid()
 
-        if self._guidance_panel is not None:
+        # Guidance + Categories rebuild only when data may have changed (#47 / #50).
+        if recompute and self._guidance_panel is not None:
             for child in self._guidance_panel.winfo_children():
                 child.destroy()
             self._fill_guidance_panel(self._guidance_panel)
@@ -951,7 +953,7 @@ class PersonalDevelopmentTracker:
             stats_text += f"  ·  {milestone_summary(self.milestones)}"
             self._overview_stats_label.config(text=stats_text)
 
-        if self._categories_tab_built and self._categories_tab_frame is not None:
+        if recompute and self._categories_tab_built and self._categories_tab_frame is not None:
             for child in self._categories_tab_frame.winfo_children():
                 child.destroy()
             self._categories_tab_built = False
@@ -1004,6 +1006,7 @@ class PersonalDevelopmentTracker:
         self._deep_work_banner = None
         self._deep_work_timer_label = None
         self._nav_buttons = {}
+        self._nav_pack_order = []
         self._nav_frame = None
 
         for widget in self.root.winfo_children():
@@ -2053,6 +2056,7 @@ class PersonalDevelopmentTracker:
 
     def _register_nav_buttons(self, nav: ttk.Frame) -> None:
         self._nav_buttons = {}
+        self._nav_pack_order = []
         for child in nav.winfo_children():
             try:
                 label = str(child.cget("text"))
@@ -2060,6 +2064,7 @@ class PersonalDevelopmentTracker:
                 continue
             if label:
                 self._nav_buttons[label] = child
+                self._nav_pack_order.append(label)
 
     def _ensure_deep_work_banner(self, footer: ttk.Frame | None = None) -> None:
         if self._deep_work_banner is not None:
@@ -2085,7 +2090,11 @@ class PersonalDevelopmentTracker:
 
     def _apply_deep_work_chrome(self) -> None:
         active = bool(self._deep_work_session and self._deep_work_session.running)
-        for label, widget in list(self._nav_buttons.items()):
+        labels = self._nav_pack_order or list(self._nav_buttons.keys())
+        for label in labels:
+            widget = self._nav_buttons.get(label)
+            if widget is None:
+                continue
             try:
                 if not widget.winfo_exists():
                     continue
@@ -2102,7 +2111,7 @@ class PersonalDevelopmentTracker:
                 continue
             if widget.winfo_ismapped():
                 continue
-            # Restore after Deep Work without rebuilding the whole dashboard.
+            # Restore in original pack order after Deep Work (#47 / #50).
             if label in {"Light Mode", "Dark Mode"}:
                 widget.pack(side=tk.RIGHT)
             elif label == "Refresh":

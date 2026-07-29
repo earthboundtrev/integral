@@ -237,8 +237,10 @@ def make_horizontal_scroll_row(parent, *, height: int = 44, overflow_hint: str =
             state["layout_pending"] = False
             if not canvas.winfo_exists():
                 return
+            # Geometry only — wheel rebinds are gated by child-set changes via
+            # watch_configure on inner (calling refresh_wheel here re-walked the
+            # tree on every Configure and caused scroll hitching).
             _apply_geometry()
-            refresh_wheel()
 
         canvas.after_idle(run)
 
