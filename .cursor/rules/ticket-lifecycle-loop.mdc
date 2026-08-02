@@ -9,6 +9,24 @@ Active **GitHub issue `#N`** and/or **open PR** work follows a **fixed stage ord
 
 This mirrors SmartAstro’s Bugbot-cycle pipeline, adapted for Integral (GitHub + Python + Tkinter + spec/ADR gate).
 
+## Hard gate — tickets must close on merge
+
+A ticket is **not done** until **all** of these are true:
+
+1. PR merged into `main`
+2. GitHub issue `#N` state is **`CLOSED`**
+3. Feature branch gone from `origin` (repo `delete_branch_on_merge` + `--delete-branch`)
+
+**Never** end a merge turn while `gh issue view {N} --json state -q .state` is still `OPEN`.
+
+After every merge the human asked for, run:
+
+```powershell
+.\scripts\post_merge_hygiene.ps1 -Issue {N} -PR {PR}
+```
+
+Or the inline steps in **Post-merge hygiene** below. Missing `Closes #N` in the PR body is a defect — fix by closing the issue manually in the same turn.
+
 ## Stages (in order)
 
 ```
@@ -21,7 +39,7 @@ IMPLEMENT → BUGBOT → TESTS → ARCHITECT → DEPLOY
 | **BUGBOT** | `/review-bugbot` · `Diff: branch changes` | **Clean** on current diff → **TESTS** |
 | **TESTS** | `tests/test_*.py` (prefer `test_*_{N}.py` or issue refs in names for regressions); `python -m py_compile` on touched modules; `python -m pytest` (targeted, then broader if risky) | **Pass** → **ARCHITECT** |
 | **ARCHITECT** | `/review-architect` pre-merge gate (`.cursor/rules/integral-architect.mdc`) | **Merge-ready** → **DEPLOY** |
-| **DEPLOY** | Validate, push, PR with `Closes #N`, watch checks | Human **merge/sign-off** → **exit** |
+| **DEPLOY** | Validate, push, PR with `Closes #N` (required), watch checks; on human merge ask: merge with branch delete + **verify issue `#N` is CLOSED** via `scripts/post_merge_hygiene.ps1` | Human **merge/sign-off** + issue closed + branch gone → **exit** |
 
 ## Rewind rules (mandatory)
 
@@ -40,17 +58,59 @@ IMPLEMENT → BUGBOT → TESTS → ARCHITECT → DEPLOY
 - Bug fixes and docs/rules-only work may skip a new spec when no ADR/spec conflict exists.
 - Spec AC is the product contract; Bugbot/tests/architect verify it.
 
-## Exit (human sign-off only)
+## Exit (human sign-off + ticket closed)
 
-1. Issue **closed** or PR **merged**
-2. Human says ticket is **done** / approves merge
-3. **Pause** (blocked on human input) — report pointer position; do not claim finished
+1. Human says ticket is **done** / asks to **merge**
+2. PR **merged** into `main`
+3. Linked GitHub issue `#N` is **CLOSED** (not left open)
+4. Feature branch deleted on remote (repo setting + merge flag)
+5. Agent reports: issue closed + branch deleted (or hygiene script output)
+
+### Post-merge hygiene (mandatory when human asks to merge)
+
+Run immediately after a successful merge — do **not** treat the ticket as finished while the issue is still open:
+
+```powershell
+# One-shot (preferred)
+.\scripts\post_merge_hygiene.ps1 -Issue {N} -PR {PR}
+
+# Equivalent manual steps:
+gh pr merge {PR} --merge --delete-branch
+gh issue view {N} --json state,closedAt
+if ((gh issue view {N} --json state -q .state) -ne "CLOSED") {
+  gh issue close {N} --reason completed --comment "Closed after PR #{PR} merged to main."
+}
+git fetch --prune origin
+gh issue list --state open --limit 20
+```
+
+**PR body requirement:** every ticket PR must include a closing keyword on its own line near the top of the body, e.g.:
+
+```text
+Closes #N
+```
+
+Do not rely on the title alone. Prefer `Closes` / `Fixes` / `Resolves` (GitHub auto-close keywords).
+
+**Branch delete:** `gh pr merge ... --delete-branch`. Repo setting `delete_branch_on_merge` must stay `true`:
+
+```powershell
+gh api repos/earthboundtrev/integral --jq .delete_branch_on_merge
+# expect: true
+```
+
+If a merge leaves a remote feature branch, delete it: `git push origin --delete {branch}` then `git fetch --prune origin`.
+
+**Duplicates:** before `gh issue create`, search open issues for the same title/topic. If extras were created, close them as duplicates when the canonical issue ships (or immediately if never linked to a PR).
+
+**Local cleanup:** after merge, delete the local feature branch (`git branch -d …`) and prune (`git fetch --prune`). Stale `origin/feature/…` refs are not open tickets — prune them so they do not look “still open.”
 
 ## Session resume
 
 1. Sync git + read issue/PR (`gh issue view` / `gh pr view`).
 2. If the branch diff changed since last **clean Bugbot**, set pointer to **BUGBOT** (not IMPLEMENT-only).
 3. Report: `Pipeline pointer: <STAGE>`.
+4. If the PR is already merged but issue `#N` is still OPEN → run post-merge hygiene before any new work on that ticket.
 
 ## Standalone `/review-bugbot` or `/review-architect`
 
@@ -60,4 +120,4 @@ No active ticket → report findings only unless the user asks to fix. Ticket wo
 
 End substantive work with:
 
-**Pipeline:** `IMPLEMENT` | `BUGBOT` | `TESTS` | `ARCHITECT` | `DEPLOY` — plus one line each for Bugbot (clean / N fixed), tests (pass/fail), architect (merge-ready / blockers), deploy/PR/CI state, and **next stage**.
+**Pipeline:** `IMPLEMENT` | `BUGBOT` | `TESTS` | `ARCHITECT` | `DEPLOY` — plus one line each for Bugbot (clean / N fixed), tests (pass/fail), architect (merge-ready / blockers), deploy/PR/CI state, and **next stage**. After merge: explicitly state issue `#N` CLOSED and branch deleted.
