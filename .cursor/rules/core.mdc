@@ -140,10 +140,11 @@ During the architect pass (not a separate agent step). Compare shipped behavior 
 **Only after ARCHITECT merge-ready.**
 
 1. Proportionate validate (`pytest` targeted + `py_compile`; full suite when risky).
-2. Push; open/update PR with `Closes #N`.
+2. Push; open/update PR with **`Closes #N`** in the body (required — title alone does not close the issue).
 3. Watch CI / PR comments — code changes → **IMPLEMENT**, then **BUGBOT** before skipping ahead.
 4. Merge/close **only when the human explicitly asks**.
-5. Until merge/sign-off, keep reporting pipeline pointer; do not mark ticket done.
+5. When merging: `gh pr merge {PR} --merge --delete-branch`, then run `.\scripts\post_merge_hygiene.ps1 -Issue {N} -PR {PR}` (or manually **verify** `gh issue view {N}` is `CLOSED` and close it if not). Close any duplicate open issues for the same work. Delete the local feature branch.
+6. Until merge/sign-off **and** the issue is closed, keep reporting pipeline pointer; do not mark ticket done.
 
 ### 6. Confirm before coding
 
