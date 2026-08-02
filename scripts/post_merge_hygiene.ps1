@@ -3,8 +3,8 @@
 # Run after a PR merges to main (agent must run this when the human asks to merge).
 # Usage:
 #   .\scripts\post_merge_hygiene.ps1 -Issue 68 -PR 69
-#   .\scripts\post_merge_hygiene.ps1 -Issue 68          # issue-only verify/close + prune
-#   .\scripts\post_merge_hygiene.ps1 -PR 69             # infer closing issues from the PR
+#   .\scripts\post_merge_hygiene.ps1 -Issue 68
+#   .\scripts\post_merge_hygiene.ps1 -PR 69
 
 param(
     [int]$Issue = 0,
@@ -13,17 +13,13 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-function Assert-Gh {
-    if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
-        throw "gh CLI is required"
-    }
+if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
+    throw "gh CLI is required"
 }
 
-Assert-Gh
-
-$issueNumbers = @()
+$issueNumbers = New-Object System.Collections.Generic.List[int]
 if ($Issue -gt 0) {
-    $issueNumbers += $Issue
+    [void]$issueNumbers.Add($Issue)
 }
 
 if ($PR -gt 0) {
@@ -36,26 +32,32 @@ if ($PR -gt 0) {
     if ($prState.state -ne "MERGED") {
         throw "PR #$PR is $($prState.state); expected MERGED"
     }
-    foreach ($ref in $prState.closingIssuesReferences) {
-        if ($ref.number) { $issueNumbers += [int]$ref.number }
+    foreach ($ref in @($prState.closingIssuesReferences)) {
+        if ($null -ne $ref.number) {
+            $n = [int]$ref.number
+            if (-not $issueNumbers.Contains($n)) {
+                [void]$issueNumbers.Add($n)
+            }
+        }
     }
 }
 
-$issueNumbers = $issueNumbers | Select-Object -Unique
-if (-not $issueNumbers -or $issueNumbers.Count -eq 0) {
+if ($issueNumbers.Count -eq 0) {
     Write-Warning "No issue numbers to close. Pass -Issue N and/or ensure the PR body has Closes #N."
-} else {
+}
+else {
     foreach ($n in $issueNumbers) {
         $state = gh issue view $n --json state,title | ConvertFrom-Json
         if ($state.state -eq "CLOSED") {
-            Write-Host "OK  #$n already CLOSED — $($state.title)"
+            Write-Host "OK  #$n already CLOSED - $($state.title)"
             continue
         }
-        Write-Host "Closing #$n — $($state.title)"
-        $comment = if ($PR -gt 0) {
-            "Closed after PR #$PR merged to main (post-merge hygiene)."
-        } else {
-            "Closed after merge to main (post-merge hygiene)."
+        Write-Host "Closing #$n - $($state.title)"
+        if ($PR -gt 0) {
+            $comment = "Closed after PR #$PR merged to main (post-merge hygiene)."
+        }
+        else {
+            $comment = "Closed after merge to main (post-merge hygiene)."
         }
         gh issue close $n --reason completed --comment $comment
     }
