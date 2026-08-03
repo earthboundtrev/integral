@@ -211,3 +211,33 @@ Index key in `data.json`: `milestones` (list). Normalized by `milestones.normali
 `domain` optionally links a milestone to a Life Domain; `progress` is 0–100 (status `done` snaps
 to 100). CSV export (`export_milestones_csv`) includes `domain` and `progress` columns.
 
+---
+
+## Capture todos (Quick Capture)
+
+Index key in `data.json`: `todos` → `{ "items": [ … ] }`. Normalized by `todos.normalize_todos`.
+
+```json
+{
+  "id": "a1b2c3",
+  "text": "Watch lecture",
+  "done": false,
+  "work_date": "2026-08-03",
+  "category": "Learning",
+  "completed_at": ""
+}
+```
+
+| Field | Notes |
+|-------|--------|
+| `work_date` | Scheduled day (YYYY-MM-DD); overdue incompletes still show under Today |
+| `category` | Optional life-domain name; **required to count as day activity when completed** |
+| `completed_at` | Set to completion date (YYYY-MM-DD) when `done` becomes true; cleared on uncheck |
+
+**Completion → day activity (#72):** checking a todo complete prepends `[Todo done HH:MM] {text}` into
+`entries[today][category].notes` (same family as Link → day entry / YouTube notes). If `category`
+is empty, Quick Capture opens a picker dialog; Cancel leaves the todo incomplete. A one-shot
+backfill (`settings.quick_capture.todo_done_entries_backfilled`) adds missing notes for already-done
+todos that have a category and `completed_at`, keyed by `(#todo_id)` so identical task text can still
+log separately. Todos without `completed_at` are skipped (no invented day).
+

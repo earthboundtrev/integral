@@ -582,7 +582,22 @@ class PersonalDevelopmentTracker:
             self.todos = todos.normalize_todos(migrated.get("todos"))
             self.practices = practices.normalize_practices(migrated.get("practices"))
             self.program_state = migrated.get("program_state", {})
+            dirty = False
             if sync_fitness_sessions_to_entries(self.entries, self.settings.get("fitness")):
+                dirty = True
+            qc_flags = dict(self.settings.get("quick_capture") or {})
+            if not qc_flags.get("todo_done_entries_backfilled"):
+                self.entries, _added = quick_capture.backfill_todo_done_entries(
+                    self.entries,
+                    self.todos,
+                    today=self.today_str(),
+                )
+                qc_flags["todo_done_entries_backfilled"] = True
+                self.settings = quick_capture.apply_quick_capture_settings(
+                    self.settings, qc_flags
+                )
+                dirty = True
+            if dirty:
                 self.save_data(flush=True)
         else:
             self.categories = self.get_default_categories()

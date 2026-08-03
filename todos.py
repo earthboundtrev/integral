@@ -31,13 +31,16 @@ def normalize_todos(stored: dict[str, Any] | None) -> dict[str, Any]:
             continue
         category = str(raw.get("category") or "").strip()
         item_id = str(raw.get("id") or "").strip() or new_todo_id()
+        done = bool(raw.get("done", False))
+        completed_at = _normalize_completed_at(raw.get("completed_at")) if done else ""
         items.append(
             {
                 "id": item_id,
                 "text": text,
-                "done": bool(raw.get("done", False)),
+                "done": done,
                 "work_date": work_date,
                 "category": category,
+                "completed_at": completed_at,
             }
         )
     return {"items": items}
@@ -51,6 +54,20 @@ def _normalize_date(value: Any) -> str | None:
         return datetime.strptime(text, "%Y-%m-%d").date().isoformat()
     except (TypeError, ValueError):
         return None
+
+
+def _normalize_completed_at(value: Any) -> str:
+    """Return ISO date (YYYY-MM-DD) or empty string."""
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    # Accept date or datetime prefixes.
+    day = _normalize_date(text[:10])
+    return day or ""
 
 
 def list_items(todos: dict[str, Any]) -> list[dict[str, Any]]:
@@ -112,6 +129,7 @@ def add_todo(
             "done": bool(done),
             "work_date": day,
             "category": (category or "").strip(),
+            "completed_at": datetime.now().date().isoformat() if done else "",
         }
     )
     return todos
@@ -135,7 +153,16 @@ def update_todo(todos: dict[str, Any], todo_id: str, **fields: Any) -> dict[str,
         if "category" in fields:
             item["category"] = str(fields["category"] or "").strip()
         if "done" in fields:
-            item["done"] = bool(fields["done"])
+            now_done = bool(fields["done"])
+            was_done = bool(item["done"])
+            item["done"] = now_done
+            if now_done and not was_done:
+                stamp = fields.get("completed_at")
+                item["completed_at"] = _normalize_completed_at(stamp) or datetime.now().date().isoformat()
+            elif not now_done:
+                item["completed_at"] = ""
+        if "completed_at" in fields and "done" not in fields:
+            item["completed_at"] = _normalize_completed_at(fields.get("completed_at")) if item["done"] else ""
         return todos
     raise KeyError(f"Todo not found: {todo_id}")
 

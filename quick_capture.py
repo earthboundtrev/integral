@@ -42,10 +42,13 @@ def normalize_quick_capture_settings(settings: dict | None) -> dict:
     raw = settings.get("quick_capture")
     if not isinstance(raw, dict):
         return base
-    return {
+    out = {
         "enabled": bool(raw.get("enabled", False)),
         "collapsed": _normalize_collapsed(raw.get("collapsed")),
     }
+    if raw.get("todo_done_entries_backfilled"):
+        out["todo_done_entries_backfilled"] = True
+    return out
 
 
 def apply_quick_capture_settings(settings: dict | None, quick_capture: dict) -> dict:
@@ -144,10 +147,82 @@ def merge_day_entry_starter(
     return entries
 
 
-def format_todo_done_note(*, text: str, when: datetime | None = None) -> str:
+def format_todo_done_note(
+    *, text: str, when: datetime | None = None, todo_id: str = ""
+) -> str:
     stamp = (when or datetime.now()).strftime("%H:%M")
     cleaned = (text or "").strip() or "Todo"
-    return f"[Todo done {stamp}] {cleaned}"
+    line = f"[Todo done {stamp}] {cleaned}"
+    tid = (todo_id or "").strip()
+    if tid:
+        return f"{line} (#{tid})"
+    return line
+
+
+def _todo_done_line_task_text(stripped: str) -> str | None:
+    """Return the task text from a Todo-done note line, or None if not one."""
+    if not stripped.startswith("[Todo done "):
+        return None
+    close = stripped.find("] ")
+    if close < 0:
+        return None
+    rest = stripped[close + 2 :]
+    marker = " (#"
+    if marker in rest and rest.endswith(")"):
+        rest = rest[: rest.rfind(marker)]
+    return rest
+
+
+def todo_done_note_present(notes: str, text: str, *, todo_id: str = "") -> bool:
+    """
+    True if notes already contain a Todo-done line for this completion.
+
+    When todo_id is set, match that id only (same display text can log twice).
+    When todo_id is empty, match exact task text on legacy lines (no id suffix).
+    """
+    cleaned = (text or "").strip() or "Todo"
+    tid = (todo_id or "").strip()
+    for line in (notes or "").splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("[Todo done "):
+            continue
+        if tid:
+            if f"(#{tid})" in stripped:
+                return True
+            continue
+        task = _todo_done_line_task_text(stripped)
+        if task == cleaned and "(#" not in stripped:
+            return True
+    return False
+
+
+def _scan_todo_done_notes(
+    entries: dict, *, category: str, text: str
+) -> tuple[int, set[str]]:
+    """Count legacy (no-id) Todo-done lines and collect todo ids already logged."""
+    cleaned = (text or "").strip() or "Todo"
+    legacy = 0
+    ids: set[str] = set()
+    for day in (entries or {}).values():
+        if not isinstance(day, dict):
+            continue
+        cat_entry = day.get(category)
+        if not isinstance(cat_entry, dict):
+            continue
+        for line in str(cat_entry.get("notes") or "").splitlines():
+            stripped = line.strip()
+            if _todo_done_line_task_text(stripped) != cleaned:
+                continue
+            marker = " (#"
+            if marker in stripped and stripped.endswith(")"):
+                start = stripped.rfind(marker) + len(marker)
+                end = stripped.rfind(")")
+                tid = stripped[start:end].strip()
+                if tid:
+                    ids.add(tid)
+            else:
+                legacy += 1
+    return legacy, ids
 
 
 def merge_todo_done_line(
@@ -157,12 +232,15 @@ def merge_todo_done_line(
     category: str,
     text: str,
     when: datetime | None = None,
+    todo_id: str = "",
 ) -> dict:
-    """Append a todo-completion line into today's category notes."""
+    """Append a todo-completion line into category notes (idempotent per todo id)."""
     day = entries.setdefault(date_str, {})
     existing = dict(day.get(category) or {})
-    line = format_todo_done_note(text=text, when=when)
     prev = (existing.get("notes") or "").strip()
+    if todo_done_note_present(prev, text, todo_id=todo_id):
+        return entries
+    line = format_todo_done_note(text=text, when=when, todo_id=todo_id)
     notes = f"{line}\n\n{prev}" if prev else line
     day[category] = {
         "rating": existing.get("rating", 5),
@@ -173,3 +251,50 @@ def merge_todo_done_line(
     if existing.get("backdate_reason"):
         day[category]["backdate_reason"] = existing["backdate_reason"]
     return entries
+
+
+def backfill_todo_done_entries(
+    entries: dict,
+    todos_store: dict,
+    *,
+    today: str,
+) -> tuple[dict, int]:
+    """
+    For done todos that already have a category, ensure a day-entry note exists.
+
+    Uses completed_at as the note day. Skips when completed_at is empty (do not
+    invent today or scheduled work_date). Skips when `(#todo_id)` is already
+    present on any day for that category. Skips todos with no category.
+    Returns (entries, number_of_lines_added).
+    """
+    import todos as todos_mod
+
+    _ = today  # call-site compat; dating requires completed_at
+    added = 0
+    for item in todos_mod.list_items(todos_store):
+        if not item.get("done"):
+            continue
+        category = (item.get("category") or "").strip()
+        if not category:
+            continue
+        text = (item.get("text") or "").strip() or "Todo"
+        todo_id = (item.get("id") or "").strip()
+        date_str = (item.get("completed_at") or "").strip()
+        if not date_str:
+            # Without completed_at we cannot know the real completion day;
+            # skip rather than invent today or use scheduled work_date.
+            continue
+        _legacy, id_set = _scan_todo_done_notes(
+            entries, category=category, text=text
+        )
+        if todo_id and todo_id in id_set:
+            continue
+        merge_todo_done_line(
+            entries,
+            date_str=date_str,
+            category=category,
+            text=text,
+            todo_id=todo_id,
+        )
+        added += 1
+    return entries, added

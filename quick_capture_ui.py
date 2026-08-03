@@ -418,16 +418,63 @@ def _todo_row(
     def on_toggle() -> None:
         was_done = bool(item["done"])
         now_done = bool(done_var.get())
-        tracker.todos = todos.update_todo(tracker.todos, item["id"], done=now_done)
-        if now_done and not was_done and item.get("category"):
+        if now_done and not was_done:
+            category = (item.get("category") or "").strip()
+            if not category:
+                # Need a life domain before this can count as day activity (#72).
+                done_var.set(False)
+                pick_open = getattr(win, "_todo_category_pick_open", None)
+                if pick_open is None:
+                    pick_open = set()
+                    win._todo_category_pick_open = pick_open
+                tid = item["id"]
+                if tid in pick_open:
+                    return
+                pick_open.add(tid)
+
+                def after_pick(chosen: str) -> None:
+                    tracker.todos = todos.update_todo(
+                        tracker.todos,
+                        item["id"],
+                        category=chosen,
+                        done=True,
+                    )
+                    quick_capture.merge_todo_done_line(
+                        tracker.entries,
+                        date_str=tracker.today_str(),
+                        category=chosen,
+                        text=item["text"],
+                        todo_id=item["id"],
+                    )
+                    tracker._invalidate_caches()
+                    tracker.refresh_dashboard(full=False)
+                    persist()
+                    rebuild()
+
+                _pick_category_for_todo_dialog(
+                    tracker,
+                    item,
+                    categories or [],
+                    after_pick,
+                    win,
+                    on_closed=lambda: pick_open.discard(tid),
+                )
+                return
+            tracker.todos = todos.update_todo(tracker.todos, item["id"], done=True)
             quick_capture.merge_todo_done_line(
                 tracker.entries,
                 date_str=tracker.today_str(),
-                category=item["category"],
+                category=category,
                 text=item["text"],
+                todo_id=item["id"],
             )
             tracker._invalidate_caches()
             tracker.refresh_dashboard(full=False)
+            persist()
+            rebuild()
+            return
+
+        tracker.todos = todos.update_todo(tracker.todos, item["id"], done=now_done)
         persist()
         rebuild()
 
@@ -464,6 +511,77 @@ def _todo_row(
     if item.get("category"):
         label = f"{label}  [{item['category']}]"
     ttk.Label(row, text=label, wraplength=200).pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+
+def _pick_category_for_todo_dialog(
+    tracker, item, categories, on_picked, parent, *, on_closed=None
+) -> None:
+    """Ask for a life domain when completing a todo that has none (#72)."""
+    theme = tracker.theme
+    dlg = tk.Toplevel(parent)
+    dlg.title("Choose life domain")
+    dlg.configure(bg=theme["bg"])
+    dlg.transient(parent)
+    dlg.attributes("-topmost", True)
+    dlg.geometry("400x200")
+    closed = {"done": False}
+
+    def _notify_closed() -> None:
+        if closed["done"]:
+            return
+        closed["done"] = True
+        if on_closed:
+            on_closed()
+
+    body = ttk.Frame(dlg, padding=12)
+    body.pack(fill=tk.BOTH, expand=True)
+    ttk.Label(
+        body,
+        text=(
+            f"“{item.get('text') or 'Todo'}” needs a life domain so it can "
+            "count as today’s activity (same idea as Link → day entry)."
+        ),
+        wraplength=360,
+    ).pack(anchor="w", pady=(0, 8))
+    ttk.Label(body, text="Life domain").pack(anchor="w")
+    cat_var = tk.StringVar(value="")
+    cat_combo = ttk.Combobox(body, textvariable=cat_var)
+    cat_combo.pack(fill=tk.X, pady=(0, 10))
+    bind_category_typeahead(cat_combo, list(categories or []), allow_blank=False)
+
+    btns = ttk.Frame(body)
+    btns.pack(fill=tk.X, pady=(8, 0))
+
+    def cancel() -> None:
+        _notify_closed()
+        dlg.destroy()
+
+    def confirm() -> None:
+        category = resolve_category_name(
+            cat_var.get(), list(categories or []), allow_blank=False
+        )
+        if not category:
+            messagebox.showwarning(
+                "Choose life domain",
+                "Pick a life domain from the list.",
+                parent=dlg,
+            )
+            return
+        _notify_closed()
+        dlg.destroy()
+        on_picked(category)
+
+    ttk.Button(btns, text="Cancel", command=cancel).pack(side=tk.RIGHT)
+    ttk.Button(btns, text="Complete", style="Accent.TButton", command=confirm).pack(
+        side=tk.RIGHT, padx=(0, 8)
+    )
+    dlg.protocol("WM_DELETE_WINDOW", cancel)
+    dlg.bind("<Destroy>", lambda e: _notify_closed() if e.widget is dlg else None)
+    try:
+        dlg.grab_set()
+    except tk.TclError:
+        pass
+    cat_combo.focus_set()
 
 
 def _edit_todo_dialog(tracker, item, categories, on_saved, parent) -> None:
