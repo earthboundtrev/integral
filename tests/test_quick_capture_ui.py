@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import inspect
 import tkinter as tk
 import unittest
 from unittest import mock
 
 import quick_capture_ui
+from personal_dev_tracker import PersonalDevelopmentTracker
 
 
 class TestQuickCaptureUi(unittest.TestCase):
@@ -56,6 +58,21 @@ class TestQuickCaptureUi(unittest.TestCase):
             win.destroy()
         finally:
             root.destroy()
+
+    def test_dashboard_wires_quick_capture_on_today_log_and_footer(self):
+        """#76 — Today's Log strip + footer both expose Quick Capture."""
+        today_src = inspect.getsource(PersonalDevelopmentTracker.create_todays_log_bar)
+        footer_src = inspect.getsource(PersonalDevelopmentTracker.create_dashboard)
+        self.assertIn('text="Quick Capture"', today_src)
+        self.assertIn("toggle_quick_capture", today_src)
+        journal = today_src.find('text="Journal"')
+        more = today_src.find('text="More…')
+        self.assertGreaterEqual(journal, 0)
+        self.assertGreater(more, journal)
+        between = today_src[journal:more]
+        self.assertIn('text="Quick Capture"', between)
+        self.assertIn('text="Quick Capture"', footer_src)
+        self.assertIn("toggle_quick_capture", footer_src)
 
 
 if __name__ == "__main__":

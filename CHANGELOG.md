@@ -4,6 +4,7 @@
 
 ### Added
 
+- **Quick Capture on Today's Log (#76)** — open the panel from the top action strip next to Journal / More… (footer control unchanged)
 - **Exercise log recent-session carousel (#74)** — while logging, flip through past-week numbers for the selected exercise with a simple ↑/→/↓ cue vs the prior session (companion to Graphs, not a replacement)
 
 ### Fixed
