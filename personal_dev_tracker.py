@@ -854,6 +854,12 @@ class PersonalDevelopmentTracker:
         ttk.Button(
             actions, text="Journal", style="Accent.TButton", command=self.show_journal
         ).pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Button(
+            actions,
+            text="Quick Capture",
+            style="Accent.TButton",
+            command=self.toggle_quick_capture,
+        ).pack(side=tk.LEFT, padx=(0, 8))
 
         more = ttk.Menubutton(actions, text="More…")
         more_menu = tk.Menu(more, tearoff=0)
