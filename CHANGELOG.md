@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- **Todo complete needs a domain to count as day activity (#72)** — checking off a Quick Capture todo without a category opens a picker; with a category it still writes `[Todo done …]` to that day’s life-domain notes (like Link → YouTube). One-shot backfill for already-done todos that already had a category
+
 ## 0.3.11.5.2 — 2026-07-29
 
 ### Fixed

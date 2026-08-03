@@ -101,3 +101,43 @@ def test_finish_merges_category_notes():
     assert "[Todo done 15:05] File taxes" in notes
     assert "Earlier note" in notes
     assert entries["2026-07-20"]["Admin"]["rating"] == 6
+
+
+def test_merge_todo_done_line_idempotent():
+    entries = {}
+    quick_capture.merge_todo_done_line(
+        entries, date_str="2026-07-20", category="Admin", text="File taxes"
+    )
+    first = entries["2026-07-20"]["Admin"]["notes"]
+    quick_capture.merge_todo_done_line(
+        entries, date_str="2026-07-20", category="Admin", text="File taxes"
+    )
+    assert entries["2026-07-20"]["Admin"]["notes"] == first
+
+
+def test_update_todo_sets_completed_at():
+    store = todos.add_todo(todos.empty_todos(), text="X", work_date="2026-07-20")
+    tid = store["items"][0]["id"]
+    store = todos.update_todo(store, tid, done=True)
+    assert store["items"][0]["done"] is True
+    assert store["items"][0]["completed_at"]
+    store = todos.update_todo(store, tid, done=False)
+    assert store["items"][0]["completed_at"] == ""
+
+
+def test_backfill_todo_done_entries_skips_uncategorized():
+    store = todos.empty_todos()
+    store = todos.add_todo(
+        store, text="Has cat", work_date="2026-07-18", category="Admin", done=True
+    )
+    store = todos.add_todo(store, text="No cat", work_date="2026-07-18", done=True)
+    # Force completed_at for stable backfill date
+    store["items"][0]["completed_at"] = "2026-07-19"
+    store["items"][1]["completed_at"] = "2026-07-19"
+    store = todos.normalize_todos(store)
+    entries, added = quick_capture.backfill_todo_done_entries(
+        {}, store, today="2026-07-20"
+    )
+    assert added == 1
+    assert "Has cat" in entries["2026-07-19"]["Admin"]["notes"]
+    assert "2026-07-19" not in entries or "No cat" not in str(entries)
