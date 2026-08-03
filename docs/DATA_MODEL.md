@@ -238,5 +238,6 @@ Index key in `data.json`: `todos` → `{ "items": [ … ] }`. Normalized by `tod
 `entries[today][category].notes` (same family as Link → day entry / YouTube notes). If `category`
 is empty, Quick Capture opens a picker dialog; Cancel leaves the todo incomplete. A one-shot
 backfill (`settings.quick_capture.todo_done_entries_backfilled`) adds missing notes for already-done
-todos that have a category (`completed_at` → `work_date` → today).
+todos that have a category and `completed_at`, keyed by `(#todo_id)` so identical task text can still
+log separately. Todos without `completed_at` are skipped (no invented day).
 

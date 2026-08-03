@@ -423,6 +423,14 @@ def _todo_row(
             if not category:
                 # Need a life domain before this can count as day activity (#72).
                 done_var.set(False)
+                pick_open = getattr(win, "_todo_category_pick_open", None)
+                if pick_open is None:
+                    pick_open = set()
+                    win._todo_category_pick_open = pick_open
+                tid = item["id"]
+                if tid in pick_open:
+                    return
+                pick_open.add(tid)
 
                 def after_pick(chosen: str) -> None:
                     tracker.todos = todos.update_todo(
@@ -436,6 +444,7 @@ def _todo_row(
                         date_str=tracker.today_str(),
                         category=chosen,
                         text=item["text"],
+                        todo_id=item["id"],
                     )
                     tracker._invalidate_caches()
                     tracker.refresh_dashboard(full=False)
@@ -448,6 +457,7 @@ def _todo_row(
                     categories or [],
                     after_pick,
                     win,
+                    on_closed=lambda: pick_open.discard(tid),
                 )
                 return
             tracker.todos = todos.update_todo(tracker.todos, item["id"], done=True)
@@ -456,6 +466,7 @@ def _todo_row(
                 date_str=tracker.today_str(),
                 category=category,
                 text=item["text"],
+                todo_id=item["id"],
             )
             tracker._invalidate_caches()
             tracker.refresh_dashboard(full=False)
@@ -502,7 +513,9 @@ def _todo_row(
     ttk.Label(row, text=label, wraplength=200).pack(side=tk.LEFT, fill=tk.X, expand=True)
 
 
-def _pick_category_for_todo_dialog(tracker, item, categories, on_picked, parent) -> None:
+def _pick_category_for_todo_dialog(
+    tracker, item, categories, on_picked, parent, *, on_closed=None
+) -> None:
     """Ask for a life domain when completing a todo that has none (#72)."""
     theme = tracker.theme
     dlg = tk.Toplevel(parent)
@@ -511,6 +524,14 @@ def _pick_category_for_todo_dialog(tracker, item, categories, on_picked, parent)
     dlg.transient(parent)
     dlg.attributes("-topmost", True)
     dlg.geometry("400x200")
+    closed = {"done": False}
+
+    def _notify_closed() -> None:
+        if closed["done"]:
+            return
+        closed["done"] = True
+        if on_closed:
+            on_closed()
 
     body = ttk.Frame(dlg, padding=12)
     body.pack(fill=tk.BOTH, expand=True)
@@ -532,6 +553,7 @@ def _pick_category_for_todo_dialog(tracker, item, categories, on_picked, parent)
     btns.pack(fill=tk.X, pady=(8, 0))
 
     def cancel() -> None:
+        _notify_closed()
         dlg.destroy()
 
     def confirm() -> None:
@@ -545,6 +567,7 @@ def _pick_category_for_todo_dialog(tracker, item, categories, on_picked, parent)
                 parent=dlg,
             )
             return
+        _notify_closed()
         dlg.destroy()
         on_picked(category)
 
@@ -553,6 +576,11 @@ def _pick_category_for_todo_dialog(tracker, item, categories, on_picked, parent)
         side=tk.RIGHT, padx=(0, 8)
     )
     dlg.protocol("WM_DELETE_WINDOW", cancel)
+    dlg.bind("<Destroy>", lambda e: _notify_closed() if e.widget is dlg else None)
+    try:
+        dlg.grab_set()
+    except tk.TclError:
+        pass
     cat_combo.focus_set()
 
 

@@ -96,9 +96,10 @@ def test_finish_merges_category_notes():
         category="Admin",
         text="File taxes",
         when=__import__("datetime").datetime(2026, 7, 20, 15, 5),
+        todo_id="abc123",
     )
     notes = entries["2026-07-20"]["Admin"]["notes"]
-    assert "[Todo done 15:05] File taxes" in notes
+    assert "[Todo done 15:05] File taxes (#abc123)" in notes
     assert "Earlier note" in notes
     assert entries["2026-07-20"]["Admin"]["rating"] == 6
 
@@ -106,13 +107,111 @@ def test_finish_merges_category_notes():
 def test_merge_todo_done_line_idempotent():
     entries = {}
     quick_capture.merge_todo_done_line(
-        entries, date_str="2026-07-20", category="Admin", text="File taxes"
+        entries,
+        date_str="2026-07-20",
+        category="Admin",
+        text="File taxes",
+        todo_id="abc123",
     )
     first = entries["2026-07-20"]["Admin"]["notes"]
     quick_capture.merge_todo_done_line(
-        entries, date_str="2026-07-20", category="Admin", text="File taxes"
+        entries,
+        date_str="2026-07-20",
+        category="Admin",
+        text="File taxes",
+        todo_id="abc123",
     )
     assert entries["2026-07-20"]["Admin"]["notes"] == first
+
+
+def test_merge_allows_same_text_different_todo_ids():
+    entries = {}
+    quick_capture.merge_todo_done_line(
+        entries, date_str="2026-07-20", category="Admin", text="Buy", todo_id="a1"
+    )
+    quick_capture.merge_todo_done_line(
+        entries, date_str="2026-07-20", category="Admin", text="Buy", todo_id="b2"
+    )
+    notes = entries["2026-07-20"]["Admin"]["notes"]
+    assert "(#a1)" in notes
+    assert "(#b2)" in notes
+
+
+def test_todo_done_note_present_requires_exact_text():
+    notes = "[Todo done 15:05] Buy milk"
+    assert quick_capture.todo_done_note_present(notes, "Buy milk")
+    assert not quick_capture.todo_done_note_present(notes, "Buy")
+    assert not quick_capture.todo_done_note_present(notes, "Buy milk please")
+    assert not quick_capture.todo_done_note_present(notes, "Buy milk", todo_id="zzz")
+
+
+def test_backfill_skips_without_completed_at():
+    store = todos.empty_todos()
+    store = todos.add_todo(
+        store, text="Old done", work_date="2026-07-18", category="Admin", done=True
+    )
+    store["items"][0]["completed_at"] = ""
+    store = todos.normalize_todos(store)
+    entries, added = quick_capture.backfill_todo_done_entries(
+        {}, store, today="2026-07-25"
+    )
+    assert added == 0
+    assert entries == {}
+
+    store = todos.empty_todos()
+    store = todos.add_todo(
+        store, text="Early", work_date="2026-07-28", category="Admin", done=True
+    )
+    store["items"][0]["completed_at"] = ""
+    store = todos.normalize_todos(store)
+    # Existing note on the real completion day (before completed_at existed)
+    entries = {
+        "2026-07-20": {
+            "Admin": {
+                "rating": 5,
+                "checklist": {},
+                "metrics": {},
+                "notes": "[Todo done 10:00] Early",
+            }
+        }
+    }
+    entries, added = quick_capture.backfill_todo_done_entries(
+        entries, store, today="2026-07-25"
+    )
+    assert added == 0
+    assert "2026-07-28" not in entries
+
+
+def test_backfill_same_text_second_todo_gets_note():
+    store = todos.empty_todos()
+    store = todos.add_todo(
+        store, text="Buy", work_date="2026-07-18", category="Admin", done=True
+    )
+    store = todos.add_todo(
+        store, text="Buy", work_date="2026-07-18", category="Admin", done=True
+    )
+    store["items"][0]["completed_at"] = "2026-07-19"
+    store["items"][1]["completed_at"] = "2026-07-19"
+    store = todos.normalize_todos(store)
+    id_a, id_b = store["items"][0]["id"], store["items"][1]["id"]
+    entries = {
+        "2026-07-19": {
+            "Admin": {
+                "rating": 5,
+                "checklist": {},
+                "metrics": {},
+                "notes": "[Todo done 09:00] Buy",
+            }
+        }
+    }
+    entries, added = quick_capture.backfill_todo_done_entries(
+        entries, store, today="2026-07-20"
+    )
+    # Legacy text-only lines do not claim a todo id — both get id-tagged notes.
+    assert added == 2
+    notes = entries["2026-07-19"]["Admin"]["notes"]
+    assert f"(#{id_a})" in notes
+    assert f"(#{id_b})" in notes
 
 
 def test_update_todo_sets_completed_at():
@@ -140,4 +239,5 @@ def test_backfill_todo_done_entries_skips_uncategorized():
     )
     assert added == 1
     assert "Has cat" in entries["2026-07-19"]["Admin"]["notes"]
+    assert "(#" in entries["2026-07-19"]["Admin"]["notes"]
     assert "2026-07-19" not in entries or "No cat" not in str(entries)
