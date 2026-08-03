@@ -70,7 +70,7 @@ User data (runtime):
 | `summaries.py` | Today/week/month aggregation |
 | `charts.py` | Lazy matplotlib; cache figures |
 | `storage.py` | JSON load/save; future SQLite adapter |
-| `progression/` | Graph model, mastery evaluator, unlock engine |
+| `progression/` | Graph model, mastery evaluator, unlock engine; `recent_compare` for mid-log session carousel |
 | `progression/seed/` | CC, OG, SS, FTR exercise + edge data |
 
 ### Layering Rules

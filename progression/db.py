@@ -486,6 +486,44 @@ class FitnessRepository:
             for row in rows
         ]
 
+    def list_sessions_for_exercise_between(
+        self,
+        exercise_id: str,
+        *,
+        start_date: str,
+        end_date: str,
+        limit: int = 100,
+    ) -> list[WorkoutSession]:
+        """Sessions in [start_date, end_date] that include sets for exercise_id (newest first)."""
+        self.initialize()
+        eid = (exercise_id or "").strip()
+        if not eid:
+            return []
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT DISTINCT s.id, s.date, s.notes, s.duration_minutes, s.body_weight_kg
+                FROM workout_sessions s
+                INNER JOIN workout_sets w ON w.session_id = s.id
+                WHERE w.exercise_id = ?
+                  AND s.date >= ?
+                  AND s.date <= ?
+                ORDER BY s.date DESC, s.id DESC
+                LIMIT ?
+                """,
+                (eid, start_date, end_date, limit),
+            ).fetchall()
+        return [
+            WorkoutSession(
+                id=row["id"],
+                date=row["date"],
+                notes=row["notes"],
+                duration_minutes=row["duration_minutes"],
+                body_weight_kg=row["body_weight_kg"],
+            )
+            for row in rows
+        ]
+
     def count_workout_sessions_by_date(self, *, limit: int = 2000) -> dict[str, int]:
         """Aggregate session counts by date without hydrating WorkoutSession rows."""
         self.initialize()

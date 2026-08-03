@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- **Exercise log recent-session carousel (#74)** — while logging, flip through past-week numbers for the selected exercise with a simple ↑/→/↓ cue vs the prior session (companion to Graphs, not a replacement)
+
 ### Fixed
 
 - **Todo complete needs a domain to count as day activity (#72)** — checking off a Quick Capture todo without a category opens a picker; with a category it still writes `[Todo done …]` to that day’s life-domain notes (like Link → YouTube). One-shot backfill for already-done todos that have a category and `completed_at`

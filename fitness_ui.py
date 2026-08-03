@@ -119,6 +119,7 @@ def mount_live_exercise_search(
     *,
     height: int = 8,
     focus: bool = True,
+    on_selection_change=None,
 ) -> dict:
     """Search-as-you-type exercise picker; filters on every keystroke."""
     import tkinter as tk
@@ -151,6 +152,18 @@ def mount_live_exercise_search(
 
     filtered_rows: list[dict] = []
     require_explicit_selection = False
+    last_notified_id: str | None = object()  # type: ignore[assignment]
+
+    def notify_selection(*, force: bool = False) -> None:
+        nonlocal last_notified_id
+        if on_selection_change is None:
+            return
+        row = get_selected_row()
+        eid = row["id"] if row else None
+        if not force and eid == last_notified_id:
+            return
+        last_notified_id = eid
+        on_selection_change(row)
 
     def refresh(*_args) -> None:
         nonlocal filtered_rows
@@ -171,6 +184,7 @@ def mount_live_exercise_search(
             listbox.selection_set(0)
             listbox.activate(0)
             listbox.see(0)
+        notify_selection()
 
     def get_selected_row() -> dict | None:
         selection = listbox.curselection()
@@ -189,11 +203,13 @@ def mount_live_exercise_search(
         nonlocal require_explicit_selection
         require_explicit_selection = True
         listbox.selection_clear(0, tk.END)
+        notify_selection(force=True)
 
     def mark_explicit_pick(_event=None) -> None:
         nonlocal require_explicit_selection
         if listbox.curselection():
             require_explicit_selection = False
+        notify_selection()
 
     def focus_results(_event=None):
         if not filtered_rows:
@@ -220,6 +236,133 @@ def mount_live_exercise_search(
         "get_selected_row": get_selected_row,
         "clear_selection": clear_selection,
         "refresh": refresh,
+    }
+
+
+def mount_recent_exercise_carousel(
+    parent,
+    repo: FitnessRepository,
+    *,
+    as_of_getter=None,
+    window_days: int = 7,
+    padding=(0, 0),
+) -> dict:
+    """Compact ←/→ strip of recent sessions for the selected exercise (#74 / SPEC-212)."""
+    import tkinter as tk
+    from tkinter import ttk
+
+    from progression.recent_compare import (
+        DEFAULT_WINDOW_DAYS,
+        format_snapshot_card,
+        is_valid_as_of,
+        progress_cues_for_snapshots,
+        recent_exercise_snapshots,
+    )
+
+    days = window_days if window_days > 0 else DEFAULT_WINDOW_DAYS
+    frame = ttk.LabelFrame(
+        parent,
+        text=f"Recent sessions ({days} days)",
+        padding=8,
+    )
+    if padding != (0, 0):
+        frame.pack(fill=tk.X, padx=padding[0], pady=padding[1])
+    else:
+        frame.pack(fill=tk.X, pady=(0, 8))
+
+    nav = ttk.Frame(frame)
+    nav.pack(fill=tk.X)
+    idx_var = tk.StringVar(value="0 / 0")
+    card_var = tk.StringVar(value="Select an exercise to compare recent numbers.")
+    cue_var = tk.StringVar(value="")
+
+    state: dict = {"index": 0, "snapshots": [], "cues": [], "exercise_id": ""}
+
+    def _render() -> None:
+        snaps = state["snapshots"]
+        if not snaps:
+            idx_var.set("0 / 0")
+            return
+        i = max(0, min(state["index"], len(snaps) - 1))
+        state["index"] = i
+        idx_var.set(f"{i + 1} / {len(snaps)}")
+        card_var.set(format_snapshot_card(snaps[i]))
+        cues = state["cues"]
+        cue_var.set(cues[i].label if i < len(cues) else "")
+
+    def prev_card() -> None:
+        if not state["snapshots"]:
+            return
+        state["index"] = (state["index"] - 1) % len(state["snapshots"])
+        _render()
+
+    def next_card() -> None:
+        if not state["snapshots"]:
+            return
+        state["index"] = (state["index"] + 1) % len(state["snapshots"])
+        _render()
+
+    ttk.Button(nav, text="←", width=3, command=prev_card).pack(side=tk.LEFT)
+    ttk.Label(nav, textvariable=idx_var).pack(side=tk.LEFT, padx=8)
+    ttk.Button(nav, text="→", width=3, command=next_card).pack(side=tk.LEFT)
+    ttk.Label(
+        frame,
+        textvariable=card_var,
+        wraplength=400,
+        justify=tk.LEFT,
+    ).pack(anchor="w", pady=(6, 2))
+    ttk.Label(frame, textvariable=cue_var, style="Muted.TLabel").pack(anchor="w")
+
+    def load_exercise(exercise_id: str | None) -> None:
+        eid = (exercise_id or "").strip()
+        as_of = None
+        if callable(as_of_getter):
+            try:
+                as_of = (as_of_getter() or "").strip() or None
+            except Exception:
+                as_of = None
+        same_exercise = state.get("exercise_id") == eid
+        prev_index = state["index"] if same_exercise else 0
+        state["exercise_id"] = eid
+        if not eid:
+            state["snapshots"] = []
+            state["cues"] = []
+            state["index"] = 0
+            card_var.set("Select an exercise to compare recent numbers.")
+            cue_var.set("")
+            idx_var.set("0 / 0")
+            return
+        if as_of and not is_valid_as_of(as_of):
+            state["snapshots"] = []
+            state["cues"] = []
+            state["index"] = 0
+            card_var.set("Finish the session date to load recent sessions.")
+            cue_var.set("")
+            idx_var.set("0 / 0")
+            return
+        snaps = recent_exercise_snapshots(
+            repo, eid, as_of=as_of, window_days=days
+        )
+        state["snapshots"] = snaps
+        state["cues"] = progress_cues_for_snapshots(snaps)
+        if not snaps:
+            state["index"] = 0
+            card_var.set("No sessions for this exercise in the past week.")
+            cue_var.set("")
+            idx_var.set("0 / 0")
+            return
+        state["index"] = max(0, min(prev_index, len(snaps) - 1))
+        _render()
+
+    frame.bind("<Left>", lambda _e: prev_card())
+    frame.bind("<Right>", lambda _e: next_card())
+
+    return {
+        "frame": frame,
+        "load_exercise": load_exercise,
+        "prev": prev_card,
+        "next": next_card,
+        "reload": lambda: load_exercise(state.get("exercise_id")),
     }
 
 
@@ -283,8 +426,8 @@ def open_log_dialog_for_exercise(
 
     dialog = tk.Toplevel(parent)
     dialog.title(f"Log: {exercise.name}")
-    dialog.geometry("460x540")
-    dialog.minsize(420, 420)
+    dialog.geometry("460x620")
+    dialog.minsize(420, 480)
     dialog.transient(parent)
     dialog.grab_set()
 
@@ -310,6 +453,16 @@ def open_log_dialog_for_exercise(
     hint = format_advancement_hint(repo, exercise, fitness_settings=settings)
     if hint:
         ttk.Label(inner, text=hint, wraplength=380, style="Muted.TLabel").pack(pady=(0, 6), padx=12)
+
+    carousel_host = ttk.Frame(inner, padding=(12, 0))
+    carousel_host.pack(fill=tk.X)
+    carousel = mount_recent_exercise_carousel(
+        carousel_host,
+        repo,
+        as_of_getter=lambda: date_var.get(),
+    )
+    carousel["load_exercise"](exercise_id)
+    date_var.trace_add("write", lambda *_a: carousel["reload"]())
 
     seed_key = exercise.metadata.get("seed_key", exercise.id)
     video = get_exercise_video(
@@ -425,8 +578,8 @@ def open_new_session_dialog(
 
     dialog = tk.Toplevel(parent)
     dialog.title("Log Exercise Session")
-    dialog.geometry("560x620")
-    dialog.minsize(500, 480)
+    dialog.geometry("560x720")
+    dialog.minsize(500, 520)
     dialog.transient(parent)
     dialog.grab_set()
 
@@ -467,11 +620,26 @@ def open_new_session_dialog(
         wraplength=500,
     ).pack(anchor="w", pady=6)
 
+    carousel = mount_recent_exercise_carousel(
+        form,
+        repo,
+        as_of_getter=lambda: date_var.get(),
+    )
+    date_var.trace_add("write", lambda *_a: carousel["reload"]())
+
     set_frame = ttk.LabelFrame(form, text="Add Set", padding=8)
     set_frame.pack(fill=tk.BOTH, expand=True, pady=4)
 
+    def on_exercise_picked(row) -> None:
+        carousel["load_exercise"](row["id"] if row else None)
+
     exercise_rows = list_exercise_rows(repo)
-    picker = mount_live_exercise_search(set_frame, exercise_rows, height=9)
+    picker = mount_live_exercise_search(
+        set_frame,
+        exercise_rows,
+        height=9,
+        on_selection_change=on_exercise_picked,
+    )
     picker["container"].pack(fill=tk.BOTH, expand=True, pady=(0, 8))
 
     metrics = ttk.Frame(set_frame)
