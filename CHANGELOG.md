@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.3.11.5.3 — 2026-08-03
+
 ### Added
 
 - **Quick Capture on Today's Log (#76)** — open the panel from the top action strip next to Journal / More… (footer control unchanged)
@@ -10,6 +12,16 @@
 ### Fixed
 
 - **Todo complete needs a domain to count as day activity (#72)** — checking off a Quick Capture todo without a category opens a picker; with a category it still writes `[Todo done …]` to that day’s life-domain notes (like Link → YouTube). One-shot backfill for already-done todos that have a category and `completed_at`
+
+### Notes
+
+- Replaces the previously yanked `0.3.11.5.3` place-scroll build with this feature release (#72 / #74 / #76)
+
+### Build
+
+- Windows app: `dist/Integral/Integral.exe`
+- Release zip: `Integral-v0.3.11.5.3-windows.zip`
+- User data: `%APPDATA%\Integral\data.json`
 
 ## 0.3.11.5.2 — 2026-07-29
 
