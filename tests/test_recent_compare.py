@@ -1,6 +1,5 @@
-"""SPEC-212 / #74 — recent exercise session compare helpers."""
+"""SPEC-212 / SPEC-213 — recent exercise session + volume compare helpers."""
 
-from dataclasses import replace
 from datetime import date, timedelta
 
 from progression.models import WorkoutSession, WorkoutSet
@@ -63,11 +62,43 @@ class _FakeRepo:
                 break
         return out
 
+    def list_sessions_for_exercise_upto(
+        self,
+        exercise_id: str,
+        *,
+        end_date: str,
+        limit: int = 40,
+    ) -> list[WorkoutSession]:
+        out = []
+        for session in self._sessions:
+            if session.date > end_date:
+                continue
+            if any(
+                (s.exercise_id or "") == exercise_id
+                for s in (self._sets.get(session.id) or [])
+            ):
+                out.append(session)
+            if len(out) >= limit:
+                break
+        return out
+
     def list_workout_sets(self, session_id: str) -> list[WorkoutSet]:
         return list(self._sets.get(session_id) or [])
 
 
-def test_aggregate_sums_sets_and_takes_max_load():
+def test_volume_1x11_reps():
+    score, kind = rc.compute_volume_score(sets=1, reps=11)
+    assert score == 11
+    assert kind == "reps"
+
+
+def test_volume_weighted():
+    score, kind = rc.compute_volume_score(sets=3, reps=10, weight_kg=20)
+    assert score == 600
+    assert kind == "weighted"
+
+
+def test_aggregate_sums_volume_across_rows():
     session = _session("2026-08-01")
     sets = [
         _set("s1", sets=2, reps=8, weight_kg=20, set_id="a"),
@@ -76,9 +107,18 @@ def test_aggregate_sums_sets_and_takes_max_load():
     snap = rc.aggregate_exercise_sets(session, sets)
     assert snap is not None
     assert snap.sets == 3
-    assert snap.reps == 10
-    assert snap.weight_kg == 25
-    assert snap.rows == 2
+    # 20*2*8 + 25*1*10 = 320 + 250
+    assert snap.volume == 570
+    assert snap.volume_kind == "weighted"
+
+
+def test_compare_volume_up_vs_last():
+    draft = rc.snapshot_from_draft(sets=1, reps=11)
+    prior = rc.snapshot_from_draft(sets=1, reps=10, session_id="old", date_str="2026-07-01")
+    cue = rc.compare_volume_to_prior(draft, prior)
+    assert cue.direction == "up"
+    assert cue.metric == "volume"
+    assert "↑" in cue.label
 
 
 def test_recent_window_filters_and_orders_newest_first():
@@ -101,7 +141,6 @@ def test_recent_window_filters_and_orders_newest_first():
         "se": [_set("se", set_id="3", weight_kg=20)],
         "so": [_set("so", set_id="4", weight_kg=10)],
     }
-    # repo returns newest first
     repo = _FakeRepo(sessions, sets)
     snaps = rc.recent_exercise_snapshots(
         repo, "ex1", as_of=today.isoformat(), window_days=7
@@ -110,67 +149,62 @@ def test_recent_window_filters_and_orders_newest_first():
     assert snaps[0].weight_kg == 30
 
 
-def test_compare_prefers_weight_then_reps_then_hold():
-    newer = rc.ExerciseSessionSnapshot("a", "2026-08-02", sets=3, reps=10, weight_kg=40)
-    older = rc.ExerciseSessionSnapshot("b", "2026-08-01", sets=3, reps=12, weight_kg=35)
+def test_history_includes_older_than_week():
+    today = date(2026, 8, 3)
+    old = (today - timedelta(days=30)).isoformat()
+    sessions = [
+        _session(today.isoformat(), "new"),
+        _session(old, "old"),
+    ]
+    sets = {
+        "new": [_set("new", sets=1, reps=10, set_id="n")],
+        "old": [_set("old", sets=1, reps=8, set_id="o")],
+    }
+    repo = _FakeRepo(sessions, sets)
+    hist = rc.exercise_history_snapshots(repo, "ex1", as_of=today.isoformat())
+    assert [s.session_id for s in hist] == ["new", "old"]
+    week = rc.recent_exercise_snapshots(
+        repo, "ex1", as_of=today.isoformat(), window_days=7
+    )
+    assert [s.session_id for s in week] == ["new"]
+
+
+def test_compare_prefers_volume_over_raw_metrics():
+    newer = rc.ExerciseSessionSnapshot(
+        "a", "2026-08-02", sets=1, reps=12, weight_kg=40, volume=480, volume_kind="weighted"
+    )
+    older = rc.ExerciseSessionSnapshot(
+        "b", "2026-08-01", sets=1, reps=10, weight_kg=40, volume=400, volume_kind="weighted"
+    )
     cue = rc.compare_to_prior(newer, older)
     assert cue.direction == "up"
-    assert cue.metric == "weight_kg"
-    assert "weight" in cue.label
-
-    flat = rc.compare_to_prior(newer, replace(older, weight_kg=40, reps=10))
-    assert flat.direction == "flat"
-
-    weight_tie_reps_up = rc.compare_to_prior(
-        rc.ExerciseSessionSnapshot("a", "2026-08-02", reps=12, weight_kg=40),
-        rc.ExerciseSessionSnapshot("b", "2026-08-01", reps=10, weight_kg=40),
-    )
-    assert weight_tie_reps_up.direction == "up"
-    assert weight_tie_reps_up.metric == "reps"
-
-    down_reps = rc.compare_to_prior(
-        rc.ExerciseSessionSnapshot("a", "2026-08-02", reps=8),
-        rc.ExerciseSessionSnapshot("b", "2026-08-01", reps=10),
-    )
-    assert down_reps.direction == "down"
-    assert down_reps.metric == "reps"
-
-    hold_up = rc.compare_to_prior(
-        rc.ExerciseSessionSnapshot("a", "2026-08-02", hold_seconds=40),
-        rc.ExerciseSessionSnapshot("b", "2026-08-01", hold_seconds=30),
-    )
-    assert hold_up.direction == "up"
-    assert hold_up.metric == "hold_seconds"
+    assert cue.metric == "volume"
 
 
 def test_progress_cues_align_with_newest_first_window():
     snaps = [
-        rc.ExerciseSessionSnapshot("a", "2026-08-03", weight_kg=50),
-        rc.ExerciseSessionSnapshot("b", "2026-08-02", weight_kg=45),
-        rc.ExerciseSessionSnapshot("c", "2026-08-01", weight_kg=45),
+        rc.ExerciseSessionSnapshot(
+            "a", "2026-08-03", volume=50, volume_kind="reps", reps=50, sets=1
+        ),
+        rc.ExerciseSessionSnapshot(
+            "b", "2026-08-02", volume=45, volume_kind="reps", reps=45, sets=1
+        ),
+        rc.ExerciseSessionSnapshot(
+            "c", "2026-08-01", volume=45, volume_kind="reps", reps=45, sets=1
+        ),
     ]
     cues = rc.progress_cues_for_snapshots(snaps)
     assert cues[0].direction == "up"
     assert cues[1].direction == "flat"
     assert cues[2].direction == "none"
-    assert "First" in cues[2].label
 
 
-def test_format_snapshot_card_scannable():
+def test_format_snapshot_card_includes_volume():
     text = rc.format_snapshot_card(
-        rc.ExerciseSessionSnapshot(
-            "a",
-            "2026-08-01",
-            sets=3,
-            reps=10,
-            weight_kg=20,
-            form_quality=8,
-        )
+        rc.snapshot_from_draft(sets=1, reps=11, date_str="2026-08-01")
     )
     assert text.startswith("2026-08-01")
-    assert "3 sets" in text
-    assert "10 reps" in text
-    assert "20 kg" in text
+    assert "11 rep·vol" in text
 
 
 def test_invalid_as_of_returns_no_snapshots():
@@ -180,12 +214,36 @@ def test_invalid_as_of_returns_no_snapshots():
         {"s1": [_set("s1")]},
     )
     assert rc.recent_exercise_snapshots(repo, "ex1", as_of="2026-08-") == []
+    assert rc.exercise_history_snapshots(repo, "ex1", as_of="2026-08-") == []
     assert rc.is_valid_as_of("2026-08-03")
     assert not rc.is_valid_as_of("2026-08-")
 
 
+def test_hold_preferred_over_default_reps():
+    score, kind = rc.compute_volume_score(sets=1, reps=10, hold_seconds=40)
+    assert kind == "hold"
+    assert score == 40
+    body = rc.snapshot_from_draft(sets=1, reps=11)
+    weighted = rc.snapshot_from_draft(sets=1, reps=10, weight_kg=20)
+    cue = rc.compare_volume_to_prior(weighted, body)
+    assert cue.direction == "none"
+    mixed = rc.compare_to_prior(weighted, body)
+    assert mixed.direction == "none"
+    assert "kinds differ" in mixed.label.lower()
+
+
+def test_snapshot_from_pending_items_sums_queue():
+    snap = rc.snapshot_from_pending_items(
+        [
+            {"sets": 1, "reps": 10},
+            {"sets": 1, "reps": 5},
+        ]
+    )
+    assert snap.volume == 15
+    assert snap.volume_kind == "reps"
+
+
 def test_recent_window_not_starved_by_newer_unrelated_sessions():
-    """Backdated as_of still finds in-window sets even with many newer sessions."""
     as_of = date(2026, 7, 1)
     newer = [
         _session((as_of + timedelta(days=i + 1)).isoformat(), f"n{i}")

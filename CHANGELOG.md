@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- **Exercise volume vs last log (#78)** — mid-log ↑/→/↓ on combined volume (sets×reps, or weight×sets×reps); click for a history carousel beyond the past week
+
 ## 0.3.11.5.3 — 2026-08-03
 
 ### Added

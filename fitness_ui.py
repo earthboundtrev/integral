@@ -244,25 +244,34 @@ def mount_recent_exercise_carousel(
     repo: FitnessRepository,
     *,
     as_of_getter=None,
+    draft_getter=None,
     window_days: int = 7,
     padding=(0, 0),
 ) -> dict:
-    """Compact ←/→ strip of recent sessions for the selected exercise (#74 / SPEC-212)."""
+    """
+    Mid-log volume strip vs last log (#78), with click-through history carousel.
+
+    ``window_days`` retained for API compat; history detail is not week-limited.
+    """
     import tkinter as tk
     from tkinter import ttk
 
     from progression.recent_compare import (
-        DEFAULT_WINDOW_DAYS,
+        DEFAULT_HISTORY_LIMIT,
+        compare_to_prior,
+        exercise_history_snapshots,
         format_snapshot_card,
+        format_volume,
         is_valid_as_of,
         progress_cues_for_snapshots,
-        recent_exercise_snapshots,
+        snapshot_from_draft,
+        snapshot_from_pending_items,
     )
 
-    days = window_days if window_days > 0 else DEFAULT_WINDOW_DAYS
+    _ = window_days
     frame = ttk.LabelFrame(
         parent,
-        text=f"Recent sessions ({days} days)",
+        text="Volume vs last log",
         padding=8,
     )
     if padding != (0, 0):
@@ -270,99 +279,182 @@ def mount_recent_exercise_carousel(
     else:
         frame.pack(fill=tk.X, pady=(0, 8))
 
-    nav = ttk.Frame(frame)
-    nav.pack(fill=tk.X)
-    idx_var = tk.StringVar(value="0 / 0")
-    card_var = tk.StringVar(value="Select an exercise to compare recent numbers.")
+    draft_var = tk.StringVar(value="Select an exercise to compare volume.")
     cue_var = tk.StringVar(value="")
+    state: dict = {
+        "exercise_id": "",
+        "history": [],
+        "prior": None,
+        "draft": None,
+        "cue": None,
+    }
 
-    state: dict = {"index": 0, "snapshots": [], "cues": [], "exercise_id": ""}
-
-    def _render() -> None:
-        snaps = state["snapshots"]
-        if not snaps:
-            idx_var.set("0 / 0")
-            return
-        i = max(0, min(state["index"], len(snaps) - 1))
-        state["index"] = i
-        idx_var.set(f"{i + 1} / {len(snaps)}")
-        card_var.set(format_snapshot_card(snaps[i]))
-        cues = state["cues"]
-        cue_var.set(cues[i].label if i < len(cues) else "")
-
-    def prev_card() -> None:
-        if not state["snapshots"]:
-            return
-        state["index"] = (state["index"] - 1) % len(state["snapshots"])
-        _render()
-
-    def next_card() -> None:
-        if not state["snapshots"]:
-            return
-        state["index"] = (state["index"] + 1) % len(state["snapshots"])
-        _render()
-
-    ttk.Button(nav, text="←", width=3, command=prev_card).pack(side=tk.LEFT)
-    ttk.Label(nav, textvariable=idx_var).pack(side=tk.LEFT, padx=8)
-    ttk.Button(nav, text="→", width=3, command=next_card).pack(side=tk.LEFT)
     ttk.Label(
         frame,
-        textvariable=card_var,
-        wraplength=400,
+        textvariable=draft_var,
+        wraplength=420,
         justify=tk.LEFT,
-    ).pack(anchor="w", pady=(6, 2))
-    ttk.Label(frame, textvariable=cue_var, style="Muted.TLabel").pack(anchor="w")
+    ).pack(anchor="w")
+    cue_row = ttk.Frame(frame)
+    cue_row.pack(fill=tk.X, pady=(6, 0))
+    cue_btn = ttk.Button(cue_row, textvariable=cue_var, command=lambda: None)
+    cue_btn.pack(side=tk.LEFT)
+
+    def _read_as_of() -> str | None:
+        if not callable(as_of_getter):
+            return None
+        try:
+            return (as_of_getter() or "").strip() or None
+        except Exception:
+            return None
+
+    def _read_draft():
+        if not callable(draft_getter):
+            return {}
+        try:
+            raw = draft_getter() or {}
+            return raw if isinstance(raw, dict) else {}
+        except Exception:
+            return {}
+
+    def _refresh_cue_only() -> None:
+        eid = state.get("exercise_id") or ""
+        if not eid:
+            return
+        as_of = _read_as_of()
+        if as_of and not is_valid_as_of(as_of):
+            draft_var.set("Finish the session date to compare volume.")
+            cue_var.set("")
+            try:
+                cue_btn.configure(state=tk.DISABLED)
+            except tk.TclError:
+                pass
+            return
+        draft = _read_draft()
+        if draft.get("pending_items") is not None:
+            snap = snapshot_from_pending_items(
+                list(draft.get("pending_items") or []),
+                date_str=as_of or "",
+            )
+        else:
+            snap = snapshot_from_draft(
+                sets=draft.get("sets"),
+                reps=draft.get("reps"),
+                weight_kg=draft.get("weight_kg"),
+                hold_seconds=draft.get("hold_seconds"),
+                date_str=as_of or "",
+            )
+        state["draft"] = snap
+        prior = state.get("prior")
+        if snap.volume is not None:
+            draft_var.set(f"Today volume: {format_volume(snap.volume, snap.volume_kind)}")
+        elif draft.get("pending_items"):
+            draft_var.set("Open details to compare prior sessions.")
+            cue_var.set("Open details")
+            state["cue"] = None
+            try:
+                cue_btn.configure(state=(tk.NORMAL if state.get("history") else tk.DISABLED))
+            except tk.TclError:
+                pass
+            return
+        else:
+            draft_var.set("Enter sets × reps (and weight if used) to compare volume.")
+        cue = compare_to_prior(snap, prior)
+        state["cue"] = cue
+        if cue.label:
+            cue_var.set(f"{cue.label}  ·  details")
+        else:
+            cue_var.set("No comparison yet")
+        has_history = bool(state.get("history"))
+        try:
+            cue_btn.configure(state=(tk.NORMAL if has_history else tk.DISABLED))
+        except tk.TclError:
+            pass
+
+    def _open_history_detail() -> None:
+        history = list(state.get("history") or [])
+        if not history:
+            return
+        dlg = tk.Toplevel(frame.winfo_toplevel())
+        dlg.title("Volume history")
+        dlg.transient(frame.winfo_toplevel())
+        dlg.geometry("420x240")
+        body = ttk.Frame(dlg, padding=12)
+        body.pack(fill=tk.BOTH, expand=True)
+        idx_var = tk.StringVar(value="")
+        card_var = tk.StringVar(value="")
+        hist_cue_var = tk.StringVar(value="")
+        cues = progress_cues_for_snapshots(history)
+        detail_state = {"index": 0}
+
+        def render() -> None:
+            i = detail_state["index"]
+            idx_var.set(f"{i + 1} / {len(history)}")
+            card_var.set(format_snapshot_card(history[i]))
+            hist_cue_var.set(cues[i].label if i < len(cues) else "")
+
+        def prev_card() -> None:
+            detail_state["index"] = (detail_state["index"] - 1) % len(history)
+            render()
+
+        def next_card() -> None:
+            detail_state["index"] = (detail_state["index"] + 1) % len(history)
+            render()
+
+        nav = ttk.Frame(body)
+        nav.pack(fill=tk.X)
+        ttk.Button(nav, text="←", width=3, command=prev_card).pack(side=tk.LEFT)
+        ttk.Label(nav, textvariable=idx_var).pack(side=tk.LEFT, padx=8)
+        ttk.Button(nav, text="→", width=3, command=next_card).pack(side=tk.LEFT)
+        ttk.Label(body, textvariable=card_var, wraplength=380, justify=tk.LEFT).pack(
+            anchor="w", pady=(10, 4)
+        )
+        ttk.Label(body, textvariable=hist_cue_var, style="Muted.TLabel").pack(anchor="w")
+        ttk.Button(body, text="Close", command=dlg.destroy).pack(anchor="e", pady=(12, 0))
+        dlg.bind("<Left>", lambda _e: prev_card())
+        dlg.bind("<Right>", lambda _e: next_card())
+        render()
+
+    cue_btn.configure(command=_open_history_detail)
 
     def load_exercise(exercise_id: str | None) -> None:
         eid = (exercise_id or "").strip()
-        as_of = None
-        if callable(as_of_getter):
-            try:
-                as_of = (as_of_getter() or "").strip() or None
-            except Exception:
-                as_of = None
-        same_exercise = state.get("exercise_id") == eid
-        prev_index = state["index"] if same_exercise else 0
+        as_of = _read_as_of()
         state["exercise_id"] = eid
         if not eid:
-            state["snapshots"] = []
-            state["cues"] = []
-            state["index"] = 0
-            card_var.set("Select an exercise to compare recent numbers.")
+            state["history"] = []
+            state["prior"] = None
+            draft_var.set("Select an exercise to compare volume.")
             cue_var.set("")
-            idx_var.set("0 / 0")
+            try:
+                cue_btn.configure(state=tk.DISABLED)
+            except tk.TclError:
+                pass
             return
         if as_of and not is_valid_as_of(as_of):
-            state["snapshots"] = []
-            state["cues"] = []
-            state["index"] = 0
-            card_var.set("Finish the session date to load recent sessions.")
+            draft_var.set("Finish the session date to compare volume.")
             cue_var.set("")
-            idx_var.set("0 / 0")
+            state["history"] = []
+            state["prior"] = None
+            try:
+                cue_btn.configure(state=tk.DISABLED)
+            except tk.TclError:
+                pass
             return
-        snaps = recent_exercise_snapshots(
-            repo, eid, as_of=as_of, window_days=days
+        history = exercise_history_snapshots(
+            repo, eid, as_of=as_of, limit=DEFAULT_HISTORY_LIMIT
         )
-        state["snapshots"] = snaps
-        state["cues"] = progress_cues_for_snapshots(snaps)
-        if not snaps:
-            state["index"] = 0
-            card_var.set("No sessions for this exercise in the past week.")
-            cue_var.set("")
-            idx_var.set("0 / 0")
-            return
-        state["index"] = max(0, min(prev_index, len(snaps) - 1))
-        _render()
-
-    frame.bind("<Left>", lambda _e: prev_card())
-    frame.bind("<Right>", lambda _e: next_card())
+        state["history"] = history
+        state["prior"] = history[0] if history else None
+        _refresh_cue_only()
 
     return {
         "frame": frame,
         "load_exercise": load_exercise,
-        "prev": prev_card,
-        "next": next_card,
         "reload": lambda: load_exercise(state.get("exercise_id")),
+        "refresh_draft": _refresh_cue_only,
+        "prev": lambda: None,
+        "next": lambda: None,
     }
 
 
@@ -454,16 +546,6 @@ def open_log_dialog_for_exercise(
     if hint:
         ttk.Label(inner, text=hint, wraplength=380, style="Muted.TLabel").pack(pady=(0, 6), padx=12)
 
-    carousel_host = ttk.Frame(inner, padding=(12, 0))
-    carousel_host.pack(fill=tk.X)
-    carousel = mount_recent_exercise_carousel(
-        carousel_host,
-        repo,
-        as_of_getter=lambda: date_var.get(),
-    )
-    carousel["load_exercise"](exercise_id)
-    date_var.trace_add("write", lambda *_a: carousel["reload"]())
-
     seed_key = exercise.metadata.get("seed_key", exercise.id)
     video = get_exercise_video(
         seed_key,
@@ -513,6 +595,27 @@ def open_log_dialog_for_exercise(
     ttk.Label(form_row, text="(1–10, 7+ to count toward unlock)", style="Muted.TLabel").pack(
         side=tk.LEFT, padx=(8, 0)
     )
+
+    def _draft_values() -> dict:
+        return {
+            "sets": sets_var.get(),
+            "reps": reps_var.get(),
+            "weight_kg": weight_var.get() if weight_var.get() > 0 else None,
+            "hold_seconds": hold_var.get() if hold_var.get() > 0 else None,
+        }
+
+    carousel_host = ttk.Frame(inner, padding=(12, 0))
+    carousel_host.pack(fill=tk.X, pady=(4, 0))
+    carousel = mount_recent_exercise_carousel(
+        carousel_host,
+        repo,
+        as_of_getter=lambda: date_var.get(),
+        draft_getter=_draft_values,
+    )
+    carousel["load_exercise"](exercise_id)
+    date_var.trace_add("write", lambda *_a: carousel["reload"]())
+    for _var in (sets_var, reps_var, hold_var, weight_var):
+        _var.trace_add("write", lambda *_a: carousel["refresh_draft"]())
 
     ttk.Label(
         inner,
@@ -620,18 +723,66 @@ def open_new_session_dialog(
         wraplength=500,
     ).pack(anchor="w", pady=6)
 
-    carousel = mount_recent_exercise_carousel(
-        form,
-        repo,
-        as_of_getter=lambda: date_var.get(),
-    )
-    date_var.trace_add("write", lambda *_a: carousel["reload"]())
+    pending_sets: list[dict] = []
+    picker_ref: dict = {}
+    carousel_ref: dict = {}
+    last_exercise_id: dict = {"id": ""}
+
+    def session_draft() -> dict:
+        from progression.recent_compare import compute_volume_score
+
+        picker = picker_ref.get("picker")
+        row = picker["get_selected_row"]() if picker else None
+        eid = row["id"] if row else None
+        items = [p for p in pending_sets if eid and p.get("exercise_id") == eid]
+        form_item = {
+            "exercise_id": eid,
+            "sets": sets_var.get(),
+            "reps": reps_var.get(),
+            "weight_kg": set_weight_var.get() if set_weight_var.get() > 0 else None,
+            "hold_seconds": hold_var.get() if hold_var.get() > 0 else None,
+        }
+        score, _kind = compute_volume_score(
+            sets=form_item["sets"],
+            reps=form_item["reps"],
+            weight_kg=form_item["weight_kg"],
+            hold_seconds=form_item["hold_seconds"],
+        )
+        if score is not None:
+            def _key(item: dict) -> tuple:
+                return (
+                    item.get("sets"),
+                    item.get("reps"),
+                    item.get("weight_kg"),
+                    item.get("hold_seconds"),
+                )
+
+            # Avoid double-counting after Add Set leaves the form unchanged.
+            if not items or _key(form_item) != _key(items[-1]):
+                items = list(items) + [form_item]
+        if not items:
+            return form_item
+        return {"pending_items": items}
 
     set_frame = ttk.LabelFrame(form, text="Add Set", padding=8)
     set_frame.pack(fill=tk.BOTH, expand=True, pady=4)
 
     def on_exercise_picked(row) -> None:
-        carousel["load_exercise"](row["id"] if row else None)
+        eid = row["id"] if row else ""
+        if eid and eid != last_exercise_id["id"]:
+            # Fresh defaults so the previous exercise's numbers are not reused.
+            sets_var.set(3)
+            reps_var.set(10)
+            hold_var.set(0.0)
+            set_weight_var.set(0.0)
+            last_exercise_id["id"] = eid
+        elif not eid:
+            last_exercise_id["id"] = ""
+        carousel = carousel_ref.get("carousel")
+        if carousel is None:
+            return
+        carousel["load_exercise"](eid or None)
+        carousel["refresh_draft"]()
 
     exercise_rows = list_exercise_rows(repo)
     picker = mount_live_exercise_search(
@@ -640,7 +791,23 @@ def open_new_session_dialog(
         height=9,
         on_selection_change=on_exercise_picked,
     )
+    picker_ref["picker"] = picker
     picker["container"].pack(fill=tk.BOTH, expand=True, pady=(0, 8))
+
+    carousel = mount_recent_exercise_carousel(
+        form,
+        repo,
+        as_of_getter=lambda: date_var.get(),
+        draft_getter=session_draft,
+    )
+    # Place volume strip above Add Set after both exist.
+    carousel["frame"].pack_forget()
+    carousel["frame"].pack(fill=tk.X, pady=(0, 8), before=set_frame)
+    carousel_ref["carousel"] = carousel
+    date_var.trace_add("write", lambda *_a: carousel["reload"]())
+    for _var in (sets_var, reps_var, hold_var, set_weight_var):
+        _var.trace_add("write", lambda *_a: carousel["refresh_draft"]())
+    on_exercise_picked(picker["get_selected_row"]())
 
     metrics = ttk.Frame(set_frame)
     metrics.pack(fill=tk.X)
@@ -655,7 +822,6 @@ def open_new_session_dialog(
         ttk.Label(row, text=f"{label}:", width=10).pack(side=tk.LEFT)
         ttk.Entry(row, textvariable=var, width=10).pack(side=tk.LEFT)
 
-    pending_sets: list[dict] = []
     ttk.Label(form, text="Queued sets (this session)").pack(anchor="w", pady=(8, 2))
     preview = tk.Listbox(form, height=6, exportselection=False)
     preview.pack(fill=tk.BOTH, expand=True, pady=(0, 4))
@@ -691,6 +857,7 @@ def open_new_session_dialog(
             item["weight_kg"] = set_weight_var.get()
         pending_sets.append(item)
         rebuild_preview()
+        carousel["refresh_draft"]()
 
     def remove_selected_set() -> None:
         selection = preview.curselection()
@@ -703,6 +870,7 @@ def open_new_session_dialog(
             return
         if remove_pending_set_at(pending_sets, int(selection[0])):
             rebuild_preview()
+            carousel["refresh_draft"]()
 
     def clear_exercise_selection() -> None:
         picker["clear_selection"]()
