@@ -2,9 +2,17 @@
 
 ## Unreleased
 
+## 0.3.11.5.4 — 2026-08-07
+
 ### Added
 
 - **Exercise volume vs last log (#78)** — mid-log ↑/→/↓ on combined volume (sets×reps, or weight×sets×reps); click for a history carousel beyond the past week
+
+### Build
+
+- Windows app: `dist/Integral/Integral.exe`
+- Release zip: `Integral-v0.3.11.5.4-windows.zip`
+- User data: `%APPDATA%\Integral\data.json`
 
 ## 0.3.11.5.3 — 2026-08-03
 
