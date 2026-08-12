@@ -2,9 +2,21 @@
 
 ## Unreleased
 
+## 0.3.11.5.4.1 — 2026-08-12
+
 ### Fixed
 
 - **Start Deep Work Start button clipped (#80)** — Quick Capture focus-shield dialog pins Start/Cancel in a footer and scrolls the long app list so Start stays reachable
+
+### Notes
+
+- README unchanged — bug-fix only (no new feature surface)
+
+### Build
+
+- Windows app: `dist/Integral/Integral.exe`
+- Release zip: `Integral-v0.3.11.5.4.1-windows.zip`
+- User data: `%APPDATA%\Integral\data.json`
 
 ## 0.3.11.5.4 — 2026-08-07
 
