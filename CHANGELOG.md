@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- **Start Deep Work Start button clipped (#80)** — Quick Capture focus-shield dialog pins Start/Cancel in a footer and scrolls the long app list so Start stays reachable
+
 ## 0.3.11.5.4 — 2026-08-07
 
 ### Added

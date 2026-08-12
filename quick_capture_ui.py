@@ -642,24 +642,33 @@ def _edit_todo_dialog(tracker, item, categories, on_saved, parent) -> None:
 
 
 def _show_deep_work_shield_dialog(tracker: PersonalDevelopmentTracker, *, parent) -> None:
+    """Start Deep Work with optional focus shield.
+
+    Uses a pinned footer + scrollable body so a long app list cannot clip Start
+    (#80). Same pattern as ``ui_scroll.create_dialog_shell`` / deep_work_ui.
+    """
     theme = tracker.theme
-    dlg = tk.Toplevel(parent)
-    dlg.title("Start Deep Work")
-    dlg.configure(bg=theme["bg"])
-    dlg.transient(parent)
+    dlg, body, footer, canvas, refresh_scroll = ui_scroll.create_dialog_shell(
+        parent,
+        title="Start Deep Work",
+        geometry="460x520",
+        minsize=(420, 360),
+        bg=theme["bg"],
+        transient=True,
+    )
     dlg.attributes("-topmost", True)
-    dlg.geometry("460x520")
+    style_canvas(canvas, theme)
 
     settings = dw.normalize_deep_work_settings(tracker.settings)
     minutes_var = tk.IntVar(value=int(settings["last_minutes"]))
     use_shield = tk.BooleanVar(value=focus_shield.is_supported())
 
-    body = ttk.Frame(dlg, padding=12)
-    body.pack(fill=tk.BOTH, expand=True)
-    ttk.Label(body, text="Duration (minutes)").pack(anchor="w")
-    ttk.Spinbox(body, from_=1, to=240, textvariable=minutes_var, width=8).pack(anchor="w", pady=4)
+    pad = ttk.Frame(body, padding=12)
+    pad.pack(fill=tk.BOTH, expand=True)
+    ttk.Label(pad, text="Duration (minutes)").pack(anchor="w")
+    ttk.Spinbox(pad, from_=1, to=240, textvariable=minutes_var, width=8).pack(anchor="w", pady=4)
 
-    shield_frame = ttk.LabelFrame(body, text="Focus shield — minimize these apps", padding=8)
+    shield_frame = ttk.LabelFrame(pad, text="Focus shield — minimize these apps", padding=8)
     shield_frame.pack(fill=tk.BOTH, expand=True, pady=(10, 0))
     ttk.Checkbutton(
         shield_frame,
@@ -710,10 +719,10 @@ def _show_deep_work_shield_dialog(tracker: PersonalDevelopmentTracker, *, parent
         dlg.destroy()
         tracker.start_deep_work(minutes, focus_minimize_windows=minimize or None)
 
-    footer = ttk.Frame(dlg, padding=12)
-    footer.pack(fill=tk.X, side=tk.BOTTOM)
     ttk.Button(footer, text="Start", style="Accent.TButton", command=on_start).pack(side=tk.LEFT)
     ttk.Button(footer, text="Cancel", command=dlg.destroy).pack(side=tk.RIGHT)
+    refresh_scroll()
+    dlg.update_idletasks()
 
 
 def close_quick_capture_panel(tracker: PersonalDevelopmentTracker) -> None:
