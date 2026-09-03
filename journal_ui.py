@@ -76,7 +76,8 @@ def show_journal_window(
 
     footer = ttk.Frame(win, padding=(16, 8, 16, 12))
     footer.pack(side=tk.BOTTOM, fill=tk.X)
-    ttk.Button(footer, text="Close", command=win.destroy).pack(side=tk.RIGHT)
+    close_btn = ttk.Button(footer, text="Close")
+    close_btn.pack(side=tk.RIGHT)
 
     header = ttk.Frame(win, padding=(16, 14, 16, 8))
     header.pack(side=tk.TOP, fill=tk.X)
@@ -135,6 +136,7 @@ def show_journal_window(
     title_var = tk.StringVar(value="")
     backdate_var = tk.StringVar(value="")
     editing_id: dict[str, str | None] = {"value": None}
+    external_path: dict[str, str | None] = {"value": None}
 
     row0 = ttk.Frame(editor, style="Surface.TFrame")
     row0.grid(row=0, column=0, sticky="ew", pady=(0, 6))
@@ -247,12 +249,33 @@ def show_journal_window(
             entry_list.selection_set(select_index)
             entry_list.see(select_index)
 
+    def abandon_external_edit_ok() -> bool:
+        if not external_path["value"]:
+            return True
+        return messagebox.askyesno(
+            "External edit in progress",
+            "You still have a system-editor draft for this journal body.\n\n"
+            "Leave without reloading? External edits that were not reloaded will be lost.",
+            parent=win,
+        )
+
     def load_selected(_event=None) -> None:
         selection = entry_list.curselection()
         if not selection:
             return
+        if not abandon_external_edit_ok():
+            # Listbox already moved selection; snap back to the editing entry.
+            entry_list.selection_clear(0, tk.END)
+            for index, item in enumerate(indexed_entries):
+                if item.get("id") == editing_id["value"]:
+                    entry_list.selection_set(index)
+                    entry_list.see(index)
+                    break
+            return
         item = indexed_entries[selection[0]]
         editing_id["value"] = item["id"]
+        external_path["value"] = None
+        body_text.configure(state=tk.NORMAL)
         date_var.set(item["entry_date"])
         prompt_var.set(item.get("prompt", journal.DEFAULT_PROMPTS[0]))
         title_var.set(item.get("title", ""))
@@ -264,7 +287,11 @@ def show_journal_window(
         refresh_backlinks()
 
     def clear_editor() -> None:
+        if not abandon_external_edit_ok():
+            return
         editing_id["value"] = None
+        external_path["value"] = None
+        body_text.configure(state=tk.NORMAL)
         date_var.set(datetime.now().strftime("%Y-%m-%d"))
         prompt_var.set(journal.DEFAULT_PROMPTS[0])
         title_var.set("")
@@ -298,7 +325,17 @@ def show_journal_window(
             parent=win,
         )
 
+    def journal_body_locked() -> bool:
+        return str(body_text.cget("state")) == "disabled"
+
     def insert_link() -> None:
+        if journal_body_locked():
+            messagebox.showinfo(
+                "Journal",
+                "Reload from system editor before inserting links.",
+                parent=win,
+            )
+            return
         picker = tk.Toplevel(win)
         picker.title("Insert link")
         picker.geometry("560x480")
@@ -378,6 +415,15 @@ def show_journal_window(
         ttk.Button(btns, text="Cancel", command=picker.destroy).pack(side=tk.LEFT, padx=8)
 
     def save_entry() -> None:
+        if str(body_text.cget("state")) == "disabled":
+            messagebox.showinfo(
+                "Journal",
+                "Journal body is locked for external editing. "
+                "Click Reload from system editor first (or New / pick another entry).",
+                parent=win,
+            )
+            return
+
         entry_date_value = date_var.get().strip()
         reason = backdate_var.get().strip()
         error = journal.validate_backdate(entry_date_value, reason=reason)
@@ -419,6 +465,8 @@ def show_journal_window(
         selection = entry_list.curselection()
         if not selection:
             return
+        if not abandon_external_edit_ok():
+            return
         item = indexed_entries[selection[0]]
         if not messagebox.askyesno("Delete entry", "Delete this journal entry?", parent=win):
             return
@@ -426,6 +474,8 @@ def show_journal_window(
         tracker._invalidate_caches()
         tracker.refresh_dashboard()
         tracker.save_data()
+        external_path["value"] = None
+        body_text.configure(state=tk.NORMAL)
         clear_editor()
         refresh_list()
 
@@ -440,6 +490,13 @@ def show_journal_window(
         load_selected()
 
     def fmt(action: str) -> None:
+        if journal_body_locked():
+            messagebox.showinfo(
+                "Journal",
+                "Reload from system editor before formatting.",
+                parent=win,
+            )
+            return
         if action == "bold":
             richtext.wrap_selection(body_text, "**")
         elif action == "italic":
@@ -482,6 +539,77 @@ def show_journal_window(
     ttk.Button(editor_btns, text="Clear", command=clear_editor).pack(side=tk.LEFT, padx=8)
     ttk.Button(editor_btns, text="Copy link", command=copy_link).pack(side=tk.LEFT, padx=8)
     ttk.Button(editor_btns, text="Insert link…", command=insert_link).pack(side=tk.LEFT)
+
+    def edit_in_system_editor() -> None:
+        import external_edit
+
+        if external_path["value"] and str(body_text.cget("state")) == "disabled":
+            try:
+                external_edit.open_path_with_default_app(external_path["value"])
+            except OSError as exc:
+                messagebox.showerror("Edit in system editor", str(exc), parent=win)
+                return
+            messagebox.showinfo(
+                "Edit in system editor",
+                "Reopened the same draft file. Save there, then Reload from system editor.",
+                parent=win,
+            )
+            return
+
+        draft = body_text.get("1.0", "end-1c")
+        try:
+            path = external_edit.write_temp_text(draft, suffix=".txt", prefix="integral-journal-")
+            external_edit.open_path_with_default_app(path)
+        except OSError as exc:
+            messagebox.showerror("Edit in system editor", str(exc), parent=win)
+            return
+        external_path["value"] = path
+        body_text.configure(state=tk.DISABLED)
+        messagebox.showinfo(
+            "Edit in system editor",
+            "Opened a draft in your default text app so Grammarly (or similar) can help.\n\n"
+            "Integral’s own text boxes cannot hook Grammarly (Tkinter limitation).\n\n"
+            "The journal body is locked here so you cannot overwrite external edits by accident. "
+            "Save the file in that app, then click Reload from system editor.",
+            parent=win,
+        )
+
+    def reload_from_system_editor() -> None:
+        import external_edit
+
+        path = external_path["value"]
+        if not path:
+            messagebox.showinfo(
+                "Reload from system editor",
+                "Use Edit in system editor… first.",
+                parent=win,
+            )
+            return
+        try:
+            loaded = external_edit.read_text_file(path)
+        except OSError as exc:
+            messagebox.showerror("Reload from system editor", str(exc), parent=win)
+            return
+        body_text.configure(state=tk.NORMAL)
+        body_text.delete("1.0", tk.END)
+        body_text.insert("1.0", loaded)
+        external_path["value"] = None
+        refresh_decorations()
+
+    ttk.Button(editor_btns, text="Edit in system editor…", command=edit_in_system_editor).pack(
+        side=tk.LEFT, padx=8
+    )
+    ttk.Button(
+        editor_btns, text="Reload from system editor", command=reload_from_system_editor
+    ).pack(side=tk.LEFT, padx=4)
+
+    def request_close() -> None:
+        if not abandon_external_edit_ok():
+            return
+        win.destroy()
+
+    close_btn.configure(command=request_close)
+    win.protocol("WM_DELETE_WINDOW", request_close)
 
     refresh_list(select_id=entry_id)
     if entry_id and journal.get_entry(tracker.journal, entry_id):

@@ -97,8 +97,8 @@ User data: `%APPDATA%\Integral\data.json` (encrypted optional via Data & Securit
 | **Practice reminders** | Set nudges for specific routines (e.g. "Five Tibetan Rites + 10 min breathing") at a chosen time; guidance also flags practice consistency (kept-up vs stalled) |
 | **Goals & alignment** | Quarterly milestones can link to a life domain and carry a simple progress %; journal reflection prompts for alignment, masking, autism self-understanding, and goals |
 | **AI insight focuses** | Optional local (Ollama) insight kinds for Vitality & Anti-Aging, Sleep & Hypersomnia, Neurodivergence & Alignment, and Life Alignment & Goals — reasoning over your domains, practices, symptoms, and journal, fully offline |
-| **Journal** | Prompts or free write; markdown-lite toolbar (bold/italic/headings/lists); backlinks; cross-links to journal/domain/fitness/writing; gap-day continuity; OS `integral://` paste |
-| **Writing Projects** | Novels/scripts library — inspiration + manuscript in separate windows; debounced autosave; stored under `%APPDATA%\Integral\creative\` |
+| **Journal** | Prompts or free write; markdown-lite toolbar (bold/italic/headings/lists); backlinks; cross-links to journal/domain/fitness/writing; gap-day continuity; OS `integral://` paste; **Edit in system editor** for Grammarly outside Tk |
+| **Writing Projects** | Novels/scripts library — inspiration + manuscript in separate windows; debounced autosave; stored under `%APPDATA%\Integral\creative\`; **Open externally** / **Reload from disk** |
 | **Creative/Mental Work** | Open Writing Projects from the category log; **Log writing session** marks creative progress for the day |
 | **Deep Work** | Focus timer (25 / 50 / 90 / custom); quieter nav; optional open a writing project; +10 min or end early |
 | **Activity** | GitHub-style contribution grid; click any day; smooth horizontal scroll |
@@ -195,6 +195,15 @@ Period options: **1** (today), **7**, or **30** days. Choosing an insight type a
 4. Open Integral and use **AI Insight** as above
 
 The first insight after a cold start can take 30–60 seconds while the model loads; later runs are faster. Integral runs fine without Ollama — this feature is entirely optional and skipped if the client or server is missing.
+
+### Grammarly / desktop writing assistants
+
+Grammarly Desktop (and similar tools) typically **cannot** underline or suggest inside Integral’s built-in text boxes. Integral uses **Tkinter** `Text` widgets, which Windows does not expose via the UI Automation Text Pattern Grammarly hooks (unlike Word, browsers, and many Electron apps). This is a toolkit limitation (ADR-001: Python + Tkinter), not a broken setting.
+
+**Workarounds in-app:**
+
+- **Journal** → **Edit in system editor…** — opens a draft in your default text app; reload when done
+- **Writing Projects** (Inspiration / Manuscript) → **Open externally…** then **Reload from disk** after saving in Word/Notepad/VS Code/etc.
 
 ## Documentation
 
