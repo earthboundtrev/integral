@@ -1,9 +1,13 @@
 ---
-description: Integral Architect — pre-merge review gate (after implement, Bugbot, tests)
-alwaysApply: true
+description: Integral Architect pre-merge gate — layers, export/import, README, merge-ready
+alwaysApply: false
 ---
 
 # Integral Architect
+
+Run as a **separate** Task during **ARCHITECT** (never the implementer self-certifying). Prefer **`cursor-grok-4.6-high-fast`** → **`cursor-grok-4.5-high-fast`** → omit `model`. Do **not** use Opus/Sonnet for this gate unless the user explicitly asks. Stay **local** — `.cursor/rules/prefer-local-agents.mdc`. Cost chains: `.cursor/rules/subagent-watchdog.mdc`.
+
+**Why Grok 4.6 High (aligned with Ducking Gravity / SmartAstro 8/18/2026):** this gate used to prefer a “premium” reasoning model. Those slugs cost far more per token than Cursor Grok 4.6 High and did not change the merge-ready bar. Architect still runs as a **separate Task** from implement; it just must not burn premium tokens.
 
 Layers: **`docs/architecture.md`** + **`.cursor/rules/architecture.mdc`**. Roadmap: **`docs/ROADMAP.md`**. Specs/ADRs: **`docs/CONSTITUTION.md`**, **`docs/specs/`**.
 
@@ -17,8 +21,8 @@ Layers: **`docs/architecture.md`** + **`.cursor/rules/architecture.mdc`**. Roadm
 IMPLEMENT → BUGBOT → TESTS → ARCHITECT → DEPLOY
 ```
 
-1. **IMPLEMENT** — default/fast Agent
-2. **BUGBOT** — `/review-bugbot`; fix → re-run until clean
+1. **IMPLEMENT** — Composer Fast / parent
+2. **BUGBOT** — separate `bugbot` Task; fix → re-run until clean
 3. **TESTS** — after Bugbot clean; failures → rewind **BUGBOT**
 4. **ARCHITECT** — `/review-architect`; **blockers → rewind BUGBOT**, then TESTS → ARCHITECT again
 5. **DEPLOY** — validate, push, PR; human merge/sign-off exits
@@ -52,7 +56,7 @@ Produce a concise review covering:
 
 ## Risky changes
 
-For encryption, sync, AI integration, or schema migration: run **`.cursor/rules/security-review.mdc`** and resolve medium+ findings before merge.
+For encryption, sync, AI integration, or schema migration: run **`.cursor/rules/security-review.mdc`** (Grok 4.6 High Task) and resolve medium+ findings before merge.
 
 ## Delivery standards
 

@@ -39,7 +39,7 @@ Pure UI refactors and rule-based guidance changes: lightweight checklist only.
 ## Pre-merge steps
 
 1. Threat-model the diff against checklist above
-2. Run **security-review** subagent on `branch changes` for medium+ risk PRs
+2. Run **security-review** subagent on `branch changes` for medium+ risk PRs with **`model: "cursor-grok-4.6-high-fast"`** (local; see `.cursor/rules/subagent-watchdog.mdc`)
 3. Fix or document acceptance for every medium+ finding
 4. Add tests for migration, path validation, and crypto round-trip when applicable
 
@@ -48,3 +48,4 @@ Pure UI refactors and rule-based guidance changes: lightweight checklist only.
 - Roadmap phases: `docs/ROADMAP.md` (Security, Sync, AI)
 - Competitor bar: Mini Diarium (encryption), nopy (local AI with user key)
 - Data locations: `paths.py` — `data_file()`, `user_data_dir()`
+- Pipeline / models: `.cursor/rules/ticket-lifecycle-loop.mdc`, `.cursor/rules/prefer-local-agents.mdc`
