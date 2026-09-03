@@ -30,17 +30,19 @@ No active ticket → report findings only unless the user asks to fix.
 
 If pointer is not past **TESTS**, or Bugbot has not run on the **current** diff, run **BUGBOT** first — even if an earlier session already ran it.
 
-Prefer a **reasoning-capable / premium model** when the user can choose.
+Launch Architect with **`model: "cursor-grok-4.6-high-fast"`** (fallback chain in `.cursor/rules/subagent-watchdog.mdc`). Do **not** omit `model`. Do **not** use Opus/Sonnet unless the user explicitly asks. Stay **local** — `.cursor/rules/prefer-local-agents.mdc`.
 
 ## Launch review
 
 1. Read `.cursor/agents/integral-architect.md`.
 2. Read `.cursor/rules/integral-architect.mdc`.
 3. Launch exactly one readonly subagent:
-   - `subagent_type: "generalPurpose"`
+   - `subagent_type: "integral-architect"` (or `generalPurpose` if that type is unavailable)
+   - `model: "cursor-grok-4.6-high-fast"` (**required** — do not omit)
    - Prefer readonly / no edits unless the parent is fixing blockers after the review
    - `run_in_background: false` unless explicitly asked to run in background
    - `description: "Integral Architect"`
+   - Omit `environment` or set `"local"`
 
 Repository path: active workspace root. Do not compute the full diff yourself before launching.
 
@@ -76,5 +78,7 @@ Summarize:
 
 - Pipeline: `.cursor/rules/ticket-lifecycle-loop.mdc`
 - Rule: `.cursor/rules/integral-architect.mdc`
+- Watchdog / models: `.cursor/rules/subagent-watchdog.mdc`
+- Local agents: `.cursor/rules/prefer-local-agents.mdc`
 - Bugbot: Cursor `review-bugbot` skill (**BUGBOT** stage)
 - Security: `.cursor/rules/security-review.mdc`
