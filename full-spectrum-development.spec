@@ -56,6 +56,8 @@ a = Analysis(
         "backup",
         "journal",
         "journal_ui",
+        "external_edit",
+        "youtube_takeout",
         "richtext",
         "integral_links",
         "deep_links",

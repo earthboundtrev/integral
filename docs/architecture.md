@@ -132,5 +132,7 @@ Quick Capture (SPEC-314 + SPEC-315): `quick_capture.py` / `quick_capture_ui.py` 
 
 YouTube Takeout import (SPEC-328 / #82): `youtube_takeout.py` parses local `watch-history.json` / Takeout zip; `youtube_history` in `data.json`; Data & Security import + browse UI; optional Content/Art note rollups; CSV via `integral_io.export_youtube_history_csv`. No network/OAuth.
 
+External editor workaround (#86): `external_edit.py` opens Writing Project files / journal drafts in the OS default app because Tkinter text boxes cannot expose Grammarly’s UI Automation Text Pattern.
+
 Notification residency (SPEC-306): reminders need a live process — `minimize_on_close` iconifies instead of quitting; `autostart_windows.py` toggles HKCU Run for Start with Windows. Controls live under Data & Security.
 

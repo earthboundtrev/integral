@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 0.3.11.5.6 — 2026-09-03
+
+### Added
+
+- **External editor for Grammarly (#86)** — Journal **Edit in system editor** / **Reload**; Writing Projects **Open externally** / **Reload from disk**. Documents that Grammarly cannot hook Tkinter text boxes (Windows UI Automation limit under ADR-001)
+
+### Build
+
+- Windows app: `dist/Integral/Integral.exe`
+- Release zip: `Integral-v0.3.11.5.6-windows.zip`
+- User data: `%APPDATA%\Integral\data.json`
+
 ## 0.3.11.5.5 — 2026-09-02
 
 ### Added

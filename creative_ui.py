@@ -370,6 +370,7 @@ def open_document_window(
 
     dirty = {"value": False}
     debounce_id: dict[str, str | None] = {"value": None}
+    external_active = {"value": False}
 
     header = ttk.Frame(win, padding=(12, 10, 12, 6))
     header.pack(side=tk.TOP, fill=tk.X)
@@ -404,7 +405,20 @@ def open_document_window(
     def refresh_status(prefix: str) -> None:
         status.config(text=format_doc_status(prefix, current_body()))
 
-    def do_save() -> None:
+    def set_editor_locked(locked: bool) -> None:
+        external_active["value"] = locked
+        text.configure(state=tk.DISABLED if locked else tk.NORMAL)
+
+    def do_save(*, quiet_if_external: bool = False) -> None:
+        if external_active["value"]:
+            if not quiet_if_external:
+                messagebox.showinfo(
+                    "Open externally",
+                    "This document is open in an external editor. Click Reload from disk "
+                    "after you save there — Integral will not overwrite those changes.",
+                    parent=win,
+                )
+            return
         body = current_body()
         cp.write_document(root_docs, project_id, role, body)
         try:
@@ -425,25 +439,32 @@ def open_document_window(
             debounce_id["value"] = None
 
     def schedule_autosave(_event=None) -> None:
+        if external_active["value"]:
+            return
         dirty["value"] = True
         status.config(text=format_doc_status("Unsaved", current_body()))
         cancel_debounce()
 
         def fire() -> None:
             debounce_id["value"] = None
-            if dirty["value"] and win.winfo_exists():
+            if dirty["value"] and win.winfo_exists() and not external_active["value"]:
                 do_save()
 
         debounce_id["value"] = win.after(AUTOSAVE_DEBOUNCE_MS, fire)
 
     def on_modified(_event=None) -> None:
+        if external_active["value"]:
+            return
         if text.edit_modified():
             text.edit_modified(False)
             schedule_autosave()
 
     def on_close() -> None:
         cancel_debounce()
-        if dirty["value"]:
+        if external_active["value"]:
+            # Avoid writing stale in-app buffer over external edits.
+            dirty["value"] = False
+        elif dirty["value"]:
             do_save()
         _open_doc_windows.pop(key, None)
         win.destroy()
@@ -452,6 +473,49 @@ def open_document_window(
     win.protocol("WM_DELETE_WINDOW", on_close)
 
     ttk.Button(footer, text="Save", command=do_save).pack(side=tk.LEFT)
+
+    def open_externally() -> None:
+        if not external_active["value"]:
+            do_save()
+        path = cp.document_path(root_docs, project_id, role)
+        try:
+            import external_edit
+
+            external_edit.open_path_with_default_app(path)
+        except OSError as exc:
+            messagebox.showerror("Open externally", str(exc), parent=win)
+            return
+        cancel_debounce()
+        dirty["value"] = False
+        set_editor_locked(True)
+        refresh_status("External edit — reload when done")
+        messagebox.showinfo(
+            "Open externally",
+            "Opened in your system default app (Word, Notepad, VS Code, …).\n\n"
+            "Grammarly can work there — Integral’s built-in text boxes cannot hook it "
+            "(Tkinter limitation).\n\n"
+            "The in-app editor is locked so it cannot overwrite your external save. "
+            "When you finish, save in that app, then click Reload from disk here.",
+            parent=win,
+        )
+
+    def reload_from_disk() -> None:
+        cancel_debounce()
+        body = cp.read_document(root_docs, project_id, role)
+        was_locked = external_active["value"]
+        set_editor_locked(False)
+        text.delete("1.0", tk.END)
+        text.insert("1.0", body)
+        dirty["value"] = False
+        text.edit_modified(False)
+        refresh_status("Reloaded" if was_locked else "Reloaded")
+
+    ttk.Button(footer, text="Open externally…", command=open_externally).pack(
+        side=tk.LEFT, padx=(10, 0)
+    )
+    ttk.Button(footer, text="Reload from disk", command=reload_from_disk).pack(
+        side=tk.LEFT, padx=(6, 0)
+    )
     if role == cp.DOC_MANUSCRIPT:
         ttk.Button(
             footer,
