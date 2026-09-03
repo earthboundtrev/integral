@@ -241,3 +241,32 @@ backfill (`settings.quick_capture.todo_done_entries_backfilled`) adds missing no
 todos that have a category and `completed_at`, keyed by `(#todo_id)` so identical task text can still
 log separately. Todos without `completed_at` are skipped (no invented day).
 
+---
+
+## YouTube history (Takeout import)
+
+Index key in `data.json`: `youtube_history`. Normalized by `youtube_takeout.normalize_youtube_history`.
+
+```json
+{
+  "schema_version": 1,
+  "events": [
+    {
+      "id": "sha1-of-url|watched_at",
+      "watched_at": "2024-06-01T15:30:00.000Z",
+      "title": "Video title",
+      "url": "https://www.youtube.com/watch?v=…",
+      "channel": "Channel name",
+      "source": "youtube | youtube_music | other"
+    }
+  ],
+  "last_import_at": "ISO-8601",
+  "last_import_stats": {"added": 12, "skipped": 3, "unparsed": 0}
+}
+```
+
+Imported from Google Takeout `watch-history.json` (or a zip containing it) via Data & Security.
+Re-import dedupes on `id` (URL + watched time). Optional day-note rollup appends summary lines to
+**Content You Have Consumed** (videos) or **Art You Have Consumed** (YouTube Music) notes only —
+never sets ratings or checklists. CSV export: `export_youtube_history_csv`.
+

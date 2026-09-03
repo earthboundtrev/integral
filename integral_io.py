@@ -123,6 +123,32 @@ def export_journal_csv(journal: dict, path: str) -> int:
     return len(rows)
 
 
+def export_youtube_history_csv(youtube_history: dict | None, path: str) -> int:
+    """Export imported Takeout watches. Returns rows written (0 if empty)."""
+    from youtube_takeout import normalize_youtube_history
+
+    store = normalize_youtube_history(youtube_history)
+    events = store.get("events") or []
+    with open(path, "w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=["watched_at", "title", "channel", "url", "source", "id"],
+        )
+        writer.writeheader()
+        for event in events:
+            writer.writerow(
+                {
+                    "watched_at": event.get("watched_at", ""),
+                    "title": event.get("title", ""),
+                    "channel": event.get("channel", ""),
+                    "url": event.get("url", ""),
+                    "source": event.get("source", ""),
+                    "id": event.get("id", ""),
+                }
+            )
+    return len(events)
+
+
 def backup_payload(payload: dict) -> dict:
     return {
         **payload,

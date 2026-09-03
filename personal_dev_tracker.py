@@ -37,6 +37,7 @@ from quick_capture_ui import close_quick_capture_panel, open_quick_capture_panel
 import focus_shield
 import todos
 import practices
+import youtube_takeout
 from milestones import merge_milestones, milestone_summary
 from notifications import ReminderScheduler, normalize_notification_settings, show_windows_notification
 from paths import APP_NAME, APP_VERSION, data_file, ensure_data_file, icon_path
@@ -82,6 +83,7 @@ class PersonalDevelopmentTracker:
         self.milestones: list = []
         self.journal: dict = journal.empty_journal()
         self.creative_projects: dict = creative_projects.empty_creative_projects()
+        self.youtube_history: dict = youtube_takeout.empty_youtube_history()
         self.day_plans: dict = day_plans.empty_day_plans()
         self.program_state: dict = {}
         self.programs: dict = load_program_definitions()
@@ -578,6 +580,9 @@ class PersonalDevelopmentTracker:
             self.creative_projects = creative_projects.normalize_creative_projects(
                 migrated.get("creative_projects")
             )
+            self.youtube_history = youtube_takeout.normalize_youtube_history(
+                migrated.get("youtube_history")
+            )
             self.day_plans = day_plans.normalize_day_plans(migrated.get("day_plans"))
             self.todos = todos.normalize_todos(migrated.get("todos"))
             self.practices = practices.normalize_practices(migrated.get("practices"))
@@ -616,6 +621,7 @@ class PersonalDevelopmentTracker:
             self.milestones = merge_milestones(None)
             self.journal = journal.empty_journal()
             self.creative_projects = creative_projects.empty_creative_projects()
+            self.youtube_history = youtube_takeout.empty_youtube_history()
             self.day_plans = day_plans.empty_day_plans()
             self.todos = todos.empty_todos()
             self.practices = practices.empty_practices()
@@ -635,6 +641,7 @@ class PersonalDevelopmentTracker:
             "milestones": self.milestones,
             "journal": self.journal,
             "creative_projects": self.creative_projects,
+            "youtube_history": self.youtube_history,
             "day_plans": self.day_plans,
             "todos": self.todos,
             "practices": self.practices,

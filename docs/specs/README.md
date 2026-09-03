@@ -54,6 +54,7 @@ Implement **in order** unless a spec declares otherwise. Human sets `approved` �
 | [013-os-protocol-handler](phase-3/013-os-protocol-handler.md) | done | Windows `integral://` OS deep links ([#22](https://github.com/earthboundtrev/integral/issues/22)) |
 | [014-quick-capture-mode](phase-3/014-quick-capture-mode.md) | done | Quick Capture — link → day entry + journal quick-start ([#32](https://github.com/earthboundtrev/integral/issues/32)) |
 | [015-quick-capture-day-todos](phase-3/015-quick-capture-day-todos.md) | done | Quick Capture todos + schedule + finish→log + quick-log + focus shield ([#34](https://github.com/earthboundtrev/integral/issues/34)) |
+| [028-youtube-takeout-import](phase-3/028-youtube-takeout-import.md) | done | YouTube watch history via Google Takeout import ([#82](https://github.com/earthboundtrev/integral/issues/82)) |
 
 Implement writing stack in order **302 → 303 → 304**. **305** may proceed in parallel (soft dependency on 302/303 for optional writing launch).
 

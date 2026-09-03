@@ -130,5 +130,7 @@ Deep Work Mode (SPEC-305): `deep_work.py` timer + `deep_work_ui.py` start dialog
 
 Quick Capture (SPEC-314 + SPEC-315): `quick_capture.py` / `quick_capture_ui.py` always-on-top panel; `todos.py` day + scheduled items in `data.json`; finish→category notes; quick-log router; Deep Work timer; `focus_shield.py` Windows minimize/allowlist poll (not OS airplane mode).
 
+YouTube Takeout import (SPEC-328 / #82): `youtube_takeout.py` parses local `watch-history.json` / Takeout zip; `youtube_history` in `data.json`; Data & Security import + browse UI; optional Content/Art note rollups; CSV via `integral_io.export_youtube_history_csv`. No network/OAuth.
+
 Notification residency (SPEC-306): reminders need a live process — `minimize_on_close` iconifies instead of quitting; `autostart_windows.py` toggles HKCU Run for Start with Windows. Controls live under Data & Security.
 

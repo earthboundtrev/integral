@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import os
+import zipfile
 from datetime import datetime
 from tkinter import filedialog, messagebox, scrolledtext, simpledialog, ttk
 import tkinter as tk
@@ -14,6 +16,7 @@ from integral_io import (
     export_journal_csv,
     export_life_entries_csv,
     export_milestones_csv,
+    export_youtube_history_csv,
     restore_backup_file,
     write_full_backup,
 )
@@ -28,6 +31,7 @@ import autostart_windows
 import protocol_windows
 import quick_capture
 import ui_scroll
+import youtube_takeout
 
 if TYPE_CHECKING:
     from personal_dev_tracker import PersonalDevelopmentTracker
@@ -59,19 +63,28 @@ def show_export_dialog(tracker: PersonalDevelopmentTracker) -> None:
     milestone_path = os.path.join(folder, f"integral-milestones-{stamp}.csv")
     journal_path = os.path.join(folder, f"integral-journal-{stamp}.csv")
     creative_path = os.path.join(folder, f"integral-creative-{stamp}.zip")
+    youtube_path = os.path.join(folder, f"integral-youtube-{stamp}.csv")
     try:
         life_rows = export_life_entries_csv(tracker.entries, tracker.categories, life_path)
         fitness_rows = export_fitness_sessions_csv(tracker.sessions, tracker.programs, fitness_path)
         milestone_rows = export_milestones_csv(tracker.milestones, milestone_path)
         journal_rows = export_journal_csv(tracker.journal, journal_path)
         creative_files = export_creative_documents_zip(creative_projects_dir(), creative_path)
+        youtube_rows = 0
+        youtube_line = "\n\n(No imported YouTube history — skipped YouTube CSV.)"
+        if getattr(tracker, "youtube_history", None) and (
+            youtube_takeout.normalize_youtube_history(tracker.youtube_history).get("events")
+        ):
+            youtube_rows = export_youtube_history_csv(tracker.youtube_history, youtube_path)
+            youtube_line = f"\n\n{youtube_path}\n({youtube_rows} YouTube watches)"
         messagebox.showinfo(
             "Export complete",
             f"Spreadsheet exports:\n{life_path}\n({life_rows} life rows)\n\n"
             f"{fitness_path}\n({fitness_rows} fitness rows)\n\n"
             f"{milestone_path}\n({milestone_rows} milestones)\n\n"
             f"{journal_path}\n({journal_rows} journal entries)\n\n"
-            f"Writing documents:\n{creative_path}\n({creative_files} files)\n\n"
+            f"Writing documents:\n{creative_path}\n({creative_files} files)"
+            f"{youtube_line}\n\n"
             "For a full restore (library index + manuscripts + life data), use Backup → Export Backup (zip).\n"
             "CSV/zip export here is for copies and spreadsheets — todos, day plans, and settings "
             "are included in Backup, not in these CSV files.",
@@ -637,6 +650,111 @@ def show_security_dialog(tracker: PersonalDevelopmentTracker) -> None:
     if not protocol_windows.is_supported():
         protocol_cb.state(["disabled"])
 
+    ttk.Separator(inner, orient=tk.HORIZONTAL).pack(fill=tk.X, padx=15, pady=12)
+    ttk.Label(inner, text="YouTube history (Takeout)", font=("Helvetica", 13, "bold")).pack(
+        anchor="w", padx=15, pady=(4, 4)
+    )
+    ttk.Label(
+        inner,
+        text=(
+            "Google does not let apps pull full watch history via API. Export free from "
+            "takeout.google.com → deselect all → YouTube and YouTube Music → History (JSON) → "
+            "download → import here. No API keys. Re-import merges and skips duplicates."
+        ),
+        wraplength=500,
+        style="Muted.TLabel",
+    ).pack(anchor="w", padx=15, pady=(0, 8))
+
+    history = youtube_takeout.normalize_youtube_history(
+        getattr(tracker, "youtube_history", None)
+    )
+    count = len(history.get("events") or [])
+    yt_status = ttk.Label(
+        inner,
+        text=f"Imported watches: {count}"
+        + (f"  ·  last import {history.get('last_import_at')}" if history.get("last_import_at") else ""),
+        wraplength=500,
+    )
+    yt_status.pack(anchor="w", padx=15, pady=(0, 6))
+
+    rollup_var = tk.BooleanVar(value=False)
+    ttk.Checkbutton(
+        inner,
+        text=(
+            "Append daily watch summaries to Content / Art notes on days you already "
+            "logged those domains (never creates new day logs or ratings)"
+        ),
+        variable=rollup_var,
+    ).pack(anchor="w", padx=15, pady=2)
+
+    def refresh_yt_status() -> None:
+        store = youtube_takeout.normalize_youtube_history(tracker.youtube_history)
+        n = len(store.get("events") or [])
+        last = store.get("last_import_at") or ""
+        yt_status.configure(
+            text=f"Imported watches: {n}" + (f"  ·  last import {last}" if last else "")
+        )
+
+    def import_youtube_takeout() -> None:
+        path = filedialog.askopenfilename(
+            title="Choose Takeout watch-history.json or zip",
+            filetypes=[
+                ("Takeout JSON or zip", "*.json;*.zip"),
+                ("JSON", "*.json"),
+                ("Zip", "*.zip"),
+                ("All files", "*.*"),
+            ],
+            parent=window,
+        )
+        if not path:
+            return
+        try:
+            incoming, unparsed = youtube_takeout.load_events_from_path(path)
+            before_ids = {e["id"] for e in tracker.youtube_history.get("events") or []}
+            merged, stats = youtube_takeout.merge_events(
+                tracker.youtube_history, incoming, unparsed=unparsed
+            )
+            tracker.youtube_history = merged
+            if rollup_var.get():
+                new_ids = {
+                    e["id"]
+                    for e in merged["events"]
+                    if e["id"] not in before_ids
+                }
+                # Fresh imports annotate only touched days; re-import with rollup
+                # refreshes summaries from the full stored history for already-logged days.
+                only_ids = new_ids if stats["added"] else None
+                tracker.entries = youtube_takeout.apply_day_note_rollup(
+                    tracker.entries,
+                    merged,
+                    only_event_ids=only_ids,
+                )
+            tracker.save_data(flush=True)
+            refresh_yt_status()
+            if hasattr(tracker, "refresh_dashboard"):
+                tracker.refresh_dashboard()
+            messagebox.showinfo(
+                "YouTube Takeout",
+                f"Added {stats['added']}, skipped {stats['skipped']} duplicates, "
+                f"unparsed {stats['unparsed']}.\n\n"
+                "Tip: export History as JSON from Google Takeout when you want a refresh.",
+                parent=window,
+            )
+        except (OSError, ValueError, json.JSONDecodeError, zipfile.BadZipFile) as exc:
+            messagebox.showerror("YouTube Takeout", str(exc), parent=window)
+
+    def browse_youtube_history() -> None:
+        show_youtube_history_dialog(tracker)
+
+    yt_buttons = ttk.Frame(inner)
+    yt_buttons.pack(fill=tk.X, padx=15, pady=(8, 4))
+    ttk.Button(yt_buttons, text="Import YouTube Takeout…", command=import_youtube_takeout).pack(
+        side=tk.LEFT
+    )
+    ttk.Button(yt_buttons, text="Browse history…", command=browse_youtube_history).pack(
+        side=tk.LEFT, padx=8
+    )
+
     def send_test() -> None:
         ok = show_windows_notification(APP_NAME, "Test notification from Integral — reminders are working.")
         if ok:
@@ -659,6 +777,44 @@ def show_security_dialog(tracker: PersonalDevelopmentTracker) -> None:
 
     footer = ttk.Frame(window, padding=(15, 8, 15, 12))
     footer.pack(side=tk.BOTTOM, fill=tk.X)
+    ttk.Button(footer, text="Close", command=window.destroy).pack(side=tk.RIGHT)
+
+
+def show_youtube_history_dialog(tracker: PersonalDevelopmentTracker) -> None:
+    """Browse imported Takeout watches (recent first)."""
+    window = tk.Toplevel(tracker.root)
+    window.title("YouTube history")
+    window.geometry("640x420")
+    window.minsize(480, 320)
+    window.configure(bg=tracker.theme["bg"])
+    window.transient(tracker.root)
+
+    ttk.Label(
+        window,
+        text="Imported from Google Takeout (local only). Music → Art rollups; other watches → Content.",
+        wraplength=600,
+        style="Muted.TLabel",
+    ).pack(anchor="w", padx=12, pady=(12, 6))
+
+    listbox = tk.Listbox(window, font=FONTS.get("body", ("Helvetica", 10)), height=16)
+    style_listbox(listbox, tracker.theme)
+    listbox.pack(fill=tk.BOTH, expand=True, padx=12, pady=6)
+
+    events = youtube_takeout.recent_events(getattr(tracker, "youtube_history", None), limit=500)
+    if not events:
+        listbox.insert(tk.END, "(No watches imported yet — use Data & Security → Import YouTube Takeout…)")
+    else:
+        for event in events:
+            when = str(event.get("watched_at") or "")[:19].replace("T", " ")
+            source = event.get("source") or "youtube"
+            channel = event.get("channel") or ""
+            title = event.get("title") or "(untitled)"
+            suffix = f" — {channel}" if channel else ""
+            listbox.insert(tk.END, f"{when}  [{source}]  {title}{suffix}")
+
+    footer = ttk.Frame(window, padding=(12, 8, 12, 12))
+    footer.pack(side=tk.BOTTOM, fill=tk.X)
+    ttk.Label(footer, text=f"{len(events)} shown (cap 500)").pack(side=tk.LEFT)
     ttk.Button(footer, text="Close", command=window.destroy).pack(side=tk.RIGHT)
 
 

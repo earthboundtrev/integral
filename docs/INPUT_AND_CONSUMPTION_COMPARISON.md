@@ -211,7 +211,7 @@ The design goal is **not** to replace Goodreads, Letterboxd, or MyFitnessPal. It
 |--------|-----------|
 | **Four areas, not one “Media” bucket** | Food, art, books, and feeds affect your life differently; guidance can be specific. |
 | **Novels under Art, nonfiction under Reading** | Matches how people talk about “art I consumed” vs “books I’m working through.” |
-| **No external APIs** | Works offline; no Goodreads/Letterboxd account required; title in notes is enough. |
+| **No external APIs** | Works offline; no Goodreads/Letterboxd account required; title in notes is enough. **Exception (opt-in file import):** Google Takeout YouTube history can be imported locally (#82) — still no live YouTube API. |
 | **Rating + checklist, not catalogs** | Optimized for maintenance and honesty, not building a public library. |
 | **Cross-category insights** | Dedicated apps don’t see that body energy dropped the same week food wasn’t logged. |
 

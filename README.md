@@ -107,7 +107,8 @@ User data: `%APPDATA%\Integral\data.json` (encrypted optional via Data & Securit
 | **Quick Capture** | Optional always-on-top panel (off by default): open from **Today's Log** (next to Journal / More…) or the footer nav; today’s todos + scheduled backlog with collapsible sections, inline edit, and drag-free ↑/↓ reordering; **finish always logs to a life domain** (prompts for category if missing — same idea as Link → day entry / YouTube); link starters; Journal now; quick-log opener; **domain typeahead** on category pickers; Deep Work timer + Windows focus shield (minimize chosen apps) |
 | **Fitness Hub** | CC1/CC2/SS/SM/OG/EC/FTR — nested book → program → steps; **Log Exercise** lets you re-pick exercises and remove queued sets without Canceling the draft; **volume vs last log** while logging (↑/→/↓ on sets×reps or weighted volume; click for history carousel) |
 | **Fitness skill tree** | Progressive logging DAG for full CC1 Big Six, full CC2 ladders, and Strong Medicine resistance progressions (squat→barbell, sumo DL, DB bench/press, statue row, plank core) from official Hub tables |
-| **Safety net** | Export CSV (+ creative docs zip), full zip backup (data + `creative/` + fitness), optional vault encryption |
+| **Safety net** | Export CSV (+ creative docs zip + YouTube history CSV when imported), full zip backup (data + `creative/` + fitness), optional vault encryption |
+| **YouTube Takeout** | Import watch history from a free Google Takeout JSON/zip (Data & Security); merge/dedupe locally; optional day notes for Content / Art — no API keys, no account connect |
 | **Reminders** | Windows toasts while Integral is running; optional Start with Windows + minimize-on-close so reminders keep working |
 | **AI Insight (optional)** | Local Ollama review of recent logs — see below |
 
@@ -147,6 +148,18 @@ Under **Data & Security**, enable **Register integral:// protocol with Windows**
 3. Windows launches Integral (or hands off to a running instance) and focuses that journal entry
 
 Links accept `integral://journal/{id}`, `integral://domain/{date}/{category}`, `integral://fitness/{date}`, and `integral://project/{id}`.
+
+### YouTube watch history (Google Takeout)
+
+YouTube does **not** let third-party apps pull full watch history via API. Integral imports a free **Google Takeout** file instead (no API keys, no Google login inside the app):
+
+1. Open [takeout.google.com](https://takeout.google.com) → **Deselect all** → enable **YouTube and YouTube Music**
+2. Under that product, include **History**, prefer **JSON**
+3. Create the export, download the zip when Google emails you
+4. In Integral → **Data & Security** → **Import YouTube Takeout…** and pick `watch-history.json` or the zip
+5. Optionally append daily summaries to **Content You Have Consumed** / **Art You Have Consumed** notes (never auto-sets ratings)
+
+Re-import merges and skips duplicates. Browse imported watches from the same screen. CSV Export includes a YouTube history file when data is present. Button-triggered refresh of a newer Takeout file is tracked in [#83](https://github.com/earthboundtrev/integral/issues/83).
 
 ### Optional: Local AI insights (Ollama)
 
