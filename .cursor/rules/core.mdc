@@ -28,16 +28,18 @@ alwaysApply: true
 
 ## Model strategy (ticket work)
 
-Human approval happens at **issue/PR intent** (and approved specs) — not via a pre-code architect gate. Use model capacity accordingly:
+Human approval happens at **issue/PR intent** (and approved specs) — not via a pre-code architect gate. Use **different agents/models per role** (`.cursor/rules/ticket-lifecycle-loop.mdc`). **Cost default (aligned with Ducking Gravity / SmartAstro 8/18/2026):** implement on Composer Fast; Bugbot/Architect/security on **Grok 4.6 High** — do **not** omit `model` on checks (costly default) and do **not** burn Opus/Sonnet on routine reviews.
 
-| Phase | Stage | Who / what | Purpose |
-|-------|-------|------------|---------|
-| **Implement** | IMPLEMENT | Default Agent (fast model) | Ship against AC; small diffs |
-| **Bugbot** | BUGBOT | `review-bugbot` skill | Logic bugs, edge cases, AC gaps — **re-run until clean** |
-| **Tests** | TESTS | Same session | Lock behavior; map ACs to `tests/test_*.py` |
-| **Architect** | ARCHITECT | `review-architect` skill; prefer premium model | Layers, export/import, README, merge-ready |
-| **Deploy** | DEPLOY | Default Agent | Validate, push, PR; checks until human merge |
-| **Security** | (within BUGBOT→DEPLOY) | `security-review` when risky | Encryption, vault, AI, data (`.cursor/rules/security-review.mdc`) |
+| Phase | Stage | Who / what | Primary → fallback(s) |
+|-------|-------|------------|------------------------|
+| **Implement** | IMPLEMENT | Parent / implement Task | `composer-2.5-fast` → `cursor-grok-4.5-high-fast` |
+| **Bugbot** | BUGBOT | Separate **`bugbot`** Task — never self-review | `cursor-grok-4.6-high-fast` → `cursor-grok-4.5-high-fast` → omit |
+| **Tests** | TESTS | Same session | — |
+| **Architect** | ARCHITECT | Separate Architect Task (`review-architect`) | `cursor-grok-4.6-high-fast` → `cursor-grok-4.5-high-fast` → omit |
+| **Deploy** | DEPLOY | Default Agent | Composer → Grok / parent |
+| **Security** | (within BUGBOT→DEPLOY) | `security-review` when risky | `cursor-grok-4.6-high-fast` → `cursor-grok-4.5-high-fast` → omit |
+
+Outages: `.cursor/rules/subagent-watchdog.mdc`. Prefer local Tasks: `.cursor/rules/prefer-local-agents.mdc`. **New ticket:** `.cursor/rules/github-new-ticket.mdc`.
 
 **Architect blockers → rewind pointer to BUGBOT**, then forward through TESTS and ARCHITECT again. Full rules: `.cursor/rules/ticket-lifecycle-loop.mdc`.
 
@@ -111,7 +113,7 @@ Pipeline: `.cursor/rules/ticket-lifecycle-loop.mdc`. Pointer must reach **TESTS*
 
 **After BUGBOT clean and TESTS pass.** Architect blockers fixed → **rewind to BUGBOT** (not ARCHITECT-only), then forward through TESTS → ARCHITECT again.
 
-Run **`review-architect`** (`/review-architect`) or an explicit pass per **`.cursor/rules/integral-architect.mdc`**. Prefer a reasoning-capable / premium model.
+Run **`review-architect`** (`/review-architect`) or an explicit pass per **`.cursor/rules/integral-architect.mdc`**. Launch as a **separate** Task with **`model: "cursor-grok-4.6-high-fast"`** (never implementer self-certify; never omit `model` on checks).
 
 Check against:
 
@@ -185,6 +187,9 @@ Full checklist and PowerShell examples: `.cursor/rules/build-release.mdc` → **
 ## AI collaboration
 
 - **Ticket pipeline:** `IMPLEMENT → BUGBOT → TESTS → ARCHITECT → DEPLOY` — `.cursor/rules/ticket-lifecycle-loop.mdc` (rewind to **BUGBOT** on any code fix)
+- **New ticket → GitHub issue:** `.cursor/rules/github-new-ticket.mdc`
+- **Subagent watchdog:** `.cursor/rules/subagent-watchdog.mdc`
+- **Prefer local agents:** `.cursor/rules/prefer-local-agents.mdc`
 - **Integral Architect (pre-merge):** `review-architect` skill (`/review-architect`) · `.cursor/agents/integral-architect.md` · `.cursor/rules/integral-architect.mdc`
 - **Bugbot:** Cursor `review-bugbot` skill
 - **Layer boundaries:** `.cursor/rules/architecture.mdc` + `docs/architecture.md`
@@ -192,3 +197,4 @@ Full checklist and PowerShell examples: `.cursor/rules/build-release.mdc` → **
 - **Security (encryption, sync, AI):** `.cursor/rules/security-review.mdc`
 - **Docs policy:** `.cursor/rules/documentation.mdc`
 - **Spec loop:** `.cursor/rules/spec-driven-workflow.mdc` + `docs/WORKFLOW.md`
+- **Export/import:** `.cursor/rules/backup-export.mdc`

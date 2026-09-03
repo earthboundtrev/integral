@@ -1,0 +1,34 @@
+---
+description: Create a GitHub issue when the user says "new ticket" before starting Integral work
+alwaysApply: true
+---
+
+# GitHub issue on "new ticket"
+
+When the user opens work with **"New ticket"** (or similar) **for this repo**, create a **GitHub** issue on `earthboundtrev/integral` **before** writing code (or before starting Architect-skip backfill).
+
+## Required first step
+
+1. Parse the request into title + body (Summary, user story, acceptance criteria, definition of done).
+2. Search open issues first (`gh issue list` / search) so duplicates are not created.
+3. Create the issue:
+
+```powershell
+gh issue create --repo earthboundtrev/integral --title "..." --body "..." --label "enhancement"
+```
+
+Use label `bug` for defects, `enhancement` for features (create labels if missing, or omit if the repo has none).
+4. Share the issue number/URL with the user immediately.
+5. Use `#N` in branch names, commits, and PR bodies (`Closes #N`).
+
+## Do not skip
+
+- Do **not** rely on chat-only tracking for "new ticket" work.
+- Spec/ADR gate still applies for new user-facing features (ADR-007 / `.cursor/rules/spec-driven-workflow.mdc`) after the issue exists.
+- Other repos (e.g. Ducking Gravity, SmartAstro/astro) have their own new-ticket rules — this rule is for **Integral** only.
+
+## When closing
+
+- PR body must include `Closes #N`.
+- After human merge (or clean backfill sign-off): **verify** `gh issue view {N} --json state` is `CLOSED`; close manually if needed (`scripts/post_merge_hygiene.ps1`).
+- Delete the local ticket branch after merge.

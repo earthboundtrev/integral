@@ -1,0 +1,30 @@
+---
+description: Default Task/subagents to local; warn on cloud cost; cloud only after cost acceptance
+alwaysApply: true
+---
+
+# Prefer local agents (budget vs CI)
+
+**Default: local.** Omit Task `environment`, or set `"local"`. This studio’s Cursor budget is **effectively zero**. The local machine can run implement, tests, Bugbot, and Architect. Cloud is **not** a smarter model and is **not** an outage fallback.
+
+## Cloud cost (always warn)
+
+`environment: "cloud"` bills extra: VM + install + a **full agent per stage**. Ticket rewinds (Bugbot ↔ Architect) multiply that. **Warn before any cloud launch** — do not downplay it.
+
+## When cloud can be worth it
+
+Cloud is a **clean CI-like environment** (isolated clone, install, tests), not a better reviewer. That can matter for **expensive or involved** work (encryption/vault, schema migration, release builds, Windows exe packaging) because catching bugs in that loop is cheaper than shipping a broken installer.
+
+If the ticket looks like that, **say the tradeoff once** (cost spike vs closer-to-CI coverage) and **stay local** until the human opts in. Do **not** auto-switch.
+
+## Required to actually use cloud
+
+Never set `environment: "cloud"` unless the **current user message** explicitly accepts the extra cost (e.g. “accept cloud cost” / “I accept the extra bill”).
+
+“Do it in the cloud,” “not locally,” or “machine is slow” **without** that phrase → stay local, one-sentence cost warning, remind them they can opt in.
+
+## Not reasons to go cloud
+
+Machine feel, ticket length, “cloud is higher quality,” or watchdog/stuck recovery. Retry the **local** model chain. Do not use cloud to reach Opus or Sonnet.
+
+Full pipeline: `.cursor/rules/ticket-lifecycle-loop.mdc`. Outages: `.cursor/rules/subagent-watchdog.mdc`.

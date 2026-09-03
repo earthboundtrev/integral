@@ -1,0 +1,76 @@
+---
+description: Subagent watchdog — comparable model fallbacks on outage/stuck; never idle
+alwaysApply: true
+---
+
+# Subagent watchdog (no idle stalls)
+
+Whenever you launch a **Task / subagent** (Bugbot, Architect, security-review, explore, shell, generalPurpose, integral-architect, etc.) — especially when you **choose a model** — you own the clock. Do not leave the ticket pipeline sitting with no forward progress because a model hung, timed out, was unavailable (outage), or returned nothing.
+
+## Stuck / unavailable definition
+
+Treat a model/subagent as **stuck or unavailable** if any of these happen:
+
+- Tool/runtime timeout, bubble-creation timeout, abort, or **provider/model outage**
+- Explicit “model unavailable” / capacity / rate-limit failure on that slug
+- ~**2–3 minutes** with no meaningful progress (no completion, no partial findings useful as a verdict)
+- Repeated identical failure on the same model without a code/prompt change
+
+Do **not** wait indefinitely for any premium model.
+
+## Required recovery (walk comparable chain)
+
+On stuck/outage:
+
+1. **Cancel** the hung invocation (do not keep polling vacuously).
+2. **Retry in order** down that stage’s **comparable fallback chain** (below) — same prompt shape, next unused slug.
+3. If any retry succeeds → continue the pipeline; note which model produced the result.
+4. If the **entire chain** fails → **soft-fail continue** with an explicit note:
+   - `Review skipped: <stage> unavailable (comparable models stuck/outage after chain)`
+   - For **ARCHITECT**: do a **concise parent-agent merge-ready check** (AC, export/import, README, tests) and advance or rewind — do not block DEPLOY forever on dead subagents.
+   - For **BUGBOT**: do a **brief parent diff skim** for obvious logic bugs; if none, proceed to TESTS and say Bugbot was skipped after chain exhaustion.
+   - For **IMPLEMENT** (dedicated Task): continue implementation in the **parent** agent and note the implement Task was skipped after chain exhaustion.
+5. Tell the user in one short status line what failed and which fallback ran (or that the chain was exhausted).
+
+**Do not recover on cloud.** Stuck/outage retries stay on **local** Tasks (`environment` omitted or `"local"`). Launching `environment: "cloud"` is not a fallback — `.cursor/rules/prefer-local-agents.mdc`.
+
+## Comparable model chains (this repo)
+
+**Why (aligned with Ducking Gravity / SmartAstro 8/18/2026):** Grok 4.6 High token spend is far below Opus/Sonnet. Implement was already Composer Fast. The bill was checks: omitted `model` on Bugbot/Architect, or Sonnet→Opus fallbacks on every rewind. Checks now **must** pass `cursor-grok-4.6-high-fast`. Do not “upgrade” a stuck check to Opus to be safe — that is the expensive path this change exists to stop.
+
+**Comparable** means similar role/capability class — not “any available slug.” Prefer the next peer in the chain over demoting a review stage to Composer Fast.
+
+Only use slugs from the Task tool’s **allowed model list**. If a listed slug disappears from the tool, skip it and take the next chain entry (or soft-fail if none remain).
+
+| Stage / job | Primary | Fallback 1 (comparable) | Fallback 2 | After chain exhausted |
+|-------------|---------|-------------------------|------------|------------------------|
+| **IMPLEMENT** (dedicated implement Task) | `composer-2.5-fast` | `cursor-grok-4.5-high-fast` | omit `model` / parent default | Parent continues IMPLEMENT |
+| **BUGBOT** (`review-bugbot` / `bugbot`) | **`cursor-grok-4.6-high-fast`** | `cursor-grok-4.5-high-fast` | omit `model` | Parent diff skim → TESTS if clear |
+| **ARCHITECT** (`review-architect` / Integral Architect Task) | **`cursor-grok-4.6-high-fast`** | `cursor-grok-4.5-high-fast` | omit `model` | Parent merge-ready skim |
+| **Security** (`security-review`, when used) | **`cursor-grok-4.6-high-fast`** | `cursor-grok-4.5-high-fast` | omit `model` | Parent threat skim; note gap |
+| Other explicit user model pick | User-requested | One swap to nearest **same-class** peer from this table | — | Soft-fail continue |
+
+### Comparability notes
+
+- **Cost:** Cursor Grok 4.6 High is far cheaper per token than Opus/Sonnet. **Checks** (Bugbot, Architect, security-review) use Grok 4.6 High. **Implement** stays on Composer Fast.
+- **Implement:** `composer-2.5-fast` is the cheap write model. Fallback is Grok 4.5 High Fast, then parent — **not** Opus/Sonnet, and **not** Grok 4.6 (that slug is for checks).
+- **Checks:** `cursor-grok-4.6-high-fast` is the default reviewer. Fallback stays in the Grok High family (`cursor-grok-4.5-high-fast` → omit). **Do not** spend Opus or Sonnet on routine Bugbot/Architect/security unless the user **explicitly** asks for that model.
+- **Do not** use `composer-2.5-fast` as a Bugbot/Architect/security model — it is the implement chain, not a reviewer.
+- **Do not** use cloud to reach Opus/Sonnet.
+
+**Role separation:** Implement stays on the **Composer Fast** chain; Bugbot/Architect/security stay on **Grok 4.6 High** (separate Tasks / perspectives). Full role table: `.cursor/rules/ticket-lifecycle-loop.mdc` § Separate agents / models.
+
+If the user names a model that is **not** in the Task tool’s allowed slug list, say so and use the nearest allowed primary from this table — do not invent slugs or hang retrying invalid ones.
+
+## Pipeline interaction
+
+- Watchdog applies inside **IMPLEMENT → BUGBOT → TESTS → ARCHITECT → DEPLOY** (`.cursor/rules/ticket-lifecycle-loop.mdc`).
+- Soft-fail continue does **not** skip required **code fixes** when a review **did** return blockers.
+- Soft-fail continue **does** prevent an empty hang or outage from freezing the pointer.
+- Soft-fail does **not** mean “skip Architect forever on the next ticket” — retry the full chain on the next ARCHITECT attempt.
+
+## Response snippet (when recovery fired)
+
+`Watchdog: <stage> unavailable on <model> → tried <fallback…> → <continued | parent skim>.`
+
+Full pipeline: `.cursor/rules/ticket-lifecycle-loop.mdc`.
