@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## 0.3.11.5.5 — 2026-09-02
+
+### Added
+
+- **YouTube Takeout import (#82)** — import watch history from a free Google Takeout JSON/zip under Data & Security; local merge/dedupe into `youtube_history`; browse list; optional Content/Art day-note summaries on already-logged days (no auto-ratings); CSV export when history exists; backup/restore roundtrips
+
+### Notes
+
+- README Features + Takeout how-to updated in the same release
+- Live/API watch-history sync remains out of scope (follow-up [#83](https://github.com/earthboundtrev/integral/issues/83))
+
+### Build
+
+- Windows app: `dist/Integral/Integral.exe`
+- Release zip: `Integral-v0.3.11.5.5-windows.zip`
+- User data: `%APPDATA%\Integral\data.json`
+
 ## 0.3.11.5.4.1 — 2026-08-12
 
 ### Fixed

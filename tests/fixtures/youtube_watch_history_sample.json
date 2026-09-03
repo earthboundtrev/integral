@@ -1,0 +1,33 @@
+[
+  {
+    "header": "YouTube",
+    "title": "Watched Integral intro talk",
+    "titleUrl": "https://www.youtube.com/watch?v=abc123",
+    "subtitles": [{"name": "Example Channel", "url": "https://www.youtube.com/channel/x"}],
+    "time": "2024-06-01T15:30:00.000Z",
+    "products": ["YouTube"]
+  },
+  {
+    "header": "YouTube Music",
+    "title": "Watched Calm morning playlist",
+    "titleUrl": "https://www.youtube.com/watch?v=music99",
+    "subtitles": [{"name": "Music Channel"}],
+    "time": "2024-06-01T18:00:00.000Z",
+    "products": ["YouTube"]
+  },
+  {
+    "header": "YouTube",
+    "title": "Searched for cats",
+    "titleUrl": "https://www.youtube.com/results?search_query=cats",
+    "time": "2024-06-01T12:00:00.000Z",
+    "products": ["YouTube"]
+  },
+  {
+    "header": "YouTube",
+    "title": "Watched Duplicate video",
+    "titleUrl": "https://www.youtube.com/watch?v=dup1",
+    "subtitles": [{"name": "Dup Channel"}],
+    "time": "2024-06-02T10:00:00.000Z",
+    "products": ["YouTube"]
+  }
+]
