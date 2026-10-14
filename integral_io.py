@@ -29,7 +29,7 @@ def _atomic_json_write(data: dict, target_path: str) -> None:
 
 
 def atomic_copy_file(src: str, dest: str) -> None:
-    """Atomically copy file from src to dest using temp + os.replace.
+    """Atomically copy file from src to dest using temp + fsync + os.replace.
     
     For one-time migrations and bootstraps. Uses save lock for JSON files.
     """
@@ -40,9 +40,17 @@ def atomic_copy_file(src: str, dest: str) -> None:
     if dest.endswith(".json"):
         with _save_lock:
             shutil.copy2(src, temp_path)
+            # Flush and fsync for durability
+            with open(temp_path, "r+b") as f:
+                f.flush()
+                os.fsync(f.fileno())
             os.replace(temp_path, dest)
     else:
         shutil.copy2(src, temp_path)
+        # Flush and fsync for durability
+        with open(temp_path, "r+b") as f:
+            f.flush()
+            os.fsync(f.fileno())
         os.replace(temp_path, dest)
 
 
