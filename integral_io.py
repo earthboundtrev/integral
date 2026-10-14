@@ -9,6 +9,42 @@ import shutil
 from datetime import datetime
 from typing import Any
 
+# Import the save lock to serialize restore with saves
+from vault import _save_lock
+
+
+def _atomic_json_write(data: dict, target_path: str) -> None:
+    """Atomically write JSON to target_path using temp file + fsync + os.replace.
+    
+    Shares the same lock as vault.save_data_file to prevent race with background saves.
+    """
+    with _save_lock:
+        os.makedirs(os.path.dirname(target_path) or ".", exist_ok=True)
+        temp_path = f"{target_path}.tmp"
+        with open(temp_path, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, indent=2, ensure_ascii=False)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_path, target_path)
+
+
+def atomic_copy_file(src: str, dest: str) -> None:
+    """Atomically copy file from src to dest using temp + os.replace.
+    
+    For one-time migrations and bootstraps. Uses save lock for JSON files.
+    """
+    os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)
+    temp_path = f"{dest}.tmp"
+    
+    # Use lock for .json files to serialize with saves
+    if dest.endswith(".json"):
+        with _save_lock:
+            shutil.copy2(src, temp_path)
+            os.replace(temp_path, dest)
+    else:
+        shutil.copy2(src, temp_path)
+        os.replace(temp_path, dest)
+
 
 def export_life_entries_csv(entries: dict, categories: dict, path: str) -> int:
     rows_written = 0
@@ -172,13 +208,15 @@ def load_backup(path: str) -> dict[str, Any]:
 
 
 def restore_backup_to_path(backup: dict, target_path: str, *, make_copy: bool = True) -> None:
+    """Atomically restore backup to target_path.
+    
+    Uses atomic write with save lock to prevent race with background saves.
+    """
     if make_copy and os.path.exists(target_path):
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         shutil.copy2(target_path, f"{target_path}.bak-{stamp}")
-    os.makedirs(os.path.dirname(target_path), exist_ok=True)
     clean = {key: value for key, value in backup.items() if not str(key).startswith("backup_")}
-    with open(target_path, "w", encoding="utf-8") as handle:
-        json.dump(clean, handle, indent=2, ensure_ascii=False)
+    _atomic_json_write(clean, target_path)
 
 
 FULL_BACKUP_KIND = "integral_full"

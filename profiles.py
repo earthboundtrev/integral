@@ -117,6 +117,12 @@ def ensure_app_structure() -> None:
 
 
 def migrate_legacy_layout_if_needed() -> None:
+    """Migrate data.json and fitness.db from app root to default profile directory.
+    
+    One-time migration using atomic copy.
+    """
+    from integral_io import atomic_copy_file
+    
     app_dir = get_app_dir()
     legacy_data = os.path.join(app_dir, "data.json")
     default_dir = get_profile_dir(DEFAULT_PROFILE_ID)
@@ -125,12 +131,12 @@ def migrate_legacy_layout_if_needed() -> None:
     os.makedirs(default_dir, exist_ok=True)
 
     if os.path.exists(legacy_data) and not os.path.exists(default_data):
-        shutil.copy2(legacy_data, default_data)
+        atomic_copy_file(legacy_data, default_data)
 
     legacy_fitness = os.path.join(app_dir, "fitness.db")
     default_fitness = os.path.join(default_dir, "fitness.db")
     if os.path.exists(legacy_fitness) and not os.path.exists(default_fitness):
-        shutil.copy2(legacy_fitness, default_fitness)
+        atomic_copy_file(legacy_fitness, default_fitness)
 
     if not os.path.exists(get_config_path()):
         save_config(default_config())

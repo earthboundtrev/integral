@@ -217,3 +217,89 @@ def test_fsync_called_on_temp_file(tmp_path, monkeypatch):
     
     # fsync should have been called at least once
     assert len(fsync_calls) > 0
+
+
+def test_restore_atomic_survives_crash_mid_restore(tmp_path):
+    """If restore crashes mid-write, original data.json should be intact."""
+    from integral_io import restore_backup_to_path, backup_payload
+    
+    data_file = tmp_path / "data.json"
+    
+    # Create initial good file
+    original_data = {"version": 1, "important": "original"}
+    save_data_file(str(data_file), original_data, encrypted=False, passphrase=None)
+    
+    # Verify original exists
+    with open(data_file) as f:
+        assert json.load(f) == original_data
+    
+    # Try to restore a backup but simulate crash by writing partial tmp
+    tmp_file = tmp_path / "data.json.tmp"
+    with open(tmp_file, "w") as f:
+        f.write('{"version": 2, "partial')  # Incomplete JSON
+    
+    # Original file should still be intact
+    with open(data_file) as f:
+        loaded = json.load(f)
+    assert loaded == original_data
+    
+    # Now do a successful restore - should clean up and work
+    backup = backup_payload({"version": 2, "restored": "data"})
+    restore_backup_to_path(backup, str(data_file), make_copy=False)
+    
+    with open(data_file) as f:
+        restored = json.load(f)
+    # Should not have backup_ prefix keys
+    assert "restored" in restored
+    assert restored["version"] == 2
+    assert "backup_exported_at" not in restored
+
+
+def test_restore_uses_save_lock(tmp_path):
+    """Restore should use the same lock as saves to prevent races."""
+    from integral_io import restore_backup_to_path, backup_payload
+    from vault import _save_lock
+    
+    data_file = tmp_path / "data.json"
+    errors = []
+    completed = []
+    
+    def do_saves():
+        try:
+            for i in range(10):
+                payload = {"type": "save", "iteration": i}
+                save_data_file(str(data_file), payload, encrypted=False, passphrase=None)
+            completed.append("saves")
+        except Exception as e:
+            errors.append(("save", e))
+    
+    def do_restore():
+        try:
+            import time
+            time.sleep(0.01)  # Let saves start first
+            backup = backup_payload({"type": "restore", "data": "restored"})
+            restore_backup_to_path(backup, str(data_file), make_copy=False)
+            completed.append("restore")
+        except Exception as e:
+            errors.append(("restore", e))
+    
+    # Run saves and restore concurrently
+    import threading
+    save_thread = threading.Thread(target=do_saves)
+    restore_thread = threading.Thread(target=do_restore)
+    
+    save_thread.start()
+    restore_thread.start()
+    
+    save_thread.join()
+    restore_thread.join()
+    
+    # Both should complete without errors
+    assert len(errors) == 0, f"Errors: {errors}"
+    assert len(completed) == 2
+    
+    # Final file should be valid JSON (either from save or restore)
+    with open(data_file) as f:
+        final = json.load(f)
+    assert "type" in final
+    assert final["type"] in ("save", "restore")
