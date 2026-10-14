@@ -76,8 +76,8 @@ def test_recovery_restores_from_backup_when_main_corrupt(tmp_path):
     assert restored == backup_payload
 
 
-def test_recovery_declines_backup_restore_raises_error(tmp_path):
-    """If user declines backup restore, should raise ValueError."""
+def test_recovery_declines_backup_restore_returns_empty(tmp_path):
+    """If user declines backup restore, should return empty data (GAP #4 fix)."""
     data_file = tmp_path / "data.json"
     bak_file = tmp_path / "data.json.bak"
     
@@ -89,14 +89,15 @@ def test_recovery_declines_backup_restore_raises_error(tmp_path):
     with open(data_file, "w") as f:
         f.write('{"invalid": "json", "missing')
     
-    # User declines recovery
-    with pytest.raises(ValueError, match="declined recovery"):
-        load_data_file_with_recovery(
-            str(data_file),
-            passphrase=None,
-            on_recovery_prompt=lambda bak, ts: False,  # Decline
-            on_both_corrupt_prompt=lambda: False
-        )
+    # User declines recovery - should return empty data, not raise
+    loaded = load_data_file_with_recovery(
+        str(data_file),
+        passphrase=None,
+        on_recovery_prompt=lambda bak, ts: False,  # Decline
+        on_both_corrupt_prompt=lambda: False
+    )
+    
+    assert loaded == {}
 
 
 def test_recovery_both_corrupt_offers_empty_start(tmp_path):
@@ -137,8 +138,8 @@ def test_recovery_both_corrupt_offers_empty_start(tmp_path):
     assert len(corrupt_files) == 1
 
 
-def test_recovery_both_corrupt_declined_raises_error(tmp_path):
-    """If user declines empty start when both corrupt, should raise ValueError."""
+def test_recovery_both_corrupt_declined_returns_empty(tmp_path):
+    """If user declines empty start when both corrupt, should return empty data (GAP #4 fix)."""
     data_file = tmp_path / "data.json"
     bak_file = tmp_path / "data.json.bak"
     
@@ -148,14 +149,15 @@ def test_recovery_both_corrupt_declined_raises_error(tmp_path):
     with open(bak_file, "w") as f:
         f.write('{"also')
     
-    # User declines empty start
-    with pytest.raises(ValueError, match="declined to start with empty"):
-        load_data_file_with_recovery(
-            str(data_file),
-            passphrase=None,
-            on_recovery_prompt=lambda bak, ts: False,
-            on_both_corrupt_prompt=lambda: False  # Decline
-        )
+    # User declines empty start - should return empty data, not raise
+    loaded = load_data_file_with_recovery(
+        str(data_file),
+        passphrase=None,
+        on_recovery_prompt=lambda bak, ts: False,
+        on_both_corrupt_prompt=lambda: False  # Decline
+    )
+    
+    assert loaded == {}
 
 
 def test_recovery_backup_timestamp_provided(tmp_path):
