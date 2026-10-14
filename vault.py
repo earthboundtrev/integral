@@ -186,7 +186,8 @@ def load_data_file_with_recovery(
         if on_recovery_prompt is None or on_recovery_prompt(recovery_source, bak_timestamp):
             # Preserve the corrupt main file before restoring (if it exists)
             if main_exists:
-                corrupt_path = f"{path}.corrupt-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+                timestamp = datetime.now().strftime('%Y%m%d-%H%M%S-%f')[:-3]  # Include milliseconds
+                corrupt_path = f"{path}.corrupt-{timestamp}"
                 shutil.copy2(path, corrupt_path)
                 logging.info(f"Preserved corrupt file as {corrupt_path}")
             
@@ -205,33 +206,80 @@ def load_data_file_with_recovery(
             return bak_data
         else:
             # User declined recovery - preserve all files and raise to exit cleanly
-            timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+            timestamp = datetime.now().strftime('%Y%m%d-%H%M%S-%f')[:-3]  # Include milliseconds
             preserved = []
+            data_dir = os.path.dirname(path) or "."
+            
+            # Helper to check if file already preserved with same content
+            def already_preserved(target_pattern):
+                import glob
+                existing = glob.glob(target_pattern)
+                if not existing:
+                    return None
+                # Check newest file with same content
+                for exist_path in sorted(existing, reverse=True):
+                    try:
+                        if os.path.getsize(exist_path) == os.path.getsize(source_for_compare):
+                            with open(exist_path, 'rb') as f1, open(source_for_compare, 'rb') as f2:
+                                if f1.read() == f2.read():
+                                    return exist_path
+                    except OSError:
+                        continue
+                return None
             
             if main_exists:
-                declined_path = f"{path}.corrupt-{timestamp}"
-                shutil.copy2(path, declined_path)
+                source_for_compare = path
+                existing = already_preserved(f"{path}.corrupt-*")
+                if existing:
+                    declined_path = existing
+                    logging.info(f"Using existing preserved copy: {declined_path}")
+                else:
+                    declined_path = f"{path}.corrupt-{timestamp}"
+                    shutil.copy2(path, declined_path)
+                    logging.info(f"Preserved declined main file as {declined_path}")
                 preserved.append(declined_path)
-                logging.info(f"Preserved declined main file as {declined_path}")
             
             if os.path.exists(recovery_source):
-                declined_bak = f"{recovery_source}.declined-{timestamp}"
-                shutil.copy2(recovery_source, declined_bak)
+                source_for_compare = recovery_source
+                existing = already_preserved(f"{recovery_source}.declined-*")
+                if existing:
+                    declined_bak = existing
+                    logging.info(f"Using existing preserved copy: {declined_bak}")
+                else:
+                    declined_bak = f"{recovery_source}.declined-{timestamp}"
+                    shutil.copy2(recovery_source, declined_bak)
+                    logging.info(f"Preserved good backup as {declined_bak}")
                 preserved.append(declined_bak)
-                logging.info(f"Preserved good backup as {declined_bak}")
             
             if os.path.exists(tmp_path) and tmp_path != recovery_source:
-                declined_tmp = f"{tmp_path}.declined-{timestamp}"
-                shutil.copy2(tmp_path, declined_tmp)
+                source_for_compare = tmp_path
+                existing = already_preserved(f"{tmp_path}.declined-*")
+                if existing:
+                    declined_tmp = existing
+                    logging.info(f"Using existing preserved copy: {declined_tmp}")
+                else:
+                    declined_tmp = f"{tmp_path}.declined-{timestamp}"
+                    shutil.copy2(tmp_path, declined_tmp)
+                    logging.info(f"Preserved temp file as {declined_tmp}")
                 preserved.append(declined_tmp)
-                logging.info(f"Preserved temp file as {declined_tmp}")
+            
+            # Build helpful message
+            good_data_file = next((p for p in preserved if '.declined-' in p), preserved[0] if preserved else recovery_source)
+            msg = (
+                f"Your data is safe in: {os.path.basename(good_data_file)}\n\n"
+                f"Data folder: {os.path.abspath(data_dir)}\n\n"
+                f"To restore later:\n"
+                f"1. Close this app\n"
+                f"2. In the data folder, rename {os.path.basename(good_data_file)} to data.json\n"
+                f"3. Restart the app"
+            )
             
             # Raise to signal clean exit - do not continue with empty data
-            raise RuntimeError(f"User declined recovery. Files preserved: {', '.join(os.path.basename(p) for p in preserved)}")
+            raise RuntimeError(msg)
     
     # Both files corrupt or missing - offer to start empty
     if on_both_corrupt_prompt is None or on_both_corrupt_prompt():
-        timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+        timestamp = datetime.now().strftime('%Y%m%d-%H%M%S-%f')[:-3]  # Include milliseconds
         preserved = []
         
         # Preserve corrupt main file
@@ -260,29 +308,70 @@ def load_data_file_with_recovery(
         return {}
     else:
         # User declined - preserve all files and raise to exit cleanly
-        timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+        import glob
+        timestamp = datetime.now().strftime('%Y%m%d-%H%M%S-%f')[:-3]  # Include milliseconds
         preserved = []
+        data_dir = os.path.dirname(path) or "."
+        
+        # Helper to check if file already preserved with same content
+        def file_already_preserved(source_path, pattern):
+            if not os.path.exists(source_path):
+                return None
+            existing = glob.glob(pattern)
+            for exist_path in sorted(existing, reverse=True):
+                try:
+                    if os.path.getsize(exist_path) == os.path.getsize(source_path):
+                        with open(exist_path, 'rb') as f1, open(source_path, 'rb') as f2:
+                            if f1.read() == f2.read():
+                                return exist_path
+                except OSError:
+                    continue
+            return None
         
         if main_exists:
-            declined_path = f"{path}.corrupt-{timestamp}"
-            shutil.copy2(path, declined_path)
+            existing = file_already_preserved(path, f"{path}.corrupt-*")
+            if existing:
+                declined_path = existing
+                logging.info(f"Using existing preserved copy: {declined_path}")
+            else:
+                declined_path = f"{path}.corrupt-{timestamp}"
+                shutil.copy2(path, declined_path)
+                logging.info(f"Preserved declined main file as {declined_path}")
             preserved.append(declined_path)
-            logging.info(f"Preserved declined main file as {declined_path}")
         
         if os.path.exists(bak_path):
-            declined_bak = f"{bak_path}.declined-{timestamp}"
-            shutil.copy2(bak_path, declined_bak)
+            existing = file_already_preserved(bak_path, f"{bak_path}.declined-*")
+            if existing:
+                declined_bak = existing
+                logging.info(f"Using existing preserved copy: {declined_bak}")
+            else:
+                declined_bak = f"{bak_path}.declined-{timestamp}"
+                shutil.copy2(bak_path, declined_bak)
+                logging.info(f"Preserved backup as {declined_bak}")
             preserved.append(declined_bak)
-            logging.info(f"Preserved backup as {declined_bak}")
         
         if os.path.exists(tmp_path):
-            declined_tmp = f"{tmp_path}.declined-{timestamp}"
-            shutil.copy2(tmp_path, declined_tmp)
+            existing = file_already_preserved(tmp_path, f"{tmp_path}.declined-*")
+            if existing:
+                declined_tmp = existing
+                logging.info(f"Using existing preserved copy: {declined_tmp}")
+            else:
+                declined_tmp = f"{tmp_path}.declined-{timestamp}"
+                shutil.copy2(tmp_path, declined_tmp)
+                logging.info(f"Preserved temp file as {declined_tmp}")
             preserved.append(declined_tmp)
-            logging.info(f"Preserved temp file as {declined_tmp}")
+        
+        # Build helpful message - if all files corrupt, no single "good" file
+        msg = (
+            f"All files appear damaged. Preserved copies:\n"
+            f"{chr(10).join('  ' + os.path.basename(p) for p in preserved)}\n\n"
+            f"Data folder: {os.path.abspath(data_dir)}\n\n"
+            f"To attempt manual recovery, inspect these files and rename "
+            f"the best one to data.json, then restart."
+        )
         
         # Raise to signal clean exit - do not continue with empty data
-        raise RuntimeError(f"User declined to start fresh. Files preserved: {', '.join(os.path.basename(p) for p in preserved)}")
+        raise RuntimeError(msg)
 
 
 
@@ -340,10 +429,10 @@ def save_data_file(path: str, payload: dict[str, Any], *, encrypted: bool, passp
         bak_path = f"{path}.bak"
         if os.path.exists(path):
             # Validate existing file before copying to backup
+            # Use same loader that respects encryption
             try:
-                with open(path, encoding="utf-8") as handle:
-                    existing_data = json.load(handle)
-                # File is valid JSON, safe to rotate to backup
+                existing_data = load_data_file(path, passphrase)
+                # File is valid (decrypted if needed), safe to rotate to backup
                 for attempt in range(max_retries + 1):
                     try:
                         shutil.copy2(path, bak_path)
@@ -355,11 +444,13 @@ def save_data_file(path: str, payload: dict[str, Any], *, encrypted: bool, passp
                         else:
                             # Log but continue - backup rotation failure shouldn't block save
                             logging.error(f"Failed to create backup after {max_retries} retries: {e}")
-            except (json.JSONDecodeError, OSError, ValueError) as e:
-                # Existing main file is corrupt - do NOT copy to backup
+            except (json.JSONDecodeError, OSError, ValueError, PermissionError) as e:
+                # Existing main file is corrupt or wrong passphrase - do NOT copy to backup
                 logging.warning(f"Skipping backup rotation: existing {path} is invalid ({e})")
-                # Preserve the corrupt file before overwriting
-                corrupt_path = f"{path}.corrupt-{time.strftime('%Y%m%d-%H%M%S')}"
+                # Preserve the corrupt file before overwriting (with milliseconds for uniqueness)
+                from datetime import datetime
+                timestamp = datetime.now().strftime('%Y%m%d-%H%M%S-%f')[:-3]  # Include milliseconds
+                corrupt_path = f"{path}.corrupt-{timestamp}"
                 try:
                     shutil.copy2(path, corrupt_path)
                     logging.info(f"Preserved corrupt file as {corrupt_path}")

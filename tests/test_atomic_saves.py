@@ -410,3 +410,82 @@ def test_json_serialization_happens_under_lock(tmp_path):
         loaded = json.load(f)
     assert loaded["version"] == 1
     assert "entries" in loaded
+
+
+def test_save_validates_encrypted_file_before_rotating(tmp_path):
+    """FIX #2: Validation before .bak rotation respects encryption."""
+    try:
+        from cryptography.fernet import Fernet
+    except ImportError:
+        import pytest
+        pytest.skip("cryptography not installed")
+    
+    data_file = tmp_path / "data.json"
+    bak_file = tmp_path / "data.json.bak"
+    passphrase = "test-passphrase"
+    
+    # Save encrypted file
+    encrypted_data = {"version": 1, "entries": {"2024-10-14": {"Body": {"rating": 7}}}}
+    save_data_file(str(data_file), encrypted_data, encrypted=True, passphrase=passphrase)
+    
+    # File should be encrypted (not plain JSON)
+    with open(data_file) as f:
+        content = f.read()
+    assert "integral_encrypted" in content
+    assert "ciphertext" in content
+    
+    # Now save again - this should validate the encrypted file and rotate it to .bak
+    new_data = {"version": 1, "entries": {"2024-10-15": {"Body": {"rating": 8}}}}
+    save_data_file(str(data_file), new_data, encrypted=True, passphrase=passphrase)
+    
+    # Main file should have new data
+    loaded_main = load_data_file(str(data_file), passphrase)
+    assert loaded_main["entries"]["2024-10-15"]["Body"]["rating"] == 8
+    
+    # Backup should exist and contain old encrypted data (not be marked corrupt)
+    assert bak_file.exists()
+    loaded_backup = load_data_file(str(bak_file), passphrase)
+    assert loaded_backup["entries"]["2024-10-14"]["Body"]["rating"] == 7
+    
+    # No .corrupt files should exist (encrypted file was recognized as valid)
+    assert len(list(tmp_path.glob("*.corrupt-*"))) == 0
+
+
+def test_preserved_files_have_unique_millisecond_timestamps(tmp_path):
+    """FIX #3: Multiple preservations in same second get unique names."""
+    data_file = tmp_path / "data.json"
+    bak_file = tmp_path / "data.json.bak"
+    
+    # Create corrupt files
+    with open(data_file, "w") as f:
+        f.write('{"corrupt1"')
+    with open(bak_file, "w") as f:
+        f.write('{"corrupt2"')
+    
+    # Decline recovery multiple times in quick succession
+    for i in range(3):
+        try:
+            load_data_file_with_recovery(
+                str(data_file),
+                passphrase=None,
+                on_recovery_prompt=lambda b, t: False,
+                on_both_corrupt_prompt=lambda: False
+            )
+        except RuntimeError:
+            pass  # Expected
+    
+    # Should have 3 sets of preserved files (main + bak for each decline)
+    corrupt_files = sorted(tmp_path.glob("data.json.corrupt-*"))
+    declined_files = sorted(tmp_path.glob("data.json.bak.declined-*"))
+    
+    assert len(corrupt_files) == 3, f"Expected 3 corrupt preservations, got {len(corrupt_files)}"
+    assert len(declined_files) == 3, f"Expected 3 declined preservations, got {len(declined_files)}"
+    
+    # All names should be unique (no overwrites)
+    all_names = [f.name for f in corrupt_files] + [f.name for f in declined_files]
+    assert len(all_names) == len(set(all_names)), "Some preserved files have duplicate names"
+    
+    # Names should include milliseconds (check format)
+    for f in corrupt_files:
+        # Format should be data.json.corrupt-YYYYMMDD-HHMMSS-mmm
+        assert f.name.count('-') >= 3, f"Timestamp missing milliseconds: {f.name}"

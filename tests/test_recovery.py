@@ -616,3 +616,187 @@ def test_decline_preserves_tmp_file(tmp_path):
     assert len(list(tmp_path.glob("data.json.corrupt-*"))) == 1
     assert len(list(tmp_path.glob("data.json.bak.declined-*"))) == 1
     assert len(list(tmp_path.glob("data.json.tmp.declined-*"))) == 1
+
+
+def test_decline_recovery_does_not_crash_app(tmp_path):
+    """FIX #1: Declining recovery exits cleanly without TclError in __init__."""
+    import tkinter as tk
+    from personal_dev_tracker import PersonalDevelopmentTracker
+    
+    # Set up corrupt data with good backup
+    data_file = tmp_path / "data.json"
+    bak_file = tmp_path / "data.json.bak"
+    
+    good_backup = {"version": 1, "from": "backup"}
+    save_data_file(str(bak_file), good_backup, encrypted=False, passphrase=None)
+    
+    with open(data_file, "w") as f:
+        f.write('{"corrupt"')
+    
+    # Temporarily override data_file path
+    import personal_dev_tracker
+    original_data_file = personal_dev_tracker.DATA_FILE
+    personal_dev_tracker.DATA_FILE = str(data_file)
+    
+    try:
+        # Create root
+        root = tk.Tk()
+        root.withdraw()
+        
+        # Mock the prompts to decline
+        def mock_recovery_prompt(bak_path, ts):
+            return False  # Decline
+        
+        # Patch messagebox to avoid blocking
+        from unittest.mock import patch, MagicMock
+        with patch('personal_dev_tracker.messagebox.showinfo') as mock_info:
+            # This should not raise TclError or any exception
+            # The app should exit cleanly from __init__
+            tracker = PersonalDevelopmentTracker(root)
+            
+            # Verify showinfo was called (exit message)
+            assert mock_info.called
+            
+            # Root should be destroyed
+            # We can't test root.winfo_exists() reliably here, but no exception means success
+        
+        # Clean up
+        try:
+            root.destroy()
+        except tk.TclError:
+            pass  # Already destroyed
+    finally:
+        personal_dev_tracker.DATA_FILE = original_data_file
+
+
+def test_missing_main_with_good_backup_prompts_recovery_fix_a(tmp_path):
+    """FIX A: Missing main with valid .bak routes through recovery, not empty start."""
+    data_file = tmp_path / "data.json"
+    bak_file = tmp_path / "data.json.bak"
+    
+    # Create ONLY backup (main missing)
+    good_backup = {"version": 1, "entries": {"2024-10-14": {"Body": {"rating": 9}}}}
+    save_data_file(str(bak_file), good_backup, encrypted=False, passphrase=None)
+    
+    # Main file must not exist
+    assert not data_file.exists()
+    assert bak_file.exists()
+    
+    # Track if prompt was called
+    prompt_called = [False]
+    
+    def on_recovery_prompt(bak_path, ts):
+        prompt_called[0] = True
+        return True  # Accept recovery
+    
+    # Should route through recovery (not skip to empty start)
+    loaded = load_data_file_with_recovery(
+        str(data_file),
+        passphrase=None,
+        on_recovery_prompt=on_recovery_prompt,
+        on_both_corrupt_prompt=lambda: False  # Should not be called
+    )
+    
+    # Verify prompt was called
+    assert prompt_called[0], "Recovery prompt should have been called"
+    
+    # Verify data was restored
+    assert loaded == good_backup
+    assert data_file.exists()
+    
+    # Good backup should still exist (not overwritten)
+    assert bak_file.exists()
+    with open(bak_file) as f:
+        assert json.load(f) == good_backup
+
+
+def test_decline_shows_helpful_message_fix_b(tmp_path):
+    """FIX B: Decline dialog shows full path and restore instructions."""
+    data_file = tmp_path / "data.json"
+    bak_file = tmp_path / "data.json.bak"
+    
+    good_backup = {"version": 1, "from": "backup"}
+    save_data_file(str(bak_file), good_backup, encrypted=False, passphrase=None)
+    
+    with open(data_file, "w") as f:
+        f.write('{"corrupt"')
+    
+    try:
+        load_data_file_with_recovery(
+            str(data_file),
+            passphrase=None,
+            on_recovery_prompt=lambda b, t: False,  # Decline
+            on_both_corrupt_prompt=lambda: False
+        )
+    except RuntimeError as e:
+        msg = str(e)
+        # Should contain full path
+        assert str(tmp_path) in msg or os.path.abspath(str(tmp_path)) in msg
+        # Should mention the good data file
+        assert ".declined-" in msg or ".bak" in msg
+        # Should have restore instructions
+        assert "rename" in msg.lower()
+        assert "data.json" in msg
+        # Should NOT say "move these files" or similar
+        assert "move these files" not in msg.lower()
+        assert "delete" not in msg.lower() or "To restore" in msg
+
+
+def test_repeated_decline_no_duplicates_fix_c(tmp_path):
+    """FIX C: Repeated declines don't create duplicate copies of identical files."""
+    data_file = tmp_path / "data.json"
+    bak_file = tmp_path / "data.json.bak"
+    
+    good_backup = {"version": 1, "from": "backup"}
+    save_data_file(str(bak_file), good_backup, encrypted=False, passphrase=None)
+    
+    with open(data_file, "w") as f:
+        f.write('{"corrupt"')
+    
+    # Decline 3 times
+    for i in range(3):
+        try:
+            load_data_file_with_recovery(
+                str(data_file),
+                passphrase=None,
+                on_recovery_prompt=lambda b, t: False,
+                on_both_corrupt_prompt=lambda: False
+            )
+        except RuntimeError:
+            pass
+    
+    # Should have only ONE copy of each unique file (not 3)
+    corrupt_files = list(tmp_path.glob("data.json.corrupt-*"))
+    declined_files = list(tmp_path.glob("data.json.bak.declined-*"))
+    
+    assert len(corrupt_files) == 1, f"Expected 1 corrupt copy, got {len(corrupt_files)}"
+    assert len(declined_files) == 1, f"Expected 1 declined copy, got {len(declined_files)}"
+
+
+def test_both_corrupt_decline_preserves_backup_fix_d(tmp_path):
+    """FIX D: Both-corrupt decline doesn't lose the .bak file."""
+    data_file = tmp_path / "data.json"
+    bak_file = tmp_path / "data.json.bak"
+    
+    with open(data_file, "w") as f:
+        f.write('{"corrupt1"')
+    with open(bak_file, "w") as f:
+        f.write('{"corrupt2"')
+    
+    try:
+        load_data_file_with_recovery(
+            str(data_file),
+            passphrase=None,
+            on_recovery_prompt=lambda b, t: False,
+            on_both_corrupt_prompt=lambda: False
+        )
+    except RuntimeError:
+        pass
+    
+    # Both originals should still exist
+    assert data_file.exists()
+    assert bak_file.exists()
+    
+    # Both should be preserved
+    assert len(list(tmp_path.glob("data.json.corrupt-*"))) == 1
+    assert len(list(tmp_path.glob("data.json.bak.declined-*"))) == 1
