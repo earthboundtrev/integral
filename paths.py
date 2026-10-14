@@ -70,6 +70,8 @@ def ensure_data_file() -> str:
     if is_frozen():
         portable_next_to_exe = os.path.join(os.path.dirname(sys.executable), "data", "data.json")
         if os.path.exists(portable_next_to_exe):
-            shutil.copy2(portable_next_to_exe, path)
+            # Atomic copy for one-time bootstrap
+            from integral_io import atomic_copy_file
+            atomic_copy_file(portable_next_to_exe, path)
 
     return path

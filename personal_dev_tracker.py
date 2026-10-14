@@ -55,7 +55,7 @@ from theme import (
     style_text_widget,
 )
 import ui_scroll
-from vault import is_encrypted_file, load_data_file, save_data_file
+from vault import is_encrypted_file, load_data_file, load_data_file_with_recovery, save_data_file
 from todays_log import (
     CATEGORY_SHORT_LABELS,
     apply_todays_log_settings,
@@ -555,12 +555,47 @@ class PersonalDevelopmentTracker:
     def load_data(self) -> None:
         ensure_data_file()
         if os.path.exists(DATA_FILE):
+            def on_recovery_prompt(bak_path, bak_timestamp):
+                """Prompt user to restore from backup."""
+                return messagebox.askyesno(
+                    "Data File Damaged",
+                    f"Your data file appears to be damaged.\n\n"
+                    f"Restore from backup?\n"
+                    f"(Last good backup: {bak_timestamp})",
+                    icon="warning"
+                )
+            
+            def on_both_corrupt_prompt():
+                """Prompt user when both files are corrupt."""
+                return messagebox.askyesno(
+                    "Data Recovery",
+                    "Both your data file and backup appear to be damaged.\n\n"
+                    "The damaged files will be preserved with a timestamp.\n"
+                    "Start with a fresh, empty journal?",
+                    icon="warning"
+                )
+            
             try:
-                data = load_data_file(DATA_FILE, self.vault_passphrase)
+                data = load_data_file_with_recovery(
+                    DATA_FILE, 
+                    self.vault_passphrase,
+                    on_recovery_prompt=on_recovery_prompt,
+                    on_both_corrupt_prompt=on_both_corrupt_prompt
+                )
             except PermissionError:
                 if not prompt_vault_unlock(self):
                     raise
-                data = load_data_file(DATA_FILE, self.vault_passphrase)
+                data = load_data_file_with_recovery(
+                    DATA_FILE, 
+                    self.vault_passphrase,
+                    on_recovery_prompt=on_recovery_prompt,
+                    on_both_corrupt_prompt=on_both_corrupt_prompt
+                )
+            except ValueError as e:
+                # User declined recovery
+                messagebox.showerror("Cannot Continue", str(e))
+                raise
+                
             migrated = migrate_data(data, self.programs)
             self.categories = self.merge_categories_with_defaults(migrated.get("categories"))
             self.entries = migrated.get("entries", {})

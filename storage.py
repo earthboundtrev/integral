@@ -137,6 +137,11 @@ def load(data_path=None):
 
 
 def save(data, data_path=None):
+    """Atomically save data.json with backup rotation.
+    
+    Write to temp file, fsync, then os.replace. Before replacing, rotate the
+    current good data.json to data.json.bak.
+    """
     path = data_path or get_data_path()
     ensure_data_dir()
     directory = os.path.dirname(path)
@@ -144,6 +149,16 @@ def save(data, data_path=None):
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+        
+        # Rotate current good file to backup before replacing
+        bak_path = f"{path}.bak"
+        if os.path.exists(path):
+            if os.path.exists(bak_path):
+                os.remove(bak_path)
+            os.replace(path, bak_path)
+        
         os.replace(temp_path, path)
     except Exception:
         if os.path.exists(temp_path):
