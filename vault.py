@@ -114,89 +114,145 @@ def load_data_file_with_recovery(
     on_recovery_prompt=None,
     on_both_corrupt_prompt=None
 ) -> dict[str, Any]:
-    """Load data.json with automatic recovery from .bak if corrupt.
+    """Load data.json with automatic recovery from .bak or .tmp if corrupt/missing.
     
-    If data.json fails to load or parse:
-    1. Try to load from data.json.bak
-    2. If .bak is valid, prompt to restore it (via callback)
-    3. If both are corrupt, prompt to preserve and start empty
+    Recovery cases:
+    1. data.json missing but .bak or .tmp exists: prompt to restore
+    2. data.json corrupt but .bak valid: prompt to restore from .bak
+    3. Both corrupt: prompt to preserve both and start empty
     
     Args:
         path: Path to data.json
         passphrase: Vault passphrase if encrypted
         on_recovery_prompt: Callable(bak_path, bak_timestamp_str) -> bool
-            Returns True to restore from backup, False to abort
+            Returns True to restore from backup, False to decline
         on_both_corrupt_prompt: Callable() -> bool
-            Returns True to preserve corrupt file and start empty, False to abort
+            Returns True to preserve corrupt files and start empty, False to decline
     
     Returns:
-        Loaded data dict (or empty dict if starting fresh)
+        Loaded data dict (or empty dict if starting fresh after decline)
         
     Raises:
-        ValueError: If user declines recovery and no valid data exists
+        RuntimeError: If recovery is needed but user declined (not ValueError)
     """
     import logging
     import shutil
     from datetime import datetime
     
-    # Try to load the main file
-    try:
-        return load_data_file(path, passphrase)
-    except (json.JSONDecodeError, OSError, ValueError, PermissionError) as e:
-        logging.error(f"Failed to load {path}: {e}")
-        
-        # Try to load backup
-        bak_path = f"{path}.bak"
-        bak_data = None
-        bak_timestamp = None
-        
-        if os.path.exists(bak_path):
-            try:
-                bak_data = load_data_file(bak_path, passphrase)
-                # Get backup timestamp
-                bak_stat = os.stat(bak_path)
-                bak_timestamp = datetime.fromtimestamp(bak_stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
-            except (json.JSONDecodeError, OSError, ValueError, PermissionError) as bak_e:
-                logging.error(f"Backup {bak_path} is also corrupt: {bak_e}")
-        
-        # If backup is valid, offer to restore it
-        if bak_data is not None:
-            if on_recovery_prompt is None or on_recovery_prompt(bak_path, bak_timestamp):
-                # Preserve the corrupt file before restoring
+    main_exists = os.path.exists(path)
+    main_data = None
+    main_error = None
+    
+    # Try to load the main file if it exists
+    if main_exists:
+        try:
+            return load_data_file(path, passphrase)
+        except (json.JSONDecodeError, OSError, ValueError, PermissionError) as e:
+            main_error = e
+            logging.error(f"Failed to load {path}: {e}")
+    else:
+        logging.warning(f"Main file {path} is missing")
+    
+    # Main file missing or corrupt - try backup or temp
+    bak_path = f"{path}.bak"
+    tmp_path = f"{path}.tmp"
+    bak_data = None
+    bak_timestamp = None
+    recovery_source = None
+    
+    # Try .bak first
+    if os.path.exists(bak_path):
+        try:
+            bak_data = load_data_file(bak_path, passphrase)
+            bak_stat = os.stat(bak_path)
+            bak_timestamp = datetime.fromtimestamp(bak_stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+            recovery_source = bak_path
+        except (json.JSONDecodeError, OSError, ValueError, PermissionError) as bak_e:
+            logging.error(f"Backup {bak_path} is also corrupt: {bak_e}")
+    
+    # If no valid .bak but main is missing, try leftover .tmp
+    if bak_data is None and not main_exists and os.path.exists(tmp_path):
+        try:
+            bak_data = load_data_file(tmp_path, passphrase)
+            tmp_stat = os.stat(tmp_path)
+            bak_timestamp = datetime.fromtimestamp(tmp_stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+            recovery_source = tmp_path
+            logging.info(f"Found valid leftover temp file {tmp_path}")
+        except (json.JSONDecodeError, OSError, ValueError, PermissionError) as tmp_e:
+            logging.error(f"Temp file {tmp_path} is also corrupt: {tmp_e}")
+    
+    # If backup/tmp is valid, offer to restore
+    if bak_data is not None:
+        if on_recovery_prompt is None or on_recovery_prompt(recovery_source, bak_timestamp):
+            # Preserve the corrupt main file before restoring (if it exists)
+            if main_exists:
                 corrupt_path = f"{path}.corrupt-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
                 shutil.copy2(path, corrupt_path)
                 logging.info(f"Preserved corrupt file as {corrupt_path}")
-                
-                # Restore backup atomically with save lock
-                from integral_io import atomic_copy_file
-                atomic_copy_file(bak_path, path)
-                logging.info(f"Restored from backup: {bak_path}")
-                return bak_data
-            else:
-                raise ValueError("User declined recovery from backup")
-        
-        # Both files are corrupt - offer to start empty
-        if on_both_corrupt_prompt is None or on_both_corrupt_prompt():
-            # Preserve corrupt file
-            corrupt_path = f"{path}.corrupt-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-            if os.path.exists(path):
-                shutil.copy2(path, corrupt_path)
-                logging.info(f"Preserved corrupt file as {corrupt_path}")
             
-            # Start with empty data
-            logging.warning("Starting with empty data after corruption")
-            return {}
+            # Restore backup atomically with save lock
+            from integral_io import atomic_copy_file
+            atomic_copy_file(recovery_source, path)
+            logging.info(f"Restored from {recovery_source}")
+            
+            # Clean up .tmp if that was the source
+            if recovery_source == tmp_path:
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+            
+            return bak_data
         else:
-            raise ValueError("User declined to start with empty data")
+            # User declined - return empty data, not an error
+            logging.warning("User declined recovery; continuing with empty data")
+            return {}
+    
+    # Both files corrupt or missing - offer to start empty
+    if on_both_corrupt_prompt is None or on_both_corrupt_prompt():
+        timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+        
+        # Preserve corrupt main file
+        if main_exists:
+            corrupt_path = f"{path}.corrupt-{timestamp}"
+            shutil.copy2(path, corrupt_path)
+            logging.info(f"Preserved corrupt main file as {corrupt_path}")
+        
+        # Preserve corrupt backup file
+        if os.path.exists(bak_path):
+            bak_corrupt_path = f"{bak_path}.corrupt-{timestamp}"
+            shutil.copy2(bak_path, bak_corrupt_path)
+            logging.info(f"Preserved corrupt backup as {bak_corrupt_path}")
+        
+        # Clean up leftover .tmp if present
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+                logging.info(f"Cleaned up leftover {tmp_path}")
+            except OSError:
+                pass
+        
+        # Start with empty data
+        logging.warning("Starting with empty data after corruption")
+        return {}
+    else:
+        # User declined - return empty data, not an error
+        logging.warning("User declined to start with empty data; continuing with empty data")
+        return {}
 
 
 
 def save_data_file(path: str, payload: dict[str, Any], *, encrypted: bool, passphrase: str | None) -> None:
     """Atomically save data.json with backup rotation.
     
-    Write to temp file, fsync, then os.replace. Before replacing, rotate the
-    current good data.json to data.json.bak. Use a lock to serialize saves.
+    Write to temp file, fsync, then os.replace. Before replacing, copy the
+    current good data.json to data.json.bak (never leave main file missing).
+    Use a lock to serialize saves. Handle Windows file-locking with retry.
     """
+    import logging
+    import shutil
+    import time
+    
     with _save_lock:
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
         if encrypted:
@@ -207,20 +263,57 @@ def save_data_file(path: str, payload: dict[str, Any], *, encrypted: bool, passp
         else:
             to_write = payload
         
-        # Write to temp file in same directory
-        temp_path = f"{path}.tmp"
-        with open(temp_path, "w", encoding="utf-8") as handle:
-            json.dump(to_write, handle, indent=2, ensure_ascii=False)
-            handle.flush()
-            os.fsync(handle.fileno())
+        # Serialize to JSON string under lock (safe snapshot before threading)
+        json_str = json.dumps(to_write, indent=2, ensure_ascii=False)
         
-        # Rotate current good file to backup before replacing
+        # Write to temp file in same directory with retry for PermissionError
+        temp_path = f"{path}.tmp"
+        max_retries = 3
+        retry_delay = 0.1
+        
+        for attempt in range(max_retries + 1):
+            try:
+                with open(temp_path, "w", encoding="utf-8") as handle:
+                    handle.write(json_str)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                break
+            except PermissionError as e:
+                if attempt < max_retries:
+                    logging.warning(f"PermissionError writing {temp_path}, retry {attempt + 1}/{max_retries}")
+                    time.sleep(retry_delay * (2 ** attempt))
+                else:
+                    # Clean up temp file on final failure
+                    try:
+                        if os.path.exists(temp_path):
+                            os.remove(temp_path)
+                    except OSError:
+                        pass
+                    raise RuntimeError(f"Failed to write {temp_path} after {max_retries} retries: {e}")
+        
+        # Copy current good file to backup (never leave main file missing)
         bak_path = f"{path}.bak"
         if os.path.exists(path):
-            # Use os.replace which is atomic on both Windows and Unix
-            if os.path.exists(bak_path):
-                os.remove(bak_path)
-            os.replace(path, bak_path)
+            for attempt in range(max_retries + 1):
+                try:
+                    shutil.copy2(path, bak_path)
+                    break
+                except PermissionError as e:
+                    if attempt < max_retries:
+                        logging.warning(f"PermissionError copying to {bak_path}, retry {attempt + 1}/{max_retries}")
+                        time.sleep(retry_delay * (2 ** attempt))
+                    else:
+                        # Log but continue - backup rotation failure shouldn't block save
+                        logging.error(f"Failed to create backup after {max_retries} retries: {e}")
         
-        # Atomic replace temp with real file
-        os.replace(temp_path, path)
+        # Atomic replace temp with real file with retry
+        for attempt in range(max_retries + 1):
+            try:
+                os.replace(temp_path, path)
+                break
+            except PermissionError as e:
+                if attempt < max_retries:
+                    logging.warning(f"PermissionError replacing {path}, retry {attempt + 1}/{max_retries}")
+                    time.sleep(retry_delay * (2 ** attempt))
+                else:
+                    raise RuntimeError(f"Failed to replace {path} after {max_retries} retries: {e}")

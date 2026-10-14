@@ -299,3 +299,183 @@ def test_recovery_default_prompts_accept(tmp_path):
     
     # Should have recovered from backup
     assert loaded == backup_payload
+
+
+def test_recovery_missing_main_with_good_backup(tmp_path):
+    """GAP #1: Missing main file but valid .bak should prompt for recovery."""
+    data_file = tmp_path / "data.json"
+    bak_file = tmp_path / "data.json.bak"
+    
+    # Create only a backup file (main is missing)
+    backup_payload = {"version": 1, "from": "backup", "entries": {"2024-10-14": {}}}
+    save_data_file(str(bak_file), backup_payload, encrypted=False, passphrase=None)
+    
+    # Main file does not exist
+    assert not data_file.exists()
+    assert bak_file.exists()
+    
+    # Track prompts
+    prompts = []
+    
+    def on_recovery_prompt(bak_path, bak_timestamp):
+        prompts.append(("recovery", bak_path, bak_timestamp))
+        return True  # Accept recovery
+    
+    # Recovery should prompt and restore from .bak
+    loaded = load_data_file_with_recovery(
+        str(data_file),
+        passphrase=None,
+        on_recovery_prompt=on_recovery_prompt,
+        on_both_corrupt_prompt=lambda: False  # Should not be called
+    )
+    
+    # Should have prompted for recovery
+    assert len(prompts) == 1
+    assert prompts[0][0] == "recovery"
+    assert str(bak_file) in prompts[0][1]
+    
+    # Should have loaded backup data
+    assert loaded == backup_payload
+    
+    # Main file should now exist with backup data
+    assert data_file.exists()
+    with open(data_file) as f:
+        restored = json.load(f)
+    assert restored == backup_payload
+
+
+def test_recovery_missing_main_with_good_tmp(tmp_path):
+    """GAP #1: Missing main file but valid .tmp should prompt for recovery."""
+    data_file = tmp_path / "data.json"
+    tmp_file = tmp_path / "data.json.tmp"
+    
+    # Create only a temp file (main is missing, no backup)
+    tmp_payload = {"version": 1, "from": "tmp", "entries": {}}
+    save_data_file(str(tmp_file), tmp_payload, encrypted=False, passphrase=None)
+    
+    # Main file does not exist
+    assert not data_file.exists()
+    assert tmp_file.exists()
+    
+    # Track prompts
+    prompts = []
+    
+    def on_recovery_prompt(recovery_path, timestamp):
+        prompts.append(("recovery", recovery_path, timestamp))
+        return True  # Accept recovery
+    
+    # Recovery should prompt and restore from .tmp
+    loaded = load_data_file_with_recovery(
+        str(data_file),
+        passphrase=None,
+        on_recovery_prompt=on_recovery_prompt,
+        on_both_corrupt_prompt=lambda: False  # Should not be called
+    )
+    
+    # Should have prompted for recovery
+    assert len(prompts) == 1
+    assert prompts[0][0] == "recovery"
+    assert str(tmp_file) in prompts[0][1]
+    
+    # Should have loaded tmp data
+    assert loaded == tmp_payload
+    
+    # Main file should now exist, tmp cleaned up
+    assert data_file.exists()
+    assert not tmp_file.exists()
+
+
+def test_both_corrupt_preserves_both_files(tmp_path):
+    """GAP #3: Both-corrupt case should preserve both data.json AND .bak."""
+    data_file = tmp_path / "data.json"
+    bak_file = tmp_path / "data.json.bak"
+    
+    # Create corrupt main file
+    with open(data_file, "w") as f:
+        f.write('{"invalid": "json", "missing')
+    
+    # Create corrupt backup
+    with open(bak_file, "w") as f:
+        f.write('{"also": "corrupt"')
+    
+    # User accepts starting fresh
+    loaded = load_data_file_with_recovery(
+        str(data_file),
+        passphrase=None,
+        on_recovery_prompt=lambda bak, ts: False,  # Won't be called (bak corrupt)
+        on_both_corrupt_prompt=lambda: True  # Accept fresh start
+    )
+    
+    # Should return empty data
+    assert loaded == {}
+    
+    # Should have preserved BOTH corrupt files
+    corrupt_files = list(tmp_path.glob("data.json.corrupt-*"))
+    bak_corrupt_files = list(tmp_path.glob("data.json.bak.corrupt-*"))
+    
+    assert len(corrupt_files) == 1, f"Expected 1 corrupt main, found {len(corrupt_files)}"
+    assert len(bak_corrupt_files) == 1, f"Expected 1 corrupt backup, found {len(bak_corrupt_files)}"
+    
+    # Verify preserved files contain original corrupt content
+    with open(corrupt_files[0]) as f:
+        content = f.read()
+    assert "invalid" in content
+    
+    with open(bak_corrupt_files[0]) as f:
+        content = f.read()
+    assert "also" in content
+
+
+def test_decline_recovery_continues_with_empty_data(tmp_path):
+    """GAP #4: Declining recovery should return empty data, not crash."""
+    data_file = tmp_path / "data.json"
+    bak_file = tmp_path / "data.json.bak"
+    
+    # Create good backup
+    backup_payload = {"version": 1, "from": "backup"}
+    save_data_file(str(bak_file), backup_payload, encrypted=False, passphrase=None)
+    
+    # Create corrupt main file
+    with open(data_file, "w") as f:
+        f.write('{"invalid": "json"')
+    
+    # User declines recovery - should not raise, just return empty
+    loaded = load_data_file_with_recovery(
+        str(data_file),
+        passphrase=None,
+        on_recovery_prompt=lambda bak, ts: False,  # Decline
+        on_both_corrupt_prompt=lambda: False  # Won't be called
+    )
+    
+    # Should return empty data (not raise ValueError)
+    assert loaded == {}
+
+
+def test_decline_both_corrupt_continues_with_empty_data(tmp_path):
+    """GAP #4: Declining both-corrupt prompt should return empty data, not crash."""
+    data_file = tmp_path / "data.json"
+    bak_file = tmp_path / "data.json.bak"
+    
+    # Create corrupt main
+    with open(data_file, "w") as f:
+        f.write('{"invalid"')
+    
+    # Create corrupt backup
+    with open(bak_file, "w") as f:
+        f.write('{"also"')
+    
+    # User declines both-corrupt prompt - should not raise, just return empty
+    loaded = load_data_file_with_recovery(
+        str(data_file),
+        passphrase=None,
+        on_recovery_prompt=lambda bak, ts: False,  # Won't be called (bak corrupt)
+        on_both_corrupt_prompt=lambda: False  # Decline
+    )
+    
+    # Should return empty data (not raise ValueError)
+    assert loaded == {}
+    
+    # Files should be left untouched (not preserved with timestamp)
+    assert data_file.exists()
+    assert bak_file.exists()
+    assert len(list(tmp_path.glob("*.corrupt-*"))) == 0

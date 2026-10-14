@@ -584,17 +584,19 @@ class PersonalDevelopmentTracker:
                 )
             except PermissionError:
                 if not prompt_vault_unlock(self):
-                    raise
-                data = load_data_file_with_recovery(
-                    DATA_FILE, 
-                    self.vault_passphrase,
-                    on_recovery_prompt=on_recovery_prompt,
-                    on_both_corrupt_prompt=on_both_corrupt_prompt
-                )
-            except ValueError as e:
-                # User declined recovery
-                messagebox.showerror("Cannot Continue", str(e))
-                raise
+                    self.root.destroy()
+                    return
+                try:
+                    data = load_data_file_with_recovery(
+                        DATA_FILE, 
+                        self.vault_passphrase,
+                        on_recovery_prompt=on_recovery_prompt,
+                        on_both_corrupt_prompt=on_both_corrupt_prompt
+                    )
+                except Exception as e:
+                    messagebox.showerror("Cannot Load Data", f"Failed to load data file: {e}")
+                    self.root.destroy()
+                    return
                 
             migrated = migrate_data(data, self.programs)
             self.categories = self.merge_categories_with_defaults(migrated.get("categories"))
@@ -707,6 +709,8 @@ class PersonalDevelopmentTracker:
         self._save_after_id = self.root.after(250, lambda: self._flush_save(sync=False))
 
     def _flush_save(self, sync: bool = False) -> None:
+        import logging
+        
         self._save_after_id = None
         payload = self._pending_save_payload
         if payload is None:
@@ -717,7 +721,19 @@ class PersonalDevelopmentTracker:
         path = DATA_FILE
 
         def write() -> None:
-            save_data_file(path, payload, encrypted=encrypted, passphrase=passphrase)
+            try:
+                save_data_file(path, payload, encrypted=encrypted, passphrase=passphrase)
+            except Exception as e:
+                logging.error(f"Background save failed: {e}", exc_info=True)
+                # Schedule UI notification on main thread
+                try:
+                    self.root.after(0, lambda: messagebox.showerror(
+                        "Save Failed",
+                        f"Failed to save data: {e}\n\nYour changes may be lost. "
+                        "Check the log and try saving manually (Settings → Export Backup)."
+                    ))
+                except Exception:
+                    pass
 
         if sync:
             write()

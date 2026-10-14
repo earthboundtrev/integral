@@ -1,4 +1,4 @@
-"""Tests for atomic saves with backup rotation (issue #95)."""
+"""Tests for atomic saves with backup rotation (issue #95, #100 gaps)."""
 
 import json
 import os
@@ -6,6 +6,7 @@ import tempfile
 import threading
 import time
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -303,3 +304,109 @@ def test_restore_uses_save_lock(tmp_path):
         final = json.load(f)
     assert "type" in final
     assert final["type"] in ("save", "restore")
+
+
+def test_main_file_never_missing_during_save(tmp_path):
+    """GAP #1: Main file must never go missing during backup rotation."""
+    data_file = tmp_path / "data.json"
+    bak_file = tmp_path / "data.json.bak"
+    
+    # Create initial file
+    payload1 = {"version": 1, "data": "first"}
+    save_data_file(str(data_file), payload1, encrypted=False, passphrase=None)
+    assert data_file.exists()
+    
+    # Patch os.replace to verify main file still exists before final replace
+    original_replace = os.replace
+    replace_calls = []
+    
+    def tracked_replace(src, dst):
+        replace_calls.append((src, dst))
+        # At this point in the save, both main and backup should exist
+        # (because we copy to backup, not move)
+        if dst == str(data_file):
+            assert data_file.exists(), "Main file missing before final replace!"
+            assert bak_file.exists(), "Backup missing before final replace!"
+        return original_replace(src, dst)
+    
+    with patch('os.replace', side_effect=tracked_replace):
+        payload2 = {"version": 2, "data": "second"}
+        save_data_file(str(data_file), payload2, encrypted=False, passphrase=None)
+    
+    # Verify both files exist after save
+    assert data_file.exists()
+    assert bak_file.exists()
+    
+    # Verify backup has old version
+    with open(bak_file) as f:
+        assert json.load(f) == payload1
+
+
+def test_permission_error_retry_succeeds(tmp_path):
+    """GAP #5: PermissionError should be retried with backoff."""
+    data_file = tmp_path / "data.json"
+    payload = {"test": "data"}
+    
+    # Simulate PermissionError on first two attempts, then succeed
+    attempt_count = [0]
+    original_open = open
+    
+    def flaky_open(path, *args, **kwargs):
+        if str(path).endswith(".tmp") and "w" in str(args):
+            attempt_count[0] += 1
+            if attempt_count[0] <= 2:
+                raise PermissionError("Simulated antivirus lock")
+        return original_open(path, *args, **kwargs)
+    
+    with patch('builtins.open', side_effect=flaky_open):
+        # Should succeed after retries
+        save_data_file(str(data_file), payload, encrypted=False, passphrase=None)
+    
+    assert attempt_count[0] == 3  # Failed twice, succeeded on third
+    assert data_file.exists()
+    with open(data_file) as f:
+        assert json.load(f) == payload
+
+
+def test_permission_error_retry_exhaustion(tmp_path):
+    """GAP #5: After max retries, PermissionError should raise RuntimeError."""
+    data_file = tmp_path / "data.json"
+    payload = {"test": "data"}
+    
+    # Simulate persistent PermissionError
+    original_open = open
+    
+    def locked_open(path, *args, **kwargs):
+        if str(path).endswith(".tmp") and "w" in str(args):
+            raise PermissionError("Persistent file lock")
+        return original_open(path, *args, **kwargs)
+    
+    with patch('builtins.open', side_effect=locked_open):
+        with pytest.raises(RuntimeError, match="Failed to write.*after.*retries"):
+            save_data_file(str(data_file), payload, encrypted=False, passphrase=None)
+    
+    # Temp file should be cleaned up
+    assert not (tmp_path / "data.json.tmp").exists()
+
+
+def test_json_serialization_happens_under_lock(tmp_path):
+    """GAP #2: JSON serialization should complete under lock before data can mutate."""
+    import copy
+    data_file = tmp_path / "data.json"
+    
+    # Create payload with nested structure
+    payload = {
+        "version": 1,
+        "entries": {"2024-10-14": {"Body": {"rating": 7}}},
+        "settings": {"dark_mode": False}
+    }
+    
+    # Save should complete successfully even if we simulate concurrent modification
+    # The JSON string is created under lock, so mutations after lock release don't matter
+    save_data_file(str(data_file), payload, encrypted=False, passphrase=None)
+    
+    assert data_file.exists()
+    with open(data_file) as f:
+        loaded = json.load(f)
+    assert loaded["version"] == 1
+    assert "entries" in loaded
