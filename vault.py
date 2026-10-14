@@ -204,41 +204,85 @@ def load_data_file_with_recovery(
             
             return bak_data
         else:
-            # User declined - return empty data, not an error
-            logging.warning("User declined recovery; continuing with empty data")
-            return {}
+            # User declined recovery - preserve all files and raise to exit cleanly
+            timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+            preserved = []
+            
+            if main_exists:
+                declined_path = f"{path}.corrupt-{timestamp}"
+                shutil.copy2(path, declined_path)
+                preserved.append(declined_path)
+                logging.info(f"Preserved declined main file as {declined_path}")
+            
+            if os.path.exists(recovery_source):
+                declined_bak = f"{recovery_source}.declined-{timestamp}"
+                shutil.copy2(recovery_source, declined_bak)
+                preserved.append(declined_bak)
+                logging.info(f"Preserved good backup as {declined_bak}")
+            
+            if os.path.exists(tmp_path) and tmp_path != recovery_source:
+                declined_tmp = f"{tmp_path}.declined-{timestamp}"
+                shutil.copy2(tmp_path, declined_tmp)
+                preserved.append(declined_tmp)
+                logging.info(f"Preserved temp file as {declined_tmp}")
+            
+            # Raise to signal clean exit - do not continue with empty data
+            raise RuntimeError(f"User declined recovery. Files preserved: {', '.join(os.path.basename(p) for p in preserved)}")
     
     # Both files corrupt or missing - offer to start empty
     if on_both_corrupt_prompt is None or on_both_corrupt_prompt():
         timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+        preserved = []
         
         # Preserve corrupt main file
         if main_exists:
             corrupt_path = f"{path}.corrupt-{timestamp}"
             shutil.copy2(path, corrupt_path)
+            preserved.append(corrupt_path)
             logging.info(f"Preserved corrupt main file as {corrupt_path}")
         
         # Preserve corrupt backup file
         if os.path.exists(bak_path):
             bak_corrupt_path = f"{bak_path}.corrupt-{timestamp}"
             shutil.copy2(bak_path, bak_corrupt_path)
+            preserved.append(bak_corrupt_path)
             logging.info(f"Preserved corrupt backup as {bak_corrupt_path}")
         
-        # Clean up leftover .tmp if present
+        # Preserve leftover .tmp if present
         if os.path.exists(tmp_path):
-            try:
-                os.remove(tmp_path)
-                logging.info(f"Cleaned up leftover {tmp_path}")
-            except OSError:
-                pass
+            tmp_corrupt_path = f"{tmp_path}.corrupt-{timestamp}"
+            shutil.copy2(tmp_path, tmp_corrupt_path)
+            preserved.append(tmp_corrupt_path)
+            logging.info(f"Preserved temp file as {tmp_corrupt_path}")
         
         # Start with empty data
         logging.warning("Starting with empty data after corruption")
         return {}
     else:
-        # User declined - return empty data, not an error
-        logging.warning("User declined to start with empty data; continuing with empty data")
-        return {}
+        # User declined - preserve all files and raise to exit cleanly
+        timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+        preserved = []
+        
+        if main_exists:
+            declined_path = f"{path}.corrupt-{timestamp}"
+            shutil.copy2(path, declined_path)
+            preserved.append(declined_path)
+            logging.info(f"Preserved declined main file as {declined_path}")
+        
+        if os.path.exists(bak_path):
+            declined_bak = f"{bak_path}.declined-{timestamp}"
+            shutil.copy2(bak_path, declined_bak)
+            preserved.append(declined_bak)
+            logging.info(f"Preserved backup as {declined_bak}")
+        
+        if os.path.exists(tmp_path):
+            declined_tmp = f"{tmp_path}.declined-{timestamp}"
+            shutil.copy2(tmp_path, declined_tmp)
+            preserved.append(declined_tmp)
+            logging.info(f"Preserved temp file as {declined_tmp}")
+        
+        # Raise to signal clean exit - do not continue with empty data
+        raise RuntimeError(f"User declined to start fresh. Files preserved: {', '.join(os.path.basename(p) for p in preserved)}")
 
 
 
@@ -292,19 +336,35 @@ def save_data_file(path: str, payload: dict[str, Any], *, encrypted: bool, passp
                     raise RuntimeError(f"Failed to write {temp_path} after {max_retries} retries: {e}")
         
         # Copy current good file to backup (never leave main file missing)
+        # Validate main file is parseable before rotating to backup
         bak_path = f"{path}.bak"
         if os.path.exists(path):
-            for attempt in range(max_retries + 1):
+            # Validate existing file before copying to backup
+            try:
+                with open(path, encoding="utf-8") as handle:
+                    existing_data = json.load(handle)
+                # File is valid JSON, safe to rotate to backup
+                for attempt in range(max_retries + 1):
+                    try:
+                        shutil.copy2(path, bak_path)
+                        break
+                    except PermissionError as e:
+                        if attempt < max_retries:
+                            logging.warning(f"PermissionError copying to {bak_path}, retry {attempt + 1}/{max_retries}")
+                            time.sleep(retry_delay * (2 ** attempt))
+                        else:
+                            # Log but continue - backup rotation failure shouldn't block save
+                            logging.error(f"Failed to create backup after {max_retries} retries: {e}")
+            except (json.JSONDecodeError, OSError, ValueError) as e:
+                # Existing main file is corrupt - do NOT copy to backup
+                logging.warning(f"Skipping backup rotation: existing {path} is invalid ({e})")
+                # Preserve the corrupt file before overwriting
+                corrupt_path = f"{path}.corrupt-{time.strftime('%Y%m%d-%H%M%S')}"
                 try:
-                    shutil.copy2(path, bak_path)
-                    break
-                except PermissionError as e:
-                    if attempt < max_retries:
-                        logging.warning(f"PermissionError copying to {bak_path}, retry {attempt + 1}/{max_retries}")
-                        time.sleep(retry_delay * (2 ** attempt))
-                    else:
-                        # Log but continue - backup rotation failure shouldn't block save
-                        logging.error(f"Failed to create backup after {max_retries} retries: {e}")
+                    shutil.copy2(path, corrupt_path)
+                    logging.info(f"Preserved corrupt file as {corrupt_path}")
+                except OSError:
+                    pass
         
         # Atomic replace temp with real file with retry
         for attempt in range(max_retries + 1):

@@ -593,10 +593,28 @@ class PersonalDevelopmentTracker:
                         on_recovery_prompt=on_recovery_prompt,
                         on_both_corrupt_prompt=on_both_corrupt_prompt
                     )
+                except RuntimeError as e:
+                    # User declined recovery - files preserved, exit cleanly
+                    messagebox.showinfo(
+                        "Recovery Declined",
+                        f"{e}\n\nThe app will now exit. To start fresh later, "
+                        "manually delete or move these files from your data directory."
+                    )
+                    self.root.destroy()
+                    return
                 except Exception as e:
                     messagebox.showerror("Cannot Load Data", f"Failed to load data file: {e}")
                     self.root.destroy()
                     return
+            except RuntimeError as e:
+                # User declined recovery - files preserved, exit cleanly
+                messagebox.showinfo(
+                    "Recovery Declined",
+                    f"{e}\n\nThe app will now exit. To start fresh later, "
+                    "manually delete or move these files from your data directory."
+                )
+                self.root.destroy()
+                return
                 
             migrated = migrate_data(data, self.programs)
             self.categories = self.merge_categories_with_defaults(migrated.get("categories"))

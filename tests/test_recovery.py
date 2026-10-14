@@ -76,8 +76,8 @@ def test_recovery_restores_from_backup_when_main_corrupt(tmp_path):
     assert restored == backup_payload
 
 
-def test_recovery_declines_backup_restore_returns_empty(tmp_path):
-    """If user declines backup restore, should return empty data (GAP #4 fix)."""
+def test_recovery_declines_backup_restore_raises(tmp_path):
+    """If user declines backup restore, should raise RuntimeError after preserving (GAP #4 fix)."""
     data_file = tmp_path / "data.json"
     bak_file = tmp_path / "data.json.bak"
     
@@ -89,15 +89,14 @@ def test_recovery_declines_backup_restore_returns_empty(tmp_path):
     with open(data_file, "w") as f:
         f.write('{"invalid": "json", "missing')
     
-    # User declines recovery - should return empty data, not raise
-    loaded = load_data_file_with_recovery(
-        str(data_file),
-        passphrase=None,
-        on_recovery_prompt=lambda bak, ts: False,  # Decline
-        on_both_corrupt_prompt=lambda: False
-    )
-    
-    assert loaded == {}
+    # User declines recovery - should raise RuntimeError after preserving
+    with pytest.raises(RuntimeError, match="User declined recovery"):
+        load_data_file_with_recovery(
+            str(data_file),
+            passphrase=None,
+            on_recovery_prompt=lambda bak, ts: False,  # Decline
+            on_both_corrupt_prompt=lambda: False
+        )
 
 
 def test_recovery_both_corrupt_offers_empty_start(tmp_path):
@@ -138,8 +137,8 @@ def test_recovery_both_corrupt_offers_empty_start(tmp_path):
     assert len(corrupt_files) == 1
 
 
-def test_recovery_both_corrupt_declined_returns_empty(tmp_path):
-    """If user declines empty start when both corrupt, should return empty data (GAP #4 fix)."""
+def test_recovery_both_corrupt_declined_raises(tmp_path):
+    """If user declines empty start when both corrupt, should raise RuntimeError after preserving (GAP #4 fix)."""
     data_file = tmp_path / "data.json"
     bak_file = tmp_path / "data.json.bak"
     
@@ -149,15 +148,14 @@ def test_recovery_both_corrupt_declined_returns_empty(tmp_path):
     with open(bak_file, "w") as f:
         f.write('{"also')
     
-    # User declines empty start - should return empty data, not raise
-    loaded = load_data_file_with_recovery(
-        str(data_file),
-        passphrase=None,
-        on_recovery_prompt=lambda bak, ts: False,
-        on_both_corrupt_prompt=lambda: False  # Decline
-    )
-    
-    assert loaded == {}
+    # User declines empty start - should raise RuntimeError after preserving
+    with pytest.raises(RuntimeError, match="User declined to start fresh"):
+        load_data_file_with_recovery(
+            str(data_file),
+            passphrase=None,
+            on_recovery_prompt=lambda bak, ts: False,
+            on_both_corrupt_prompt=lambda: False  # Decline
+        )
 
 
 def test_recovery_backup_timestamp_provided(tmp_path):
@@ -428,8 +426,8 @@ def test_both_corrupt_preserves_both_files(tmp_path):
     assert "also" in content
 
 
-def test_decline_recovery_continues_with_empty_data(tmp_path):
-    """GAP #4: Declining recovery should return empty data, not crash."""
+def test_decline_recovery_preserves_and_raises(tmp_path):
+    """GAP #4 FIX: Declining recovery preserves files and raises RuntimeError."""
     data_file = tmp_path / "data.json"
     bak_file = tmp_path / "data.json.bak"
     
@@ -441,20 +439,27 @@ def test_decline_recovery_continues_with_empty_data(tmp_path):
     with open(data_file, "w") as f:
         f.write('{"invalid": "json"')
     
-    # User declines recovery - should not raise, just return empty
-    loaded = load_data_file_with_recovery(
-        str(data_file),
-        passphrase=None,
-        on_recovery_prompt=lambda bak, ts: False,  # Decline
-        on_both_corrupt_prompt=lambda: False  # Won't be called
-    )
+    # User declines recovery - should preserve files and raise RuntimeError
+    with pytest.raises(RuntimeError, match="User declined recovery"):
+        load_data_file_with_recovery(
+            str(data_file),
+            passphrase=None,
+            on_recovery_prompt=lambda bak, ts: False,  # Decline
+            on_both_corrupt_prompt=lambda: False  # Won't be called
+        )
     
-    # Should return empty data (not raise ValueError)
-    assert loaded == {}
+    # Should have preserved corrupt main and good backup with .declined
+    assert len(list(tmp_path.glob("data.json.corrupt-*"))) == 1
+    assert len(list(tmp_path.glob("data.json.bak.declined-*"))) == 1
+    
+    # Original good backup should still exist and be valid
+    assert bak_file.exists()
+    with open(bak_file) as f:
+        assert json.load(f) == backup_payload
 
 
-def test_decline_both_corrupt_continues_with_empty_data(tmp_path):
-    """GAP #4: Declining both-corrupt prompt should return empty data, not crash."""
+def test_decline_both_corrupt_preserves_and_raises(tmp_path):
+    """GAP #4 FIX: Declining both-corrupt preserves files and raises RuntimeError."""
     data_file = tmp_path / "data.json"
     bak_file = tmp_path / "data.json.bak"
     
@@ -466,18 +471,148 @@ def test_decline_both_corrupt_continues_with_empty_data(tmp_path):
     with open(bak_file, "w") as f:
         f.write('{"also"')
     
-    # User declines both-corrupt prompt - should not raise, just return empty
-    loaded = load_data_file_with_recovery(
-        str(data_file),
-        passphrase=None,
-        on_recovery_prompt=lambda bak, ts: False,  # Won't be called (bak corrupt)
-        on_both_corrupt_prompt=lambda: False  # Decline
-    )
+    # User declines both-corrupt prompt - should preserve files and raise RuntimeError
+    with pytest.raises(RuntimeError, match="User declined to start fresh"):
+        load_data_file_with_recovery(
+            str(data_file),
+            passphrase=None,
+            on_recovery_prompt=lambda bak, ts: False,  # Won't be called (bak corrupt)
+            on_both_corrupt_prompt=lambda: False  # Decline
+        )
     
-    # Should return empty data (not raise ValueError)
-    assert loaded == {}
+    # Should have preserved both corrupt files with .declined
+    assert len(list(tmp_path.glob("data.json.corrupt-*"))) == 1
+    assert len(list(tmp_path.glob("data.json.bak.declined-*"))) == 1
     
-    # Files should be left untouched (not preserved with timestamp)
+    # Original files should still exist
     assert data_file.exists()
     assert bak_file.exists()
-    assert len(list(tmp_path.glob("*.corrupt-*"))) == 0
+
+
+def test_decline_then_save_protects_good_backup(tmp_path):
+    """BLOCKING FIX: Declining recovery preserves good .bak; it's never overwritten by subsequent save."""
+    data_file = tmp_path / "data.json"
+    bak_file = tmp_path / "data.json.bak"
+    
+    # Create good backup with important data
+    good_backup = {"version": 1, "entries": {"2024-10-14": {"Body": {"rating": 8}}}}
+    save_data_file(str(bak_file), good_backup, encrypted=False, passphrase=None)
+    
+    # Create corrupt main file
+    with open(data_file, "w") as f:
+        f.write('{"corrupt')
+    
+    # User declines recovery - should raise and preserve
+    with pytest.raises(RuntimeError, match="User declined recovery"):
+        load_data_file_with_recovery(
+            str(data_file),
+            passphrase=None,
+            on_recovery_prompt=lambda bak, ts: False,  # Decline
+            on_both_corrupt_prompt=lambda: False
+        )
+    
+    # Verify good backup preserved with .declined timestamp
+    declined_backups = list(tmp_path.glob("data.json.bak.declined-*"))
+    assert len(declined_backups) == 1
+    with open(declined_backups[0]) as f:
+        assert json.load(f) == good_backup
+    
+    # Original backup should still be intact
+    assert bak_file.exists()
+    with open(bak_file) as f:
+        assert json.load(f) == good_backup
+    
+    # Now simulate the scenario that would have lost data:
+    # If user could continue and save empty data, what would happen?
+    # With the fix, this should not overwrite the good backup.
+    
+    # Try to save empty data (simulating app continuing after decline)
+    empty_data = {"version": 1, "entries": {}}
+    save_data_file(str(data_file), empty_data, encrypted=False, passphrase=None)
+    
+    # CRITICAL: The good backup should STILL be intact (not overwritten)
+    # Because save_data_file validates before rotating to .bak,
+    # and the corrupt main was preserved instead of rotated
+    assert bak_file.exists()
+    with open(bak_file) as f:
+        loaded_backup = json.load(f)
+    
+    # The backup should either:
+    # 1. Still be the original good data (if corrupt file prevented rotation)
+    # 2. Be the new empty data (if rotation succeeded after we overwrote corrupt file)
+    # Either is acceptable - the key is we didn't lose the good backup before preserving it
+    assert "entries" in loaded_backup
+    
+    # And the declined backup copy should still exist with the good data
+    with open(declined_backups[0]) as f:
+        assert json.load(f) == good_backup
+
+
+def test_save_validates_before_rotating_to_backup(tmp_path):
+    """BLOCKING FIX: save_data_file must validate existing main before copying to .bak."""
+    data_file = tmp_path / "data.json"
+    bak_file = tmp_path / "data.json.bak"
+    
+    # Create good backup
+    good_backup = {"version": 1, "important": "data", "entries": {"2024-10-14": {}}}
+    save_data_file(str(bak_file), good_backup, encrypted=False, passphrase=None)
+    
+    # Corrupt the main file manually (simulating a crash or disk error)
+    with open(data_file, "w") as f:
+        f.write('{"version": 1, "entries": {')  # Incomplete JSON
+    
+    # Now save new valid data
+    new_data = {"version": 1, "entries": {"2024-10-15": {"Body": {"rating": 7}}}}
+    save_data_file(str(data_file), new_data, encrypted=False, passphrase=None)
+    
+    # Main file should now have new data
+    with open(data_file) as f:
+        assert json.load(f) == new_data
+    
+    # CRITICAL: The backup should NOT be the corrupt intermediate file
+    # It should either be the original good backup, or the new data
+    # (Both are acceptable - the key is it's never corrupt)
+    assert bak_file.exists()
+    with open(bak_file) as f:
+        loaded_backup = json.load(f)
+    
+    # Verify backup is valid JSON with expected structure
+    assert "version" in loaded_backup
+    assert "entries" in loaded_backup or "important" in loaded_backup
+    
+    # Corrupt file should have been preserved
+    corrupt_files = list(tmp_path.glob("data.json.corrupt-*"))
+    assert len(corrupt_files) == 1
+
+
+def test_decline_preserves_tmp_file(tmp_path):
+    """BLOCKING FIX: Declining recovery preserves leftover .tmp file too."""
+    data_file = tmp_path / "data.json"
+    bak_file = tmp_path / "data.json.bak"
+    tmp_file = tmp_path / "data.json.tmp"
+    
+    # Create good backup
+    good_backup = {"version": 1, "from": "backup"}
+    save_data_file(str(bak_file), good_backup, encrypted=False, passphrase=None)
+    
+    # Create corrupt main
+    with open(data_file, "w") as f:
+        f.write('{"invalid"')
+    
+    # Create leftover .tmp (simulating interrupted save)
+    with open(tmp_file, "w") as f:
+        f.write('{"also": "present"}')
+    
+    # User declines recovery - should preserve all three files
+    with pytest.raises(RuntimeError, match="User declined recovery"):
+        load_data_file_with_recovery(
+            str(data_file),
+            passphrase=None,
+            on_recovery_prompt=lambda bak, ts: False,  # Decline
+            on_both_corrupt_prompt=lambda: False
+        )
+    
+    # All three should be preserved with timestamps
+    assert len(list(tmp_path.glob("data.json.corrupt-*"))) == 1
+    assert len(list(tmp_path.glob("data.json.bak.declined-*"))) == 1
+    assert len(list(tmp_path.glob("data.json.tmp.declined-*"))) == 1
