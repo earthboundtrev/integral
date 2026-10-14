@@ -167,8 +167,9 @@ def load_data_file_with_recovery(
                 shutil.copy2(path, corrupt_path)
                 logging.info(f"Preserved corrupt file as {corrupt_path}")
                 
-                # Restore backup
-                shutil.copy2(bak_path, path)
+                # Restore backup atomically with save lock
+                from integral_io import atomic_copy_file
+                atomic_copy_file(bak_path, path)
                 logging.info(f"Restored from backup: {bak_path}")
                 return bak_data
             else:
