@@ -59,6 +59,7 @@ class BusyIndicator:
         self._frame: tk.Frame | None = None
         self._spinner: ttk.Progressbar | None = None
         self._label_var: tk.StringVar | None = None
+        self._escape_funcid: str | None = None
 
     def start(self, label: str | None = None) -> None:
         """Arm the timer. If work completes before delay_ms, nothing is shown.
@@ -162,25 +163,26 @@ class BusyIndicator:
                 if self._on_cancel:
                     self._on_cancel()
             
-            toplevel.bind("<Escape>", on_escape, add=True)
-            # Store binding so we can unbind later.
-            self._escape_binding = on_escape
+            # Store the funcid returned by bind(), not the callable.
+            self._escape_funcid = toplevel.bind("<Escape>", on_escape, add="+")
+        else:
+            self._escape_funcid = None
 
     def _hide(self) -> None:
         """Internal: destroy the indicator widgets."""
         if not self._visible:
             return
 
-        self._visible = False
-
-        # Unbind escape from toplevel if we bound it.
-        if hasattr(self, '_escape_binding') and self._frame:
+        # Unbind escape from toplevel before setting _visible False.
+        if self._escape_funcid and self._frame:
             try:
                 toplevel = self._frame.winfo_toplevel()
-                toplevel.unbind("<Escape>", self._escape_binding)
-            except tk.TclError:
+                toplevel.unbind("<Escape>", self._escape_funcid)
+            except (tk.TclError, TypeError):
                 pass
-            delattr(self, '_escape_binding')
+            self._escape_funcid = None
+
+        self._visible = False
 
         if self._spinner:
             try:

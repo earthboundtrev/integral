@@ -71,17 +71,18 @@ def open_my_window(tracker):
     indicator.start()
 
     def build_content():
-        try:
-            # Build the actual UI here while indicator is armed.
-            _build_my_window_body(tracker, win)
-            
-            # Stop and clean up after build is complete.
-            indicator.stop()
-            busy_host.destroy()
-            delattr(win, '_busy_indicator')
-        except Exception:
-            indicator.stop()
-            raise
+    try:
+        # Build content while indicator is armed.
+        # Use win.update() periodically to allow event loop to process timer.
+        _build_my_window_body(tracker, win)
+        
+        # Stop and clean up after build is complete.
+        indicator.stop()
+        busy_host.destroy()
+        delattr(win, '_busy_indicator')
+    except Exception:
+        indicator.stop()
+        raise
 
     # Use after(1) instead of after_idle so the event loop can process the timer.
     win.after(1, build_content)
@@ -150,6 +151,7 @@ indicator.start()
 def build_content():
     try:
         # Build content while indicator is armed.
+        # Strategic win.update() calls allow event loop to process timer.
         _build_quick_capture_body(tracker, win, theme, on_close)
         
         # Stop and clean up after build is complete.
@@ -163,6 +165,8 @@ def build_content():
 # Use after(1) to allow event loop to process timer.
 win.after(1, build_content)
 ```
+
+Inside `_build_quick_capture_body`, `win.update()` is called after major sections to yield control to the event loop.
 
 ## Upcoming Integration (blocked issues)
 
@@ -179,11 +183,11 @@ Follow the same pattern as Quick Capture: create a busy host, start the indicato
 
 - The indicator fills its parent and is centered.
 - It uses `ttk.Progressbar` in indeterminate mode (animated spinner).
-- It never blocks the UI thread itself, but long synchronous operations in the same event-loop callback will prevent it from appearing or animating. Break work into chunks using `after()`.
+- For the spinner to appear and animate, the event loop must be free to process the timer callback. Long synchronous operations in a single `after()` callback will prevent this. Use strategic `win.update()` calls or break work into multiple `after()` callbacks.
 - Light and dark themes are supported via the `theme` dict (colors applied to Frame and Label).
 - The busy cursor (`watch`) is shown over the indicator area.
-- Escape key is bound to the toplevel window when `on_cancel` is provided.
-- No layout jump when the content replaces it (the busy host is destroyed and the actual content takes its place).
+- Escape key is bound to the toplevel window when `on_cancel` is provided (using the funcid from `bind()`).
+- **Not thread-safe:** `start()`, `stop()`, and `step()` must be called from the UI thread. Background workers must marshal updates via `after()`.
 
 ## Testing
 

@@ -105,6 +105,9 @@ def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
     footer.pack(side=tk.BOTTOM, fill=tk.X)
     ttk.Button(footer, text="Turn off Quick Capture", command=on_close).pack(anchor="e")
 
+    # Yield to event loop after footer (allow indicator timer to fire).
+    win.update()
+
     scroll_host = ttk.Frame(win)
     scroll_host.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
@@ -173,6 +176,9 @@ def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
     )
     ttk.Button(dw_btns, text="+10 min", command=extend_deep_work).pack(side=tk.LEFT, padx=4)
     ttk.Button(dw_btns, text="End", command=end_deep_work).pack(side=tk.LEFT)
+
+    # Yield to event loop after Deep Work section (allow indicator to show/animate).
+    win.update()
 
     # --- Today / Upcoming todos (collapsible) ---
     def _make_section(title: str, section_key: str) -> tk.Frame:
@@ -297,6 +303,9 @@ def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
     ttk.Button(add_frame, text="Add todo", style="Accent.TButton", command=add_todo).pack(
         anchor="w", pady=(4, 0)
     )
+
+    # Yield to event loop after todo section (allow indicator to animate).
+    win.update()
 
     # --- Quick log launcher ---
     log_box = ttk.LabelFrame(pad, text="Quick log", padding=8)
@@ -429,6 +438,9 @@ def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
     ttk.Button(journal_box, text="Journal now", style="Accent.TButton", command=journal_now).pack(
         anchor="w", pady=(6, 0)
     )
+
+    # Yield to event loop after all sections built (final animation frame).
+    win.update()
 
     rebuild_todo_lists()
     refresh_dw_timer()
