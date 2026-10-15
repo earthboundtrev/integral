@@ -885,7 +885,7 @@ class PersonalDevelopmentTracker:
         todo_entry = ttk.Entry(
             todo_row,
             textvariable=todo_var,
-            font=(FONTS["family"], 11),
+            font=FONTS["body"],
         )
         todo_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8))
         self._inline_todo_entry = todo_entry
