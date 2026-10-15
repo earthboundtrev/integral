@@ -552,30 +552,52 @@ class FitnessRepository:
                     INNER JOIN workout_sets ws ON ws.session_id = s.id
                     INNER JOIN exercises e ON e.id = ws.exercise_id
                     WHERE (? IS NULL OR (
-                        s.date < ? OR (s.date = ? AND s.id < ?)
+                        (s.date, COALESCE(s.created_at, ''), s.id) < (?, COALESCE(?, ''), ?)
                     ))
                     AND LOWER(e.name) LIKE LOWER(?)
                     ORDER BY s.date DESC, s.created_at DESC, s.id DESC
                     LIMIT ?
                 """
                 filter_pattern = f"%{exercise_filter}%"
+                
+                # Get the before_created_at from the previous session
+                before_created_at = None
+                if before_date and before_id:
+                    cursor_row = conn.execute(
+                        "SELECT created_at FROM workout_sessions WHERE id = ?",
+                        (before_id,),
+                    ).fetchone()
+                    if cursor_row:
+                        before_created_at = cursor_row["created_at"]
+                
                 rows = conn.execute(
                     query,
-                    (before_date, before_date, before_date, before_id or "", filter_pattern, limit),
+                    (before_date, before_date, before_created_at, before_id or "", filter_pattern, limit),
                 ).fetchall()
             else:
                 query = """
                     SELECT id, date, notes, duration_minutes, body_weight_kg, created_at
                     FROM workout_sessions
                     WHERE ? IS NULL OR (
-                        date < ? OR (date = ? AND id < ?)
+                        (date, COALESCE(created_at, ''), id) < (?, COALESCE(?, ''), ?)
                     )
                     ORDER BY date DESC, created_at DESC, id DESC
                     LIMIT ?
                 """
+                
+                # Get the before_created_at from the previous session
+                before_created_at = None
+                if before_date and before_id:
+                    cursor_row = conn.execute(
+                        "SELECT created_at FROM workout_sessions WHERE id = ?",
+                        (before_id,),
+                    ).fetchone()
+                    if cursor_row:
+                        before_created_at = cursor_row["created_at"]
+                
                 rows = conn.execute(
                     query,
-                    (before_date, before_date, before_date, before_id or "", limit),
+                    (before_date, before_date, before_created_at, before_id or "", limit),
                 ).fetchall()
         return [
             WorkoutSession(

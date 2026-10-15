@@ -27,7 +27,7 @@ def create_workout_session(
     )
     repo.add_workout_session(session)
 
-    for item in sets_data:
+    for ordinal, item in enumerate(sets_data):
         workout_set = WorkoutSet(
             session_id=session.id,
             exercise_id=item["exercise_id"],
@@ -36,6 +36,7 @@ def create_workout_session(
             hold_seconds=item.get("hold_seconds"),
             weight_kg=item.get("weight_kg"),
             form_quality=item.get("form_quality"),
+            ordinal=ordinal,
         )
         repo.add_workout_set(workout_set)
 
