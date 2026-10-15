@@ -620,6 +620,22 @@ class PersonalDevelopmentTracker:
             self.settings["fitness"] = get_fitness_settings(self.settings)
             self.sessions = migrated.get("sessions", [])
             self._invalidate_session_counts()
+            
+            # Migrate legacy program sessions to fitness.db
+            if self.sessions:
+                from legacy_fitness_migration import run_migration
+                from paths import get_fitness_db_path
+                try:
+                    result = run_migration(
+                        data_path=DATA_FILE,
+                        fitness_db_path=get_fitness_db_path(),
+                        mark_migrated=True
+                    )
+                    if result.get("errors"):
+                        print(f"Legacy migration warnings: {len(result['errors'])} issues")
+                except Exception as e:
+                    print(f"Legacy migration failed (skipped): {e}")
+            
             self.milestones = merge_milestones(migrated.get("milestones"))
             self.journal = journal.normalize_journal(migrated.get("journal"))
             self.creative_projects = creative_projects.normalize_creative_projects(

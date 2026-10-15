@@ -56,6 +56,8 @@ def migrate_legacy_sessions(
 ) -> dict[str, Any]:
     """Migrate legacy data.json 'sessions' to fitness.db workout_sessions/workout_sets.
     
+    Real program sessions use: date, program_id, movement_logs, notes, session_rpe, duration_min.
+    
     Args:
         data: Loaded data.json dict
         repo: FitnessRepository
@@ -68,6 +70,8 @@ def migrate_legacy_sessions(
             - errors: list of error messages
             - session_ids: list of migrated session IDs
     """
+    import hashlib
+    
     legacy_sessions = data.get("sessions", [])
     
     result = {
@@ -80,112 +84,109 @@ def migrate_legacy_sessions(
     if not legacy_sessions:
         return result
     
-    # Check which sessions are already migrated (idempotency)
     repo.initialize()
     
-    with repo.connect() as conn:
-        # Get existing sessions to check for duplicates
+    with repo.connect(timeout=10.0) as conn:
+        # Get existing legacy_source_hash to check for duplicates (stable idempotency)
         existing = conn.execute(
-            "SELECT date, notes FROM workout_sessions"
+            "SELECT notes FROM workout_sessions WHERE notes LIKE '[LEGACY:%'"
         ).fetchall()
-        existing_keys = {(row["date"], row["notes"][:100] if row["notes"] else "") for row in existing}
+        existing_hashes = {
+            row["notes"].split("[LEGACY:")[1].split("]")[0]
+            for row in existing
+            if "[LEGACY:" in row["notes"]
+        }
         
         if dry_run:
             for sess in legacy_sessions:
-                date = sess.get("date", "")
-                notes_key = sess.get("notes", "")[:100]
-                if (date, notes_key) not in existing_keys:
+                source_hash = hashlib.sha256(
+                    json.dumps(sess, sort_keys=True).encode()
+                ).hexdigest()[:12]
+                if source_hash not in existing_hashes:
                     result["migrated_count"] += 1
                 else:
                     result["skipped_count"] += 1
             return result
         
-        # Begin transaction for atomicity
+        # Single transaction for all sessions
         try:
             for sess in legacy_sessions:
                 try:
+                    # Stable idempotency key: hash of the legacy session dict
+                    source_hash = hashlib.sha256(
+                        json.dumps(sess, sort_keys=True).encode()
+                    ).hexdigest()[:12]
+                    
+                    if source_hash in existing_hashes:
+                        result["skipped_count"] += 1
+                        continue
+                    
                     date = sess.get("date")
                     if not date:
                         result["errors"].append(f"Session missing date: {sess}")
                         result["skipped_count"] += 1
                         continue
                     
-                    # Check if already migrated (idempotency key: date + notes prefix)
-                    notes = sess.get("notes", "")
-                    program = sess.get("program_id", sess.get("program", ""))
-                    if program:
-                        notes = f"[Program: {program}] {notes}".strip()
+                    # Build notes with program, RPE, duration, and movements
+                    notes_parts = [f"[LEGACY:{source_hash}]"]
+                    program_id = sess.get("program_id", sess.get("program", ""))
+                    if program_id:
+                        notes_parts.append(f"Program: {program_id}")
                     
-                    notes_key = notes[:100] if notes else ""
-                    if (date, notes_key) in existing_keys:
-                        result["skipped_count"] += 1
-                        continue
+                    rpe = sess.get("session_rpe")
+                    if rpe:
+                        notes_parts.append(f"RPE: {rpe}")
                     
-                    # Create workout session
-                    duration = sess.get("duration_minutes")
-                    if isinstance(duration, str):
-                        try:
-                            duration = int(duration)
-                        except (ValueError, TypeError):
-                            duration = None
+                    duration = sess.get("duration_min", sess.get("duration_minutes"))
+                    if duration:
+                        notes_parts.append(f"Duration: {duration}min")
                     
+                    movement_logs = sess.get("movement_logs", [])
+                    if movement_logs:
+                        for log in movement_logs:
+                            movement_name = log.get("movement_name") or log.get("chain_name") or log.get("movement_key", "")
+                            if movement_name:
+                                notes_parts.append(f"- {movement_name}")
+                                if log.get("step"):
+                                    notes_parts.append(f"  Step {log['step']}")
+                                if log.get("reps_per_set"):
+                                    notes_parts.append(f"  Reps: {log['reps_per_set']}")
+                                if log.get("hold_seconds"):
+                                    notes_parts.append(f"  Hold: {log['hold_seconds']}s")
+                                if log.get("height_cm"):
+                                    notes_parts.append(f"  Height: {log['height_cm']}cm")
+                                if log.get("form_quality"):
+                                    notes_parts.append(f"  Form: {log['form_quality']}/10")
+                    
+                    user_notes = sess.get("notes", "")
+                    if user_notes:
+                        notes_parts.append(f"\n{user_notes}")
+                    
+                    notes = "\n".join(notes_parts)
+                    
+                    # Create workout session (using repo methods which handle their own connections)
+                    # Note: This is still not fully transactional due to repo.add_workout_session
+                    # opening its own connection. For true atomicity, would need to refactor
+                    # repo methods to accept a connection parameter.
                     session = WorkoutSession(
                         date=date,
                         notes=notes,
-                        duration_minutes=duration,
-                        body_weight_kg=None,  # Not in legacy format
+                        duration_minutes=duration if isinstance(duration, int) else None,
+                        body_weight_kg=None,
                     )
-                    repo.add_workout_session(session)
                     
-                    # Migrate movements/logs as workout_sets
-                    movements = sess.get("movements", [])
-                    logs = sess.get("logs", [])
-                    
-                    ordinal = 0
-                    for movement in movements:
-                        try:
-                            # Movement is typically a string like "Push-ups: 3x10"
-                            # Store as a set with notes in the name
-                            wset = WorkoutSet(
-                                session_id=session.id,
-                                exercise_id="legacy_movement",  # Placeholder
-                                sets=None,
-                                reps=None,
-                                hold_seconds=None,
-                                weight_kg=None,
-                                ordinal=ordinal,
-                            )
-                            # Note: Can't add without valid exercise_id due to FK
-                            # Skip movement strings for now
-                            ordinal += 1
-                        except Exception as e:
-                            result["errors"].append(f"Error migrating movement '{movement}': {e}")
-                    
-                    for log in logs:
-                        try:
-                            if isinstance(log, dict):
-                                wset = WorkoutSet(
-                                    session_id=session.id,
-                                    exercise_id=log.get("exercise_id", "unknown"),
-                                    sets=log.get("sets"),
-                                    reps=log.get("reps"),
-                                    hold_seconds=log.get("hold_seconds"),
-                                    weight_kg=log.get("weight_kg"),
-                                    ordinal=ordinal,
-                                )
-                                try:
-                                    repo.add_workout_set(wset)
-                                except Exception:
-                                    # FK constraint - exercise doesn't exist
-                                    # Skip this set
-                                    pass
-                                ordinal += 1
-                        except Exception as e:
-                            result["errors"].append(f"Error migrating log {log}: {e}")
+                    # For true transaction, insert directly via this connection
+                    conn.execute(
+                        """
+                        INSERT INTO workout_sessions (id, date, notes, duration_minutes, body_weight_kg)
+                        VALUES (?, ?, ?, ?, ?)
+                        """,
+                        (session.id, session.date, session.notes, session.duration_minutes, session.body_weight_kg)
+                    )
                     
                     result["migrated_count"] += 1
                     result["session_ids"].append(session.id)
-                    existing_keys.add((date, notes_key))
+                    existing_hashes.add(source_hash)
                     
                 except Exception as e:
                     result["errors"].append(f"Error migrating session {sess.get('date', 'unknown')}: {e}")
