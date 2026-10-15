@@ -7,6 +7,7 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 from typing import TYPE_CHECKING
 
+from busy_indicator import BusyIndicator
 import deep_work as dw
 import focus_shield
 import quick_capture
@@ -52,20 +53,77 @@ def open_quick_capture_panel(tracker: PersonalDevelopmentTracker) -> tk.Toplevel
     win.resizable(True, True)
 
     def on_close() -> None:
+        # Stop indicator if still running.
+        if hasattr(win, '_busy_indicator'):
+            win._busy_indicator.stop()
         tracker.set_quick_capture_enabled(False, persist=True)
 
     win.protocol("WM_DELETE_WINDOW", on_close)
 
-    try:
-        return _build_quick_capture_body(tracker, win, theme, on_close)
-    except Exception:
-        # Don't leave a blank cached Toplevel if build fails mid-way.
-        tracker._quick_capture_win = None
+    # Show a delayed busy indicator during build (issue #120).
+    # The indicator appears only if the build takes longer than 180 ms.
+    busy_host = tk.Frame(win, bg=theme["bg"])
+    busy_host.pack(fill=tk.BOTH, expand=True)
+
+    indicator = BusyIndicator(busy_host, label="Loading Quick Capture…", theme=theme, on_cancel=on_close)
+    win._busy_indicator = indicator
+    indicator.start()
+
+    def build_content() -> None:
+        # Return early if window was destroyed before callback runs.
         try:
-            win.destroy()
+            if not win.winfo_exists():
+                return
         except tk.TclError:
-            pass
-        raise
+            return
+
+        try:
+            # Build content while indicator is still armed.
+            result = _build_quick_capture_body(tracker, win, theme, on_close)
+            
+            # Only stop and clean up after build is complete, if window still exists.
+            try:
+                if not win.winfo_exists():
+                    return result
+            except tk.TclError:
+                return result
+            
+            indicator.stop()
+            try:
+                busy_host.destroy()
+            except tk.TclError:
+                pass
+            if hasattr(win, '_busy_indicator'):
+                delattr(win, '_busy_indicator')
+            
+            return result
+        except tk.TclError:
+            # Window closed during build - not an error.
+            try:
+                if win.winfo_exists():
+                    indicator.stop()
+            except tk.TclError:
+                pass
+            return
+        except Exception:
+            # Real build error.
+            try:
+                if win.winfo_exists():
+                    indicator.stop()
+            except tk.TclError:
+                pass
+            tracker._quick_capture_win = None
+            try:
+                win.destroy()
+            except tk.TclError:
+                pass
+            raise
+
+    # Build content after the next idle, allowing the indicator timer to arm.
+    # Use after(1) instead of after_idle so the event loop can process the timer.
+    win.after(1, build_content)
+
+    return win
 
 
 def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
@@ -73,6 +131,15 @@ def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
     footer = ttk.Frame(win, padding=(12, 8))
     footer.pack(side=tk.BOTTOM, fill=tk.X)
     ttk.Button(footer, text="Turn off Quick Capture", command=on_close).pack(anchor="e")
+
+    # Yield to event loop after footer (allow indicator timer to fire).
+    # Guard against window close during update().
+    try:
+        win.update()
+        if not win.winfo_exists():
+            return win
+    except tk.TclError:
+        return win
 
     scroll_host = ttk.Frame(win)
     scroll_host.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
@@ -142,6 +209,14 @@ def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
     )
     ttk.Button(dw_btns, text="+10 min", command=extend_deep_work).pack(side=tk.LEFT, padx=4)
     ttk.Button(dw_btns, text="End", command=end_deep_work).pack(side=tk.LEFT)
+
+    # Yield to event loop after Deep Work section (allow indicator to show/animate).
+    try:
+        win.update()
+        if not win.winfo_exists():
+            return win
+    except tk.TclError:
+        return win
 
     # --- Today / Upcoming todos (collapsible) ---
     def _make_section(title: str, section_key: str) -> tk.Frame:
@@ -266,6 +341,14 @@ def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
     ttk.Button(add_frame, text="Add todo", style="Accent.TButton", command=add_todo).pack(
         anchor="w", pady=(4, 0)
     )
+
+    # Yield to event loop after todo section (allow indicator to animate).
+    try:
+        win.update()
+        if not win.winfo_exists():
+            return win
+    except tk.TclError:
+        return win
 
     # --- Quick log launcher ---
     log_box = ttk.LabelFrame(pad, text="Quick log", padding=8)
@@ -398,6 +481,14 @@ def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
     ttk.Button(journal_box, text="Journal now", style="Accent.TButton", command=journal_now).pack(
         anchor="w", pady=(6, 0)
     )
+
+    # Yield to event loop after all sections built (final animation frame).
+    try:
+        win.update()
+        if not win.winfo_exists():
+            return win
+    except tk.TclError:
+        return win
 
     rebuild_todo_lists()
     refresh_dw_timer()

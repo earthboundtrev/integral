@@ -38,7 +38,8 @@ class TestQuickCaptureUi(unittest.TestCase):
             tracker._quick_capture_win = None
 
             win = quick_capture_ui.open_quick_capture_panel(tracker)
-            win.update_idletasks()
+            # Pump the event loop to allow the after(1) build to run.
+            win.update()
 
             texts: list[str] = []
 
