@@ -112,7 +112,7 @@ User data: `%APPDATA%\Integral\data.json` (encrypted optional via Data & Securit
 
 | Area | Features |
 |------|----------|
-| **Life domains (18)** | Ratings, checklists, metrics, notes, streaks, guidance — **optional depth**; one check-in is enough; never scored as N/18 completeness; **Today's Log** Find filter + All/Unlogged/Logged, pin up to 5 favorites (right-click), and a **More…** menu |
+| **Life domains (18)** | Ratings, checklists, metrics, notes, streaks, guidance — **optional depth**; one check-in is enough; never scored as N/18 completeness; **Today's Log** inline todo (type + Enter for today, last-used category), one-tap **+ Todo / Log workout / Reflect**, Find filter + All/Unlogged/Logged, pin up to 5 favorites (right-click), and a **More…** menu |
 | **Go to…** | Command palette (footer or Ctrl+K) to jump to any screen or Log a domain by typing |
 | **Domain templates** | One-click starter packs (**Gut Healing**, **Personal Health & Alignment**) add a coherent set of pre-configured domains; applied from onboarding or the category editor, never overwriting existing domains |
 | **Daily practices** | Log non-program routines (Five Tibetan Rites, Strong Medicine, breathing, wind-releasing yoga) with duration, reps/completions, hold time, quality (1–10), an optional per-movement breakdown, a subjective "effect" note, and free notes; reachable from Quick Capture **and** the Fitness Hub; flows into the linked life domain for history, streaks, and insights |

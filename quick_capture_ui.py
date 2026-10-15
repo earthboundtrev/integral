@@ -267,6 +267,13 @@ def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
     add_frame.pack(fill=tk.X, pady=(0, 10))
     ttk.Label(add_frame, text="New todo").pack(anchor="w")
     new_text = tk.StringVar()
+    
+    # Pre-fill text if carried over from inline field
+    prefill = getattr(tracker, "_qc_prefill_text", "")
+    if prefill:
+        new_text.set(prefill)
+        tracker._qc_prefill_text = ""
+    
     ttk.Entry(add_frame, textvariable=new_text).pack(fill=tk.X, pady=2)
     row = ttk.Frame(add_frame)
     row.pack(fill=tk.X, pady=2)
@@ -322,6 +329,17 @@ def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
         if not text:
             messagebox.showinfo("Todos", "Enter a todo.", parent=win)
             return
+        
+        # Enforce same length limit as inline add
+        MAX_TODO_LENGTH = 500
+        if len(text) > MAX_TODO_LENGTH:
+            messagebox.showwarning(
+                "Todos",
+                f"Todo text is too long (max {MAX_TODO_LENGTH} characters).",
+                parent=win,
+            )
+            return
+        
         category = resolve_category_name(
             new_cat.get(), list(tracker.categories.keys()), allow_blank=True
         )

@@ -891,6 +891,27 @@ class PersonalDevelopmentTracker:
         self._inline_todo_entry = todo_entry
         self._inline_todo_var = todo_var
         
+        # More options link to open Quick Capture
+        more_link = ttk.Label(
+            todo_row,
+            text="More options…",
+            foreground=self.theme["link"],
+            cursor="hand2",
+            style="OnSurfaceMuted.TLabel"
+        )
+        more_link.pack(side=tk.LEFT, padx=(0, 8))
+        
+        def open_qc_with_text(event=None):
+            text = todo_var.get().strip()
+            if text != "Add a todo… (Enter to save, Ctrl+Shift+T from anywhere)" and text:
+                # Store text for QC to pick up
+                self._qc_prefill_text = text
+            self._qc_should_focus = True
+            self.toggle_quick_capture()
+            return "break"
+        
+        more_link.bind("<Button-1>", open_qc_with_text)
+        
         # Placeholder simulation
         def on_focus_in(event):
             if todo_var.get() == "Add a todo… (Enter to save, Ctrl+Shift+T from anywhere)":
