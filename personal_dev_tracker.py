@@ -1315,8 +1315,11 @@ class PersonalDevelopmentTracker:
         self._dashboard_ready = False
         self._close_streak_details_window()
         
+        # Check if theme changed (for backup restore with different dark_mode)
+        theme_changed = self._theme_dark != self.settings.get("dark_mode", False)
+        
         # First-time creation or full rebuild
-        needs_shell = self._shell_frame is None or not self._shell_frame.winfo_exists()
+        needs_shell = self._shell_frame is None or not self._shell_frame.winfo_exists() or theme_changed
         
         # Apply theme before shell creation so colors are correct
         self.apply_current_theme(force=True)
