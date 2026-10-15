@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import sys
+
+import pytest
+
 import autostart_windows as auto
 
 
@@ -19,6 +23,7 @@ def test_launch_command_dev_mode(monkeypatch, tmp_path):
     assert "personal_dev_tracker.py" in cmd
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="requires Windows winreg module")
 def test_set_enabled_round_trip(monkeypatch):
     store: dict[str, str] = {}
 
