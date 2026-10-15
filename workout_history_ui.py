@@ -158,7 +158,7 @@ class WorkoutHistoryView:
         self.has_more = True
         self.is_loading = False
         self.loading_after_id: str | None = None
-        self._conn = None  # Reused connection
+        self._conn = self.repo.connect(timeout=10.0)  # Reused connection
         
         self._build_ui()
         self._load_first_page()
@@ -627,26 +627,15 @@ class WorkoutHistoryView:
                     trends[ex_id] = {"trend": "none", "previous_best_display": ""}
                     continue
                 
-                direction = result.get("direction", "none")
+                # result has keys: trend ("up"/"down"/"same"/"none"), previous_best_display
+                trend = result.get("trend", "none")
                 prev_display = result.get("previous_best_display", "")
                 
-                if direction == "up":
-                    trends[ex_id] = {
-                        "trend": "up",
-                        "previous_best_display": f"vs last: {prev_display}",
-                    }
-                elif direction == "down":
-                    trends[ex_id] = {
-                        "trend": "down",
-                        "previous_best_display": f"vs last: {prev_display}",
-                    }
-                elif direction == "flat":
-                    trends[ex_id] = {
-                        "trend": "same",
-                        "previous_best_display": f"same as last: {prev_display}",
-                    }
-                else:
-                    trends[ex_id] = {"trend": "none", "previous_best_display": ""}
+                # Already formatted in compare_to_previous_session
+                trends[ex_id] = {
+                    "trend": trend,
+                    "previous_best_display": prev_display,
+                }
         except Exception:
             # If batch fetch fails, return empty trends
             return {}
