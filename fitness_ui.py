@@ -1349,11 +1349,16 @@ def show_fitness_window(
         hist.transient(win)
         _workout_history_window[0] = hist
         
+        def on_log_workout_with_refresh():
+            open_session_dialog()
+            # Refresh history after dialog closes
+            hist.after(100, lambda: history_view.refresh() if hist.winfo_exists() else None)
+        
         history_view = WorkoutHistoryView(
             parent=hist,
             repo=repo,
             theme=theme,
-            on_log_workout=lambda: open_session_dialog(),
+            on_log_workout=on_log_workout_with_refresh,
         )
         
         def on_close():
@@ -1361,6 +1366,7 @@ def show_fitness_window(
             hist.destroy()
             _workout_history_window[0] = None
         
+        hist._on_close_callback = on_close
         hist.protocol("WM_DELETE_WINDOW", on_close)
 
     search_var.trace_add("write", lambda *_args: refresh_list())

@@ -2977,18 +2977,28 @@ class PersonalDevelopmentTracker:
         win.transient(self.root)
         self._workout_history_window = win
         
+        def on_log_workout_with_refresh():
+            self.show_log_exercise()
+            # Refresh history after dialog closes
+            if hasattr(self, '_workout_history_view'):
+                self.root.after(100, lambda: self._workout_history_view.refresh() if hasattr(self, '_workout_history_view') else None)
+        
         history_view = WorkoutHistoryView(
             parent=win,
             repo=repo,
             theme=self.theme,
-            on_log_workout=lambda: self.show_log_exercise(),
+            on_log_workout=on_log_workout_with_refresh,
         )
+        self._workout_history_view = history_view
         
         def on_close():
             history_view.destroy()
             win.destroy()
             self._workout_history_window = None
+            if hasattr(self, '_workout_history_view'):
+                delattr(self, '_workout_history_view')
         
+        win._on_close_callback = on_close
         win.protocol("WM_DELETE_WINDOW", on_close)
 
     def show_settings(self) -> None:

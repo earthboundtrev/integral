@@ -273,6 +273,8 @@ class WorkoutHistoryView:
         self.sets_by_session.clear()
         self.selected_session = None
         self.has_more = True
+        if self.load_more_btn.winfo_ismapped():
+            self.load_more_btn.pack_forget()
         self._load_first_page()
     
     def _load_first_page(self) -> None:
@@ -351,7 +353,25 @@ class WorkoutHistoryView:
             self.sets_by_session.update(sets_dict)
             self.has_more = len(sessions) >= 20
             
+            # Store current selection to restore after refresh
+            current_selection = self.selected_session
+            
             self._refresh_session_list()
+            
+            # Restore selection
+            if current_selection:
+                try:
+                    session_idx = next(i for i, s in enumerate(self.sessions) if s.id == current_selection.id)
+                    listbox_idx = self._get_listbox_index_for_session(session_idx)
+                    if listbox_idx is not None:
+                        self.session_list.selection_clear(0, tk.END)
+                        self.session_list.selection_set(listbox_idx)
+                        self.session_list.see(listbox_idx)
+                except (StopIteration, ValueError):
+                    pass
+        except Exception as e:
+            import tkinter.messagebox as messagebox
+            messagebox.showerror("Error loading more sessions", str(e), parent=self.container.winfo_toplevel())
         finally:
             self.is_loading = False
     
@@ -497,7 +517,7 @@ class WorkoutHistoryView:
         self.detail_text.config(state=tk.DISABLED)
     
     def _display_exercises(self, session: WorkoutSession, sets: list[WorkoutSet]) -> None:
-        """Display exercises with volume and trends."""
+        """Display exercises with volume (trends omitted for performance)."""
         exercise_ids = []
         for wset in sets:
             if wset.exercise_id not in exercise_ids:
@@ -532,25 +552,6 @@ class WorkoutHistoryView:
                 
                 self.detail_text.insert(tk.END, f"  {' · '.join(parts)}\n")
             
-            comparison = compare_to_previous_session(
-                repo=self.repo,
-                current_session_id=session.id,
-                exercise_id=ex_id,
-                current_date=session.date,
-                current_created_at=session.created_at,
-            )
-            
-            trend = comparison.get("trend", "")
-            prev_best = comparison.get("previous_best_display", "")
-            
-            if trend and prev_best:
-                if trend == "up":
-                    self.detail_text.insert(tk.END, f"  ↑ {prev_best}\n", "trend_up")
-                elif trend == "down":
-                    self.detail_text.insert(tk.END, f"  ↓ {prev_best}\n", "trend_down")
-                elif trend == "same":
-                    self.detail_text.insert(tk.END, f"  = {prev_best}\n", "trend_same")
-            
             self.detail_text.insert(tk.END, "\n")
     
     def _on_arrow_key(self) -> None:
@@ -560,10 +561,12 @@ class WorkoutHistoryView:
     def _on_home_key(self) -> None:
         """Jump to first session."""
         if self.sessions:
-            self.session_list.selection_clear(0, tk.END)
-            self.session_list.selection_set(0)
-            self.session_list.see(0)
-            self._on_session_selected()
+            first_session_idx = self._get_listbox_index_for_session(0)
+            if first_session_idx is not None:
+                self.session_list.selection_clear(0, tk.END)
+                self.session_list.selection_set(first_session_idx)
+                self.session_list.see(first_session_idx)
+                self._on_session_selected()
     
     def _on_end_key(self) -> None:
         """Jump to last session."""
@@ -582,7 +585,12 @@ class WorkoutHistoryView:
         """Close the history view window."""
         toplevel = self.container.winfo_toplevel()
         if isinstance(toplevel, tk.Toplevel):
-            toplevel.destroy()
+            # Use proper cleanup path
+            if hasattr(toplevel, '_on_close_callback'):
+                toplevel._on_close_callback()
+            else:
+                self.destroy()
+                toplevel.destroy()
         return "break"
     
     def _on_escape_from_detail(self) -> None:
