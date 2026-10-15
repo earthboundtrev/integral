@@ -42,6 +42,13 @@ def open_quick_capture_panel(tracker: PersonalDevelopmentTracker) -> tk.Toplevel
                 if getattr(tracker, "_qc_should_focus", False):
                     existing.focus_force()
                 tracker._qc_should_focus = False
+                # Apply prefill text if set
+                prefill = getattr(tracker, "_qc_prefill_text", "")
+                if prefill:
+                    todo_var = getattr(tracker, "_qc_todo_var", None)
+                    if todo_var:
+                        todo_var.set(prefill)
+                    tracker._qc_prefill_text = ""
                 # Trigger a refresh if the rebuild callback exists
                 rebuild = getattr(tracker, "_qc_rebuild_todos", None)
                 if rebuild:
@@ -267,6 +274,9 @@ def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
     add_frame.pack(fill=tk.X, pady=(0, 10))
     ttk.Label(add_frame, text="New todo").pack(anchor="w")
     new_text = tk.StringVar()
+    
+    # Store todo StringVar for external prefill
+    tracker._qc_todo_var = new_text
     
     # Pre-fill text if carried over from inline field
     prefill = getattr(tracker, "_qc_prefill_text", "")

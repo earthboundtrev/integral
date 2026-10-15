@@ -907,7 +907,7 @@ class PersonalDevelopmentTracker:
                 # Store text for QC to pick up
                 self._qc_prefill_text = text
             self._qc_should_focus = True
-            self.toggle_quick_capture()
+            self.set_quick_capture_enabled(True)
             return "break"
         
         more_link.bind("<Button-1>", open_qc_with_text)
