@@ -41,7 +41,7 @@ def open_quick_capture_panel(tracker: PersonalDevelopmentTracker) -> tk.Toplevel
                 # Don't steal focus when just refreshing lists
                 if getattr(tracker, "_qc_should_focus", False):
                     existing.focus_force()
-                    tracker._qc_should_focus = False
+                tracker._qc_should_focus = False
                 # Trigger a refresh if the rebuild callback exists
                 rebuild = getattr(tracker, "_qc_rebuild_todos", None)
                 if rebuild:
@@ -53,7 +53,6 @@ def open_quick_capture_panel(tracker: PersonalDevelopmentTracker) -> tk.Toplevel
     theme = tracker.theme
     win = tk.Toplevel(tracker.root)
     tracker._quick_capture_win = win
-    tracker._qc_should_focus = True
     win.title("Quick Capture")
     win.geometry("420x720")
     win.configure(bg=theme["bg"])

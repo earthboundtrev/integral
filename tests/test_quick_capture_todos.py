@@ -158,6 +158,7 @@ def test_add_todo_quick_with_category():
     assert items[0]["text"] == "Pay rent"
     assert items[0]["category"] == "Admin"
     assert tracker.settings.get("last_todo_category") == "Admin"
+    tracker.save_data.assert_called_once()
 
 
 def test_add_todo_quick_uses_last_category():

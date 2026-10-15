@@ -907,7 +907,10 @@ class PersonalDevelopmentTracker:
         todo_entry.bind("<FocusIn>", on_focus_in)
         todo_entry.bind("<FocusOut>", on_focus_out)
         
-        error_label = ttk.Label(todo_row, text="", foreground="#DC2626", style="OnSurfaceMuted.TLabel")
+        # Use tk.Label for error messages (ttk ignores foreground color)
+        error_label = tk.Label(todo_row, text="", fg="#DC2626", bg=self.theme["surface"])
+        self._inline_error_label = error_label
+        self._error_timer_id = None
         
         def add_inline_todo(event=None):
             text = todo_var.get().strip()
@@ -921,12 +924,19 @@ class PersonalDevelopmentTracker:
             if error:
                 error_label.config(text=error)
                 error_label.pack(side=tk.LEFT, padx=(8, 0))
-                self.root.after(5000, lambda: error_label.pack_forget())
+                # Cancel previous timer if any
+                if self._error_timer_id:
+                    self.root.after_cancel(self._error_timer_id)
+                self._error_timer_id = self.root.after(5000, lambda: self._clear_error_label())
                 # Keep text in field on error so user can fix it
             else:
+                # Cancel error timer if any
+                if self._error_timer_id:
+                    self.root.after_cancel(self._error_timer_id)
+                    self._error_timer_id = None
+                error_label.pack_forget()
                 todo_var.set("")
                 on_focus_out(None)
-                error_label.pack_forget()
                 self.refresh_dashboard(full=False)
                 # Restore focus after refresh
                 self.root.after(10, lambda: self._restore_inline_todo_focus())
@@ -2232,6 +2242,16 @@ class PersonalDevelopmentTracker:
                     self._inline_todo_entry.focus_set()
             except tk.TclError:
                 pass
+    
+    def _clear_error_label(self) -> None:
+        """Safely clear inline todo error label after timeout."""
+        if hasattr(self, "_inline_error_label"):
+            try:
+                if self._inline_error_label.winfo_exists():
+                    self._inline_error_label.pack_forget()
+            except tk.TclError:
+                pass
+        self._error_timer_id = None
 
     def show_writing_projects(self) -> None:
         show_writing_projects_window(self)
