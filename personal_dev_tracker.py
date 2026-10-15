@@ -124,6 +124,12 @@ class PersonalDevelopmentTracker:
         self._nav_buttons: dict[str, ttk.Widget] = {}
         self._nav_pack_order: list[str] = []
         self._nav_frame: ttk.Frame | None = None
+        self._shell_frame: ttk.Frame | None = None
+        self._shell_header: ttk.Frame | None = None
+        self._content_pane: ttk.Frame | None = None
+        self._shell_footer: ttk.Frame | None = None
+        self._banner_host: ttk.Frame | None = None
+        self._sidebar_slot: ttk.Frame | None = None
 
         if is_encrypted_file(DATA_FILE) and not prompt_vault_unlock(self):
             messagebox.showerror("Locked", "Cannot open encrypted journal without passphrase.")
@@ -515,6 +521,10 @@ class PersonalDevelopmentTracker:
     def toggle_dark_mode(self) -> None:
         self.settings["dark_mode"] = not self.settings.get("dark_mode", False)
         self.save_data()
+        # Force full shell rebuild for theme changes (chrome colors + mode button label)
+        if self._shell_frame is not None:
+            self._shell_frame.destroy()
+            self._shell_frame = None
         self.create_dashboard()
 
     def merge_categories_with_defaults(self, stored: dict | None) -> dict:
@@ -858,7 +868,8 @@ class PersonalDevelopmentTracker:
             self.settings = pruned
             self.save_data(flush=True)
 
-        log_bar = ttk.LabelFrame(self.root, text="Today's Log", padding=14, style="Card.TLabelframe")
+        parent = self._content_pane if self._content_pane is not None else self.root
+        log_bar = ttk.LabelFrame(parent, text="Today's Log", padding=14, style="Card.TLabelframe")
         self._log_bar = log_bar
         log_bar.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=16, pady=(0, 10))
 
@@ -1218,20 +1229,12 @@ class PersonalDevelopmentTracker:
         if full or not self._dashboard_ready:
             self.create_dashboard()
             return
-
-        if recompute:
-            self._invalidate_caches()
-        self.insights = self._get_insights()
-
-        if self._streak_pill is not None:
-            self._streak_pill.config(text=f"🔥 {self.get_streak()} day streak · details")
-
-        if self._date_label is not None:
-            self._date_label.config(text=f"Today · {datetime.now().strftime('%B %d, %Y')}")
-
-        if self._log_bar is not None:
-            self._log_bar.destroy()
-        self.create_todays_log_bar()
+        
+        # Update header chrome
+        self._refresh_header_chrome()
+        
+        # Rebuild content pane
+        self._build_content(recompute=recompute)
 
         try:
             if self._activity_grid is not None:
@@ -1310,22 +1313,80 @@ class PersonalDevelopmentTracker:
 
     def create_dashboard(self) -> None:
         self._dashboard_ready = False
-        self._deep_work_banner = None
-        self._deep_work_timer_label = None
-        self._nav_buttons = {}
-        self._nav_pack_order = []
-        self._nav_frame = None
         self._close_streak_details_window()
-
-        for widget in self.root.winfo_children():
-            widget.destroy()
-
+        
+        # Check if theme changed (for backup restore with different dark_mode)
+        theme_changed = self._theme_dark != self.settings.get("dark_mode", False)
+        
+        # First-time creation or full rebuild
+        needs_shell = self._shell_frame is None or not self._shell_frame.winfo_exists() or theme_changed
+        
+        # Apply theme before shell creation so colors are correct
         self.apply_current_theme(force=True)
+        
+        if needs_shell:
+            # Full teardown and shell creation
+            for widget in self.root.winfo_children():
+                widget.destroy()
+            self._deep_work_banner = None
+            self._deep_work_timer_label = None
+            self._nav_buttons = {}
+            self._nav_pack_order = []
+            self._nav_frame = None
+            self._ensure_shell()
+        else:
+            # Shell exists, refresh header chrome (for backup restore, etc.)
+            self._refresh_header_chrome()
+        
+        self._build_content(recompute=True)
+        self._dashboard_ready = True
+    
+    def _restore_content_focus(self) -> None:
+        """Set focus to first focusable control in content pane."""
+        if self._content_pane is None or not self._content_pane.winfo_exists():
+            return
+        
+        # Deep search for first focusable widget
+        def find_focusable(widget):
+            """Recursively find first focusable widget."""
+            if widget.winfo_class() in ("TEntry", "Entry", "Text"):
+                return widget
+            for child in widget.winfo_children():
+                result = find_focusable(child)
+                if result:
+                    return result
+            return None
+        
+        focusable = find_focusable(self._content_pane)
+        if focusable:
+            focusable.focus_set()
+    
+    def _refresh_header_chrome(self) -> None:
+        """Update header widgets (streak, date) without rebuilding shell."""
+        if self._streak_pill is not None:
+            try:
+                if self._streak_pill.winfo_exists():
+                    self._streak_pill.config(text=f"🔥 {self.get_streak()} day streak · details")
+            except tk.TclError:
+                pass
+        if self._date_label is not None:
+            try:
+                if self._date_label.winfo_exists():
+                    self._date_label.config(text=f"Today · {datetime.now().strftime('%B %d, %Y')}")
+            except tk.TclError:
+                pass
 
-        header = ttk.Frame(self.root)
-        header.pack(fill=tk.X, padx=16, pady=(16, 10))
-
-        title_block = ttk.Frame(header)
+    def _ensure_shell(self) -> None:
+        """Create the persistent shell frame structure."""
+        # Shell container
+        self._shell_frame = ttk.Frame(self.root)
+        self._shell_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Header (persistent)
+        self._shell_header = ttk.Frame(self._shell_frame)
+        self._shell_header.pack(fill=tk.X, padx=16, pady=(16, 10))
+        
+        title_block = ttk.Frame(self._shell_header)
         title_block.pack(side=tk.LEFT)
         ttk.Label(title_block, text=APP_NAME, style="Title.TLabel").pack(anchor="w")
         ttk.Label(
@@ -1333,8 +1394,8 @@ class PersonalDevelopmentTracker:
             text="Holistic life tracking",
             style="Muted.TLabel",
         ).pack(anchor="w", pady=(2, 0))
-
-        right_header = ttk.Frame(header)
+        
+        right_header = ttk.Frame(self._shell_header)
         right_header.pack(side=tk.RIGHT)
         streak_frame = streak_badge(
             right_header,
@@ -1353,21 +1414,30 @@ class PersonalDevelopmentTracker:
             style="Muted.TLabel",
         )
         self._date_label.pack(side=tk.RIGHT)
-
-        footer = ttk.Frame(self.root)
-        footer.pack(side=tk.BOTTOM, fill=tk.X, padx=16, pady=(4, 12))
-        ttk.Separator(footer, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=(0, 10))
+        
+        # Sidebar slot (empty for now, for #131)
+        self._sidebar_slot = ttk.Frame(self._shell_frame)
+        # Not packed yet - will be used in #131
+        
+        # Banner host (persistent, for Deep Work and future banners)
+        self._banner_host = ttk.Frame(self._shell_frame)
+        self._banner_host.pack(fill=tk.X, padx=16, pady=(0, 0))
+        
+        # Footer (persistent) - pack before content to avoid clipping at minsize/high DPI
+        self._shell_footer = ttk.Frame(self._shell_frame)
+        self._shell_footer.pack(side=tk.BOTTOM, fill=tk.X, padx=16, pady=(4, 12))
+        
+        # Content pane (persistent frame, children rebuilt) - pack after footer
+        self._content_pane = ttk.Frame(self._shell_frame)
+        self._content_pane.pack(fill=tk.BOTH, expand=True)
+        ttk.Separator(self._shell_footer, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=(0, 10))
         nav_host, nav, _nav_canvas = ui_scroll.make_horizontal_scroll_row(
-            footer,
+            self._shell_footer,
             overflow_hint="Scroll for more →",
         )
         nav_host.pack(fill=tk.X)
-
-        self.create_todays_log_bar()
-
-        self._invalidate_caches()
-        self.insights = self._get_insights()
-
+        
+        # Navigation buttons
         ttk.Button(
             nav,
             text="Refresh",
@@ -1405,13 +1475,37 @@ class PersonalDevelopmentTracker:
         ttk.Button(nav, text=mode_label, command=self.toggle_dark_mode).pack(side=tk.RIGHT)
         self._nav_frame = nav
         self._register_nav_buttons(nav)
-        self._ensure_deep_work_banner(footer)
+        self._ensure_deep_work_banner(self._banner_host)
         self._apply_deep_work_chrome()
         if not getattr(self, "_goto_shortcut_bound", False):
             self.root.bind_all("<Control-k>", lambda _e: self.show_goto())
             self.root.bind_all("<Control-K>", lambda _e: self.show_goto())
             self._goto_shortcut_bound = True
-        self._dashboard_ready = True
+    
+    def _build_content(self, *, recompute: bool = True) -> None:
+        """Build or rebuild the content pane (Today's Log and Overview)."""
+        if self._content_pane is None or not self._content_pane.winfo_exists():
+            return
+        
+        # Save focus widget path for restoration
+        focused_widget = self.root.focus_get()
+        focused_path = str(focused_widget) if focused_widget else None
+        
+        # Clear existing content
+        for child in self._content_pane.winfo_children():
+            child.destroy()
+        
+        # Build Today's Log bar
+        self.create_todays_log_bar()
+        
+        # Recompute insights if requested
+        if recompute:
+            self._invalidate_caches()
+            self.insights = self._get_insights()
+        
+        # Restore focus to content's first control if prior focus was in content
+        if focused_path and focused_path.startswith(str(self._content_pane)):
+            self.root.after(10, lambda: self._restore_content_focus())
 
     def _build_overview_tab(self, parent: ttk.Frame) -> None:
         outer, main, canvas = ui_scroll.make_scrollable_frame(parent)
@@ -2407,17 +2501,17 @@ class PersonalDevelopmentTracker:
                 self._nav_buttons[label] = child
                 self._nav_pack_order.append(label)
 
-    def _ensure_deep_work_banner(self, footer: ttk.Frame | None = None) -> None:
+    def _ensure_deep_work_banner(self, banner_host: ttk.Frame | None = None) -> None:
         if self._deep_work_banner is not None:
             try:
                 if self._deep_work_banner.winfo_exists():
                     return
             except tk.TclError:
                 self._deep_work_banner = None
-        host = footer
+        host = banner_host if banner_host is not None else self._banner_host
         if host is None:
             host = ttk.Frame(self.root)
-            host.pack(side=tk.BOTTOM, fill=tk.X, padx=16, pady=(0, 4))
+            host.pack(side=tk.TOP, fill=tk.X, padx=16, pady=(0, 4))
         banner = ttk.Frame(host)
         self._deep_work_banner = banner
         self._deep_work_timer_label = ttk.Label(banner, text="", style="Subheading.TLabel")
