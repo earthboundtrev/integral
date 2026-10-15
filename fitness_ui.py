@@ -1330,24 +1330,44 @@ def show_fitness_window(
             fitness_settings=settings,
         )
 
-    def open_session_history():
+    _workout_history_window = [None]  # Mutable to capture in closures
+    
+    def open_workout_history():
+        from workout_history_ui import WorkoutHistoryView
+        
+        # Check if window already exists
+        if _workout_history_window[0] and _workout_history_window[0].winfo_exists():
+            _workout_history_window[0].lift()
+            _workout_history_window[0].focus_set()
+            return
+        
         hist = tk.Toplevel(win)
-        hist.title("Workout Session History")
-        hist.geometry("560x480")
-        hist.minsize(420, 320)
+        hist.title("Workout History")
+        hist.geometry("1000x600")
+        hist.minsize(800, 500)
+        hist.configure(bg=theme["bg"])
         hist.transient(win)
-
-        footer = ttk.Frame(hist, padding=(10, 8))
-        footer.pack(side=tk.BOTTOM, fill=tk.X)
-        ttk.Button(footer, text="Close", command=hist.destroy).pack(side=tk.RIGHT)
-
-        txt = scrolledtext.ScrolledText(hist, wrap=tk.WORD, font=("Helvetica", 10))
-        txt.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=10, pady=10)
-        sessions = repo.list_workout_sessions()
-        if not sessions:
-            txt.insert(tk.END, "No workout sessions yet.")
-        for session in sessions:
-            txt.insert(tk.END, format_session_summary(repo, session) + "\n\n")
+        _workout_history_window[0] = hist
+        
+        def on_log_workout_with_refresh():
+            open_session_dialog()
+            # Refresh history after dialog closes
+            hist.after(100, lambda: history_view.refresh() if hist.winfo_exists() else None)
+        
+        history_view = WorkoutHistoryView(
+            parent=hist,
+            repo=repo,
+            theme=theme,
+            on_log_workout=on_log_workout_with_refresh,
+        )
+        
+        def on_close():
+            history_view.destroy()
+            hist.destroy()
+            _workout_history_window[0] = None
+        
+        hist._on_close_callback = on_close
+        hist.protocol("WM_DELETE_WINDOW", on_close)
 
     search_var.trace_add("write", lambda *_args: refresh_list())
     search_entry.bind("<Return>", lambda _e: refresh_list())
@@ -1361,7 +1381,7 @@ def show_fitness_window(
         ttk.Button(
             btn_bar, text="Log Daily Practice", command=lambda: on_log_practice(win)
         ).pack(side=tk.LEFT, padx=6)
-    ttk.Button(btn_bar, text="Session History", command=open_session_history).pack(side=tk.LEFT, padx=6)
+    ttk.Button(btn_bar, text="Workout history", command=open_workout_history).pack(side=tk.LEFT, padx=6)
     ttk.Button(
         btn_bar,
         text="Body Composition",

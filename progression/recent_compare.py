@@ -454,3 +454,77 @@ def format_snapshot_card(snapshot: ExerciseSessionSnapshot) -> str:
         parts.append(f"{snapshot.rows} logged rows")
     body = ", ".join(parts) if parts else "logged"
     return f"{snapshot.date}\n{body}"
+
+
+def compare_to_previous_session(
+    repo: FitnessRepository,
+    current_session_id: str,
+    exercise_id: str,
+    current_date: str,
+    current_created_at: str | None = None,
+) -> dict[str, str]:
+    """Compare current session's exercise to the previous session for that exercise.
+    
+    Args:
+        repo: FitnessRepository
+        current_session_id: ID of current session
+        exercise_id: Exercise to compare
+        current_date: Date of current session (YYYY-MM-DD)
+        current_created_at: Created timestamp of current session (for same-date ordering)
+    
+    Returns:
+        dict with keys:
+            - trend: "up" | "down" | "same" | "none"
+            - previous_best_display: human-readable previous performance
+    """
+    current_sets = [
+        s for s in repo.list_workout_sets(current_session_id)
+        if s.exercise_id == exercise_id
+    ]
+    current_session = WorkoutSession(id=current_session_id, date=current_date, created_at=current_created_at)
+    current_snap = aggregate_exercise_sets(current_session, current_sets)
+    
+    if not current_snap or current_snap.volume is None:
+        return {"trend": "none", "previous_best_display": ""}
+    
+    history = exercise_history_snapshots(
+        repo,
+        exercise_id,
+        as_of=current_date,
+        limit=50,
+    )
+    
+    # Find the current session in history, then take the next one (older)
+    found_current = False
+    previous_snap = None
+    for snap in history:
+        if snap.session_id == current_session_id:
+            found_current = True
+            continue
+        if found_current:
+            # This is the first session after current (i.e., the previous/older one)
+            previous_snap = snap
+            break
+    
+    if not previous_snap or previous_snap.volume is None:
+        return {"trend": "none", "previous_best_display": ""}
+    
+    cue = compare_volume_to_prior(current_snap, previous_snap)
+    
+    if cue.direction == "up":
+        return {
+            "trend": "up",
+            "previous_best_display": f"vs last: {format_volume(previous_snap.volume, previous_snap.volume_kind)}",
+        }
+    elif cue.direction == "down":
+        return {
+            "trend": "down",
+            "previous_best_display": f"vs last: {format_volume(previous_snap.volume, previous_snap.volume_kind)}",
+        }
+    elif cue.direction == "flat":
+        return {
+            "trend": "same",
+            "previous_best_display": f"same as last: {format_volume(previous_snap.volume, previous_snap.volume_kind)}",
+        }
+    
+    return {"trend": "none", "previous_best_display": ""}

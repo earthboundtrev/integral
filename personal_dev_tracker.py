@@ -620,6 +620,34 @@ class PersonalDevelopmentTracker:
             self.settings["fitness"] = get_fitness_settings(self.settings)
             self.sessions = migrated.get("sessions", [])
             self._invalidate_session_counts()
+            
+            # Migrate legacy program sessions to fitness.db (with backup)
+            if self.sessions:
+                from legacy_fitness_migration import run_migration
+                from progression.db import get_fitness_db_path
+                try:
+                    # Check if any unmigrated sessions remain
+                    needs_migration = any(
+                        not sess.get("migrated_to_fitness_db")
+                        for sess in self.sessions
+                    )
+                    if needs_migration:
+                        result = run_migration(
+                            data_path=DATA_FILE,
+                            fitness_db_path=get_fitness_db_path(),
+                            mark_migrated=True
+                        )
+                        if result.get("migrated_count", 0) > 0:
+                            print(f"Legacy migration: {result['migrated_count']} sessions migrated")
+                        if result.get("errors"):
+                            print(f"Legacy migration warnings: {len(result['errors'])} issues")
+                except Exception as e:
+                    messagebox.showerror(
+                        "Migration Failed",
+                        f"Legacy fitness session migration failed:\n\n{e}\n\n"
+                        "Your data is safe. Backups were created if migration started."
+                    )
+            
             self.milestones = merge_milestones(migrated.get("milestones"))
             self.journal = journal.normalize_journal(migrated.get("journal"))
             self.creative_projects = creative_projects.normalize_creative_projects(
@@ -911,6 +939,13 @@ class PersonalDevelopmentTracker:
             style="OnSurfaceMuted.TLabel"
         )
         more_link.pack(side=tk.LEFT, padx=(0, 8))
+        
+        # Workout history button
+        ttk.Button(
+            todo_row,
+            text="Workout history",
+            command=self.show_workout_history,
+        ).pack(side=tk.LEFT, padx=(8, 0))
         
         def open_qc_with_text(event=None):
             text = todo_var.get().strip()
@@ -2883,6 +2918,13 @@ class PersonalDevelopmentTracker:
         self._invalidate_caches()
         self.refresh_dashboard()
         self.save_data(recompute_fitness=True)
+        
+        # Refresh workout history view if open
+        if hasattr(self, '_workout_history_view') and self._workout_history_view:
+            try:
+                self._workout_history_view.refresh()
+            except Exception:
+                pass
 
     def _fitness_session_count_for_date(self, date_str: str) -> int:
         return self._activity_session_counts().get(date_str, 0)
@@ -2947,6 +2989,52 @@ class PersonalDevelopmentTracker:
             on_fitness_settings_changed=on_fitness_settings_changed,
             on_log_practice=self.show_log_practice,
         )
+
+    def show_workout_history(self) -> None:
+        """Show workout history in a modal window."""
+        import fitness_ui
+        from workout_history_ui import WorkoutHistoryView
+        
+        # Check if window already exists
+        if hasattr(self, '_workout_history_window') and self._workout_history_window and self._workout_history_window.winfo_exists():
+            self._workout_history_window.lift()
+            self._workout_history_window.focus_set()
+            return
+        
+        repo = fitness_ui.get_profile_repo(self.settings.get("fitness"))
+        fitness_ui.ensure_fitness_seeded(repo, self.settings.get("fitness"))
+        
+        win = tk.Toplevel(self.root)
+        win.title("Workout History")
+        win.geometry("1000x600")
+        win.minsize(800, 500)
+        win.configure(bg=self.theme["bg"])
+        win.transient(self.root)
+        self._workout_history_window = win
+        
+        def on_log_workout_with_refresh():
+            # Store view reference before opening log
+            view_ref = self._workout_history_view if hasattr(self, '_workout_history_view') else None
+            self.show_log_exercise()
+            # Note: actual refresh happens via _on_fitness_session_saved callback
+        
+        history_view = WorkoutHistoryView(
+            parent=win,
+            repo=repo,
+            theme=self.theme,
+            on_log_workout=on_log_workout_with_refresh,
+        )
+        self._workout_history_view = history_view
+        
+        def on_close():
+            history_view.destroy()
+            win.destroy()
+            self._workout_history_window = None
+            if hasattr(self, '_workout_history_view'):
+                delattr(self, '_workout_history_view')
+        
+        win._on_close_callback = on_close
+        win.protocol("WM_DELETE_WINDOW", on_close)
 
     def show_settings(self) -> None:
         editor = tk.Toplevel(self.root)

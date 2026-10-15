@@ -102,8 +102,6 @@ class FitnessHub:
 
         ttk.Button(header, text="Fitness Charts", command=self._open_charts).pack(side=tk.RIGHT, padx=6)
 
-        ttk.Button(header, text="Session History", command=self._show_history).pack(side=tk.RIGHT)
-
 
 
         body = ttk.Frame(self.window)
@@ -140,55 +138,7 @@ class FitnessHub:
 
 
 
-    def _show_history(self) -> None:
-
-        window = tk.Toplevel(self.window)
-
-        window.title("Fitness Session History")
-
-        window.geometry("900x600")
-
-        window.configure(bg=self.theme["bg"])
-
-        text = scrolledtext.ScrolledText(window, wrap=tk.WORD, font=("Consolas", 10))
-
-        style_text_widget(text, self.theme)
-
-        text.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-
-
-
-        if not self.sessions:
-
-            text.insert(tk.END, "No fitness sessions logged yet.")
-
-            return
-
-
-
-        for session in sorted(self.sessions, key=lambda item: item["date"], reverse=True):
-
-            program = self.programs.get(session.get("program_id", ""), {})
-
-            text.insert(tk.END, f"\n{'=' * 55}\n{session['date']} — {program.get('name', session.get('program_id'))}\n")
-
-            if session.get("session_rpe"):
-
-                text.insert(tk.END, f"RPE: {session['session_rpe']}")
-
-                if session.get("duration_min"):
-
-                    text.insert(tk.END, f"  |  {session['duration_min']} min")
-
-                text.insert(tk.END, "\n")
-
-            if session.get("notes"):
-
-                text.insert(tk.END, f"Notes: {session['notes']}\n")
-
-            for log in session.get("movement_logs", []):
-
-                text.insert(tk.END, f"  {self._format_log(program, log)}\n")
+    # _show_history removed - workout history now accessible via Today's Log and Fitness Hub "Workout history" button
 
 
 
