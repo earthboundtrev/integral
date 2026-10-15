@@ -158,6 +158,7 @@ class WorkoutHistoryView:
         self.has_more = True
         self.is_loading = False
         self.loading_after_id: str | None = None
+        self._conn = None  # Reused connection
         
         self._build_ui()
         self._load_first_page()
