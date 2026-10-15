@@ -912,6 +912,13 @@ class PersonalDevelopmentTracker:
         )
         more_link.pack(side=tk.LEFT, padx=(0, 8))
         
+        # Workout history button
+        ttk.Button(
+            todo_row,
+            text="Workout history",
+            command=self.show_workout_history,
+        ).pack(side=tk.LEFT, padx=(8, 0))
+        
         def open_qc_with_text(event=None):
             text = todo_var.get().strip()
             if text != "Add a todo… (Enter to save, Ctrl+Shift+T from anywhere)" and text:
@@ -2947,6 +2954,34 @@ class PersonalDevelopmentTracker:
             on_fitness_settings_changed=on_fitness_settings_changed,
             on_log_practice=self.show_log_practice,
         )
+
+    def show_workout_history(self) -> None:
+        """Show workout history in a modal window."""
+        import fitness_ui
+        from workout_history_ui import WorkoutHistoryView
+        
+        repo = fitness_ui.get_profile_repo(self.settings.get("fitness"))
+        fitness_ui.ensure_fitness_seeded(repo, self.settings.get("fitness"))
+        
+        win = tk.Toplevel(self.root)
+        win.title("Workout History")
+        win.geometry("1000x600")
+        win.minsize(800, 500)
+        win.configure(bg=self.theme["bg"])
+        win.transient(self.root)
+        
+        history_view = WorkoutHistoryView(
+            parent=win,
+            repo=repo,
+            theme=self.theme,
+            on_log_workout=lambda: (win.destroy(), self.show_log_exercise()),
+        )
+        
+        def on_close():
+            history_view.destroy()
+            win.destroy()
+        
+        win.protocol("WM_DELETE_WINDOW", on_close)
 
     def show_settings(self) -> None:
         editor = tk.Toplevel(self.root)
