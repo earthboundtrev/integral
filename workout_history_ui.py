@@ -94,6 +94,7 @@ def count_exercise_indicators(session: WorkoutSession, sets: list[WorkoutSet], r
             current_session_id=session.id,
             exercise_id=wset.exercise_id,
             current_date=session.date,
+            current_created_at=session.created_at,
         )
         
         trend = comparison.get("trend", "")

@@ -1330,8 +1330,16 @@ def show_fitness_window(
             fitness_settings=settings,
         )
 
+    _workout_history_window = [None]  # Mutable to capture in closures
+    
     def open_workout_history():
         from workout_history_ui import WorkoutHistoryView
+        
+        # Check if window already exists
+        if _workout_history_window[0] and _workout_history_window[0].winfo_exists():
+            _workout_history_window[0].lift()
+            _workout_history_window[0].focus_set()
+            return
         
         hist = tk.Toplevel(win)
         hist.title("Workout History")
@@ -1339,17 +1347,19 @@ def show_fitness_window(
         hist.minsize(800, 500)
         hist.configure(bg=theme["bg"])
         hist.transient(win)
+        _workout_history_window[0] = hist
         
         history_view = WorkoutHistoryView(
             parent=hist,
             repo=repo,
             theme=theme,
-            on_log_workout=lambda: (hist.destroy(), open_session_dialog()),
+            on_log_workout=lambda: open_session_dialog(),
         )
         
         def on_close():
             history_view.destroy()
             hist.destroy()
+            _workout_history_window[0] = None
         
         hist.protocol("WM_DELETE_WINDOW", on_close)
 
