@@ -521,6 +521,10 @@ class PersonalDevelopmentTracker:
     def toggle_dark_mode(self) -> None:
         self.settings["dark_mode"] = not self.settings.get("dark_mode", False)
         self.save_data()
+        # Force full shell rebuild for theme changes (chrome colors + mode button label)
+        if self._shell_frame is not None:
+            self._shell_frame.destroy()
+            self._shell_frame = None
         self.create_dashboard()
 
     def merge_categories_with_defaults(self, stored: dict | None) -> dict:
@@ -1226,19 +1230,11 @@ class PersonalDevelopmentTracker:
             self.create_dashboard()
             return
         
-        # Shell exists, just rebuild content
-        if recompute:
-            self._invalidate_caches()
-        self.insights = self._get_insights()
-
-        if self._streak_pill is not None:
-            self._streak_pill.config(text=f"🔥 {self.get_streak()} day streak · details")
-
-        if self._date_label is not None:
-            self._date_label.config(text=f"Today · {datetime.now().strftime('%B %d, %Y')}")
-
-        # Rebuild content pane instead of just the log bar
-        self._build_content()
+        # Update header chrome
+        self._refresh_header_chrome()
+        
+        # Rebuild content pane
+        self._build_content(recompute=recompute)
 
         try:
             if self._activity_grid is not None:
@@ -1332,10 +1328,34 @@ class PersonalDevelopmentTracker:
             self._nav_pack_order = []
             self._nav_frame = None
             self._ensure_shell()
+        else:
+            # Shell exists, refresh header chrome (for backup restore, etc.)
+            self._refresh_header_chrome()
         
         self.apply_current_theme(force=True)
-        self._build_content()
+        self._build_content(recompute=True)
         self._dashboard_ready = True
+    
+    def _restore_content_focus(self) -> None:
+        """Set focus to first focusable control in content pane."""
+        if self._content_pane is None or not self._content_pane.winfo_exists():
+            return
+        for child in self._content_pane.winfo_children():
+            if child.winfo_class() in ("TEntry", "Entry", "Text", "TButton", "Button"):
+                child.focus_set()
+                return
+            # Recurse into frames
+            for subchild in child.winfo_children():
+                if subchild.winfo_class() in ("TEntry", "Entry", "Text"):
+                    subchild.focus_set()
+                    return
+    
+    def _refresh_header_chrome(self) -> None:
+        """Update header widgets (streak, date) without rebuilding shell."""
+        if self._streak_pill is not None:
+            self._streak_pill.config(text=f"🔥 {self.get_streak()} day streak")
+        if self._date_label is not None:
+            self._date_label.config(text=f"Today · {datetime.now().strftime('%B %d, %Y')}")
 
     def _ensure_shell(self) -> None:
         """Create the persistent shell frame structure."""
@@ -1443,10 +1463,14 @@ class PersonalDevelopmentTracker:
             self.root.bind_all("<Control-K>", lambda _e: self.show_goto())
             self._goto_shortcut_bound = True
     
-    def _build_content(self) -> None:
+    def _build_content(self, *, recompute: bool = True) -> None:
         """Build or rebuild the content pane (Today's Log and Overview)."""
-        if self._content_pane is None:
+        if self._content_pane is None or not self._content_pane.winfo_exists():
             return
+        
+        # Save focus widget path for restoration
+        focused_widget = self.root.focus_get()
+        focused_path = str(focused_widget) if focused_widget else None
         
         # Clear existing content
         for child in self._content_pane.winfo_children():
@@ -1455,9 +1479,14 @@ class PersonalDevelopmentTracker:
         # Build Today's Log bar
         self.create_todays_log_bar()
         
-        # Recompute insights
-        self._invalidate_caches()
-        self.insights = self._get_insights()
+        # Recompute insights if requested
+        if recompute:
+            self._invalidate_caches()
+            self.insights = self._get_insights()
+        
+        # Restore focus to content's first control if prior focus was in content
+        if focused_path and focused_path.startswith(str(self._content_pane)):
+            self.root.after(10, lambda: self._restore_content_focus())
 
     def _build_overview_tab(self, parent: ttk.Frame) -> None:
         outer, main, canvas = ui_scroll.make_scrollable_frame(parent)

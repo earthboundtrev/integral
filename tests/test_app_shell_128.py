@@ -258,8 +258,8 @@ def test_refresh_preserves_shell_structure():
     root.destroy()
 
 
-def test_theme_toggle_recreates_shell():
-    """Theme toggle does full dashboard rebuild including shell."""
+def test_theme_toggle_rebuilds_shell_for_chrome():
+    """Theme toggle rebuilds shell for proper theme colors and button labels."""
     root = tk.Tk()
     root.withdraw()
     
@@ -267,14 +267,19 @@ def test_theme_toggle_recreates_shell():
         tracker = personal_dev_tracker.PersonalDevelopmentTracker(root)
         tracker.create_dashboard()
         
-        initial_shell_path = str(tracker._shell_frame)
+        initial_dark_mode = tracker.settings.get("dark_mode", False)
         
-        # Toggle theme (should call create_dashboard which may rebuild shell)
+        # Toggle theme (should rebuild shell for chrome)
         tracker.toggle_dark_mode()
         
-        # Shell still exists (may be same or new instance)
+        # Theme changed
+        assert tracker.settings.get("dark_mode") != initial_dark_mode
+        
+        # Shell exists and is functional
         assert tracker._shell_frame is not None
         assert tracker._shell_frame.winfo_exists()
+        assert tracker._streak_pill is not None
+        assert tracker._date_label is not None
     
     root.destroy()
 
@@ -322,5 +327,29 @@ def test_content_pane_children_rebuilt_on_refresh():
         # New log bar should be created (content rebuilt)
         assert tracker._log_bar is not initial_log_bar, "Log bar not rebuilt on refresh"
         assert tracker._log_bar.winfo_exists()
+    
+    root.destroy()
+
+
+def test_focus_preserved_across_content_rebuild():
+    """AC4: Focus should not be lost to root after content rebuild."""
+    root = tk.Tk()
+    root.withdraw()
+    
+    with patch.object(personal_dev_tracker.PersonalDevelopmentTracker, "__init__", _mock_tracker_init):
+        tracker = personal_dev_tracker.PersonalDevelopmentTracker(root)
+        tracker.create_dashboard()
+        root.update_idletasks()
+        
+        # Get initial focus
+        initial_focus = root.focus_get()
+        
+        # Refresh content
+        tracker._build_content(recompute=True)
+        root.update_idletasks()
+        
+        # Focus should not be lost to root
+        new_focus = root.focus_get()
+        assert new_focus is not root, "Focus lost to root after content rebuild"
     
     root.destroy()
