@@ -587,7 +587,7 @@ class WorkoutHistoryView:
     def _batch_fetch_trends(self, session: WorkoutSession, exercise_ids: list[str]) -> dict[str, dict]:
         """Batch-fetch trend comparisons using compare_to_previous_session.
         
-        Uses a single connection and batched queries.
+        Uses a single connection and batched queries (≤3 SQL).
         
         Returns:
             Dict mapping exercise_id to {trend, previous_best_display}
@@ -606,108 +606,45 @@ class WorkoutHistoryView:
                 current_sets_by_ex[wset.exercise_id] = []
             current_sets_by_ex[wset.exercise_id].append(wset)
         
-        # Single connection for all queries
-        if not self._conn or not hasattr(self._conn, 'execute'):
-            self._conn = self.repo.connect(timeout=10.0)
-        
         try:
-            # Batch 1: Get all sessions with these exercises, ordered correctly
-            placeholders = ','.join('?' * len(exercise_ids))
-            all_rows = self._conn.execute(
-                f"""
-                SELECT DISTINCT ws.exercise_id, s.id, s.date, s.created_at
-                FROM workout_sessions s
-                INNER JOIN workout_sets ws ON ws.session_id = s.id
-                WHERE ws.exercise_id IN ({placeholders})
-                ORDER BY s.date DESC, COALESCE(s.created_at, '') DESC, s.id DESC
-                """,
-                exercise_ids
-            ).fetchall()
-            
-            # Batch 2: Get exercise names
-            exercise_names = {}
-            for row in self._conn.execute(
-                f"SELECT id, name FROM exercises WHERE id IN ({placeholders})",
-                exercise_ids
-            ).fetchall():
-                exercise_names[row["id"]] = row["name"]
-            
-            # Batch 3: Get all sets for sessions we care about
-            session_ids_needed = {row["id"] for row in all_rows}
-            placeholders_sessions = ','.join('?' * len(session_ids_needed))
-            all_sets_rows = self._conn.execute(
-                f"""
-                SELECT session_id, exercise_id, sets, reps, hold_seconds, weight_kg, ordinal, form_quality
-                FROM workout_sets
-                WHERE session_id IN ({placeholders_sessions})
-                ORDER BY session_id, ordinal
-                """,
-                tuple(session_ids_needed)
-            ).fetchall()
-            
-            # Group sets by session_id
-            sets_by_session_id = {}
-            for row in all_sets_rows:
-                sid = row["session_id"]
-                if sid not in sets_by_session_id:
-                    sets_by_session_id[sid] = []
-                sets_by_session_id[sid].append(WorkoutSet(
-                    session_id=row["session_id"],
-                    exercise_id=row["exercise_id"],
-                    sets=row["sets"],
-                    reps=row["reps"],
-                    hold_seconds=row["hold_seconds"],
-                    weight_kg=row["weight_kg"],
-                    ordinal=row["ordinal"],
-                    form_quality=row["form_quality"],
-                ))
-            
-            # Build history per exercise and use compare_to_previous_session
+            # Call compare_to_previous_session for each exercise (it does batching internally)
             for ex_id in exercise_ids:
                 current_sets = current_sets_by_ex.get(ex_id, [])
                 if not current_sets:
                     continue
                 
-                # Build history for this exercise (sessions ordered newest first)
-                history = []
-                for row in all_rows:
-                    if row["exercise_id"] != ex_id:
-                        continue
-                    sess = WorkoutSession(
-                        id=row["id"],
-                        date=row["date"],
-                        created_at=row["created_at"]
-                    )
-                    sess_sets = [
-                        s for s in sets_by_session_id.get(row["id"], [])
-                        if s.exercise_id == ex_id
-                    ]
-                    history.append((sess, sess_sets))
-                
-                # Use compare_to_previous_session which correctly handles same-date ordering
-                cue = compare_to_previous_session(
-                    current_session_id=session.id,
-                    exercise_id=ex_id,
-                    current_sets=current_sets,
-                    history=history
+                # compare_to_previous_session signature:
+                # (repo, current_session_id, exercise_id, current_date, current_created_at)
+                result = compare_to_previous_session(
+                    self.repo,
+                    session.id,
+                    ex_id,
+                    session.date,
+                    session.created_at
                 )
                 
-                if cue and cue.direction != "none":
-                    if cue.direction == "up":
-                        trends[ex_id] = {
-                            "trend": "up",
-                            "previous_best_display": f"vs last: {cue.previous_best_display}",
-                        }
-                    elif cue.direction == "down":
-                        trends[ex_id] = {
-                            "trend": "down",
-                            "previous_best_display": f"vs last: {cue.previous_best_display}",
-                        }
-                    elif cue.direction == "flat":
-                        trends[ex_id] = {
-                            "trend": "same",
-                            "previous_best_display": f"same as last: {cue.previous_best_display}",
-                        }
+                if not result:
+                    trends[ex_id] = {"trend": "none", "previous_best_display": ""}
+                    continue
+                
+                direction = result.get("direction", "none")
+                prev_display = result.get("previous_best_display", "")
+                
+                if direction == "up":
+                    trends[ex_id] = {
+                        "trend": "up",
+                        "previous_best_display": f"vs last: {prev_display}",
+                    }
+                elif direction == "down":
+                    trends[ex_id] = {
+                        "trend": "down",
+                        "previous_best_display": f"vs last: {prev_display}",
+                    }
+                elif direction == "flat":
+                    trends[ex_id] = {
+                        "trend": "same",
+                        "previous_best_display": f"same as last: {prev_display}",
+                    }
                 else:
                     trends[ex_id] = {"trend": "none", "previous_best_display": ""}
         except Exception:

@@ -623,14 +623,11 @@ class PersonalDevelopmentTracker:
             
             # Migrate legacy program sessions to fitness.db
             if self.sessions:
-                from legacy_fitness_migration import run_migration
-                from paths import get_fitness_db_path
+                from legacy_fitness_migration import migrate_legacy_sessions
+                from progression.db import FitnessRepository, get_fitness_db_path
                 try:
-                    result = run_migration(
-                        data_path=DATA_FILE,
-                        fitness_db_path=get_fitness_db_path(),
-                        mark_migrated=True
-                    )
+                    repo = FitnessRepository(db_path=get_fitness_db_path())
+                    result = migrate_legacy_sessions(data, repo, dry_run=False)
                     if result.get("errors"):
                         print(f"Legacy migration warnings: {len(result['errors'])} issues")
                 except Exception as e:

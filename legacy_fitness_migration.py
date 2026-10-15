@@ -88,6 +88,13 @@ def migrate_legacy_sessions(
     
     with repo.connect(timeout=10.0) as conn:
         # Get existing legacy_source_hash to check for duplicates (stable idempotency)
+        # Also check for sessions marked as migrated in data.json
+        migrated_in_data = {
+            hashlib.sha256(json.dumps(sess, sort_keys=True).encode()).hexdigest()[:12]
+            for sess in legacy_sessions
+            if sess.get("migrated_to_fitness_db")
+        }
+        
         existing = conn.execute(
             "SELECT notes FROM workout_sessions WHERE notes LIKE '[LEGACY:%'"
         ).fetchall()
@@ -96,6 +103,7 @@ def migrate_legacy_sessions(
             for row in existing
             if "[LEGACY:" in row["notes"]
         }
+        existing_hashes.update(migrated_in_data)
         
         if dry_run:
             for sess in legacy_sessions:
