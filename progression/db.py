@@ -113,6 +113,8 @@ class FitnessRepository:
 
                 CREATE INDEX IF NOT EXISTS idx_workout_sets_session
                     ON workout_sets(session_id);
+                CREATE INDEX IF NOT EXISTS idx_workout_sets_exercise
+                    ON workout_sets(exercise_id);
 
                 CREATE TABLE IF NOT EXISTS body_composition_logs (
                     id TEXT PRIMARY KEY,
@@ -127,6 +129,8 @@ class FitnessRepository:
                 """
             )
             self._ensure_workout_set_form_quality_column(conn)
+            self._ensure_workout_set_ordering_columns(conn)
+            self._ensure_workout_sessions_created_at_column(conn)
         self._schema_ready = True
 
     def _ensure_workout_set_form_quality_column(self, conn: sqlite3.Connection) -> None:
@@ -136,6 +140,24 @@ class FitnessRepository:
         }
         if "form_quality" not in columns:
             conn.execute("ALTER TABLE workout_sets ADD COLUMN form_quality INTEGER")
+
+    def _ensure_workout_set_ordering_columns(self, conn: sqlite3.Connection) -> None:
+        columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(workout_sets)").fetchall()
+        }
+        if "ordinal" not in columns:
+            conn.execute("ALTER TABLE workout_sets ADD COLUMN ordinal INTEGER")
+        if "created_at" not in columns:
+            conn.execute("ALTER TABLE workout_sets ADD COLUMN created_at TEXT")
+
+    def _ensure_workout_sessions_created_at_column(self, conn: sqlite3.Connection) -> None:
+        columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(workout_sessions)").fetchall()
+        }
+        if "created_at" not in columns:
+            conn.execute("ALTER TABLE workout_sessions ADD COLUMN created_at TEXT")
 
     def add_exercise(self, exercise: Exercise) -> Exercise:
         self.initialize()
@@ -404,11 +426,17 @@ class FitnessRepository:
 
     def add_workout_session(self, session: WorkoutSession) -> WorkoutSession:
         self.initialize()
+        from datetime import datetime, timezone
+        
+        created_at = session.created_at
+        if created_at is None:
+            created_at = datetime.now(timezone.utc).isoformat()
+        
         with self.connect() as conn:
             conn.execute(
                 """
-                INSERT OR IGNORE INTO workout_sessions (id, date, notes, duration_minutes, body_weight_kg)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT OR IGNORE INTO workout_sessions (id, date, notes, duration_minutes, body_weight_kg, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
                 (
                     session.id,
@@ -416,18 +444,26 @@ class FitnessRepository:
                     session.notes,
                     session.duration_minutes,
                     session.body_weight_kg,
+                    created_at,
                 ),
             )
         return session
 
     def add_workout_set(self, workout_set: WorkoutSet) -> WorkoutSet:
         self.initialize()
+        from datetime import datetime, timezone
+        
+        ordinal = workout_set.ordinal
+        created_at = workout_set.created_at
+        if created_at is None:
+            created_at = datetime.now(timezone.utc).isoformat()
+        
         with self.connect() as conn:
             conn.execute(
                 """
                 INSERT INTO workout_sets (
-                    id, session_id, exercise_id, sets, reps, hold_seconds, weight_kg, form_quality
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    id, session_id, exercise_id, sets, reps, hold_seconds, weight_kg, form_quality, ordinal, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     workout_set.id,
@@ -438,6 +474,8 @@ class FitnessRepository:
                     workout_set.hold_seconds,
                     workout_set.weight_kg,
                     workout_set.form_quality,
+                    ordinal,
+                    created_at,
                 ),
             )
         return workout_set
@@ -468,9 +506,9 @@ class FitnessRepository:
         with self.connect() as conn:
             rows = conn.execute(
                 """
-                SELECT id, date, notes, duration_minutes, body_weight_kg
+                SELECT id, date, notes, duration_minutes, body_weight_kg, created_at
                 FROM workout_sessions
-                ORDER BY date DESC, id DESC
+                ORDER BY date DESC, created_at DESC, id DESC
                 LIMIT ?
                 """,
                 (limit,),
@@ -482,6 +520,71 @@ class FitnessRepository:
                 notes=row["notes"],
                 duration_minutes=row["duration_minutes"],
                 body_weight_kg=row["body_weight_kg"],
+                created_at=row["created_at"],
+            )
+            for row in rows
+        ]
+
+    def list_workout_sessions_page(
+        self,
+        limit: int = 20,
+        before_date: str | None = None,
+        before_id: str | None = None,
+        exercise_filter: str | None = None,
+    ) -> list[WorkoutSession]:
+        """Keyset paging for workout sessions (date DESC, created_at DESC, id DESC).
+        
+        Args:
+            limit: Page size
+            before_date: Cursor date (exclusive)
+            before_id: Cursor id (exclusive, required if before_date is set)
+            exercise_filter: Filter to sessions containing this exercise name (case-insensitive)
+        
+        Returns:
+            Up to `limit` sessions, newest first
+        """
+        self.initialize()
+        with self.connect() as conn:
+            if exercise_filter:
+                query = """
+                    SELECT DISTINCT s.id, s.date, s.notes, s.duration_minutes, s.body_weight_kg, s.created_at
+                    FROM workout_sessions s
+                    INNER JOIN workout_sets ws ON ws.session_id = s.id
+                    INNER JOIN exercises e ON e.id = ws.exercise_id
+                    WHERE (? IS NULL OR (
+                        s.date < ? OR (s.date = ? AND s.id < ?)
+                    ))
+                    AND LOWER(e.name) LIKE LOWER(?)
+                    ORDER BY s.date DESC, s.created_at DESC, s.id DESC
+                    LIMIT ?
+                """
+                filter_pattern = f"%{exercise_filter}%"
+                rows = conn.execute(
+                    query,
+                    (before_date, before_date, before_date, before_id or "", filter_pattern, limit),
+                ).fetchall()
+            else:
+                query = """
+                    SELECT id, date, notes, duration_minutes, body_weight_kg, created_at
+                    FROM workout_sessions
+                    WHERE ? IS NULL OR (
+                        date < ? OR (date = ? AND id < ?)
+                    )
+                    ORDER BY date DESC, created_at DESC, id DESC
+                    LIMIT ?
+                """
+                rows = conn.execute(
+                    query,
+                    (before_date, before_date, before_date, before_id or "", limit),
+                ).fetchall()
+        return [
+            WorkoutSession(
+                id=row["id"],
+                date=row["date"],
+                notes=row["notes"],
+                duration_minutes=row["duration_minutes"],
+                body_weight_kg=row["body_weight_kg"],
+                created_at=row["created_at"],
             )
             for row in rows
         ]
@@ -502,13 +605,13 @@ class FitnessRepository:
         with self.connect() as conn:
             rows = conn.execute(
                 """
-                SELECT DISTINCT s.id, s.date, s.notes, s.duration_minutes, s.body_weight_kg
+                SELECT DISTINCT s.id, s.date, s.notes, s.duration_minutes, s.body_weight_kg, s.created_at
                 FROM workout_sessions s
                 INNER JOIN workout_sets w ON w.session_id = s.id
                 WHERE w.exercise_id = ?
                   AND s.date >= ?
                   AND s.date <= ?
-                ORDER BY s.date DESC, s.id DESC
+                ORDER BY s.date DESC, s.created_at DESC, s.id DESC
                 LIMIT ?
                 """,
                 (eid, start_date, end_date, limit),
@@ -520,6 +623,7 @@ class FitnessRepository:
                 notes=row["notes"],
                 duration_minutes=row["duration_minutes"],
                 body_weight_kg=row["body_weight_kg"],
+                created_at=row["created_at"],
             )
             for row in rows
         ]
@@ -539,12 +643,12 @@ class FitnessRepository:
         with self.connect() as conn:
             rows = conn.execute(
                 """
-                SELECT DISTINCT s.id, s.date, s.notes, s.duration_minutes, s.body_weight_kg
+                SELECT DISTINCT s.id, s.date, s.notes, s.duration_minutes, s.body_weight_kg, s.created_at
                 FROM workout_sessions s
                 INNER JOIN workout_sets w ON w.session_id = s.id
                 WHERE w.exercise_id = ?
                   AND s.date <= ?
-                ORDER BY s.date DESC, s.id DESC
+                ORDER BY s.date DESC, s.created_at DESC, s.id DESC
                 LIMIT ?
                 """,
                 (eid, end_date, limit),
@@ -556,6 +660,7 @@ class FitnessRepository:
                 notes=row["notes"],
                 duration_minutes=row["duration_minutes"],
                 body_weight_kg=row["body_weight_kg"],
+                created_at=row["created_at"],
             )
             for row in rows
         ]
@@ -584,10 +689,10 @@ class FitnessRepository:
         with self.connect() as conn:
             rows = conn.execute(
                 """
-                SELECT id, session_id, exercise_id, sets, reps, hold_seconds, weight_kg, form_quality
+                SELECT id, session_id, exercise_id, sets, reps, hold_seconds, weight_kg, form_quality, ordinal, created_at
                 FROM workout_sets
                 WHERE session_id = ?
-                ORDER BY id
+                ORDER BY ordinal ASC, created_at ASC, id ASC
                 """,
                 (session_id,),
             ).fetchall()
@@ -601,9 +706,50 @@ class FitnessRepository:
                 hold_seconds=row["hold_seconds"],
                 weight_kg=row["weight_kg"],
                 form_quality=row["form_quality"],
+                ordinal=row["ordinal"],
+                created_at=row["created_at"],
             )
             for row in rows
         ]
+
+    def list_workout_sets_batch(self, session_ids: list[str]) -> dict[str, list[WorkoutSet]]:
+        """Load sets for multiple sessions in one query (LEFT JOIN pattern).
+        
+        Returns:
+            Dict mapping session_id to list of WorkoutSet objects
+        """
+        self.initialize()
+        if not session_ids:
+            return {}
+        
+        with self.connect() as conn:
+            placeholders = ",".join("?" * len(session_ids))
+            rows = conn.execute(
+                f"""
+                SELECT id, session_id, exercise_id, sets, reps, hold_seconds, weight_kg, form_quality, ordinal, created_at
+                FROM workout_sets
+                WHERE session_id IN ({placeholders})
+                ORDER BY ordinal ASC, created_at ASC, id ASC
+                """,
+                session_ids,
+            ).fetchall()
+        
+        result: dict[str, list[WorkoutSet]] = {sid: [] for sid in session_ids}
+        for row in rows:
+            wset = WorkoutSet(
+                id=row["id"],
+                session_id=row["session_id"],
+                exercise_id=row["exercise_id"],
+                sets=row["sets"],
+                reps=row["reps"],
+                hold_seconds=row["hold_seconds"],
+                weight_kg=row["weight_kg"],
+                form_quality=row["form_quality"],
+                ordinal=row["ordinal"],
+                created_at=row["created_at"],
+            )
+            result[row["session_id"]].append(wset)
+        return result
 
     def add_body_composition_log(self, log: BodyCompositionLog) -> BodyCompositionLog:
         self.initialize()
