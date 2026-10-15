@@ -149,16 +149,42 @@ win._busy_indicator = indicator
 indicator.start()
 
 def build_content():
+    # Return early if window was destroyed before callback runs.
+    try:
+        if not win.winfo_exists():
+            return
+    except tk.TclError:
+        return
+    
     try:
         # Build content while indicator is armed.
         # Strategic win.update() calls allow event loop to process timer.
         _build_quick_capture_body(tracker, win, theme, on_close)
         
-        # Stop and clean up after build is complete.
+        # Stop and clean up after build is complete, if window still exists.
+        try:
+            if not win.winfo_exists():
+                return
+        except tk.TclError:
+            return
+        
         indicator.stop()
-        busy_host.destroy()
-        delattr(win, '_busy_indicator')
+        try:
+            busy_host.destroy()
+        except tk.TclError:
+            pass
+        if hasattr(win, '_busy_indicator'):
+            delattr(win, '_busy_indicator')
+    except tk.TclError:
+        # Window closed during build - not an error.
+        try:
+            if win.winfo_exists():
+                indicator.stop()
+        except tk.TclError:
+            pass
+        return
     except Exception:
+        # Real build error.
         indicator.stop()
         raise
 

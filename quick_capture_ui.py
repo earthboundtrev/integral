@@ -70,30 +70,48 @@ def open_quick_capture_panel(tracker: PersonalDevelopmentTracker) -> tk.Toplevel
     indicator.start()
 
     def build_content() -> None:
+        # Return early if window was destroyed before callback runs.
+        try:
+            if not win.winfo_exists():
+                return
+        except tk.TclError:
+            return
+
         try:
             # Build content while indicator is still armed.
-            # The indicator will show if this takes > 180 ms.
             result = _build_quick_capture_body(tracker, win, theme, on_close)
             
             # Only stop and clean up after build is complete, if window still exists.
             try:
-                if win.winfo_exists():
-                    indicator.stop()
-                    busy_host.destroy()
-                    if hasattr(win, '_busy_indicator'):
-                        delattr(win, '_busy_indicator')
+                if not win.winfo_exists():
+                    return result
+            except tk.TclError:
+                return result
+            
+            indicator.stop()
+            try:
+                busy_host.destroy()
             except tk.TclError:
                 pass
+            if hasattr(win, '_busy_indicator'):
+                delattr(win, '_busy_indicator')
             
             return result
-        except Exception:
-            # Stop indicator on error if window still exists.
+        except tk.TclError:
+            # Window closed during build - not an error.
             try:
                 if win.winfo_exists():
                     indicator.stop()
             except tk.TclError:
                 pass
-            # Don't leave a blank cached Toplevel if build fails mid-way.
+            return
+        except Exception:
+            # Real build error.
+            try:
+                if win.winfo_exists():
+                    indicator.stop()
+            except tk.TclError:
+                pass
             tracker._quick_capture_win = None
             try:
                 win.destroy()
