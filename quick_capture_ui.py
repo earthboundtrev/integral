@@ -106,7 +106,13 @@ def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
     ttk.Button(footer, text="Turn off Quick Capture", command=on_close).pack(anchor="e")
 
     # Yield to event loop after footer (allow indicator timer to fire).
+    # Guard against window close during update().
     win.update()
+    try:
+        if not win.winfo_exists():
+            return win
+    except tk.TclError:
+        return win
 
     scroll_host = ttk.Frame(win)
     scroll_host.pack(side=tk.TOP, fill=tk.BOTH, expand=True)

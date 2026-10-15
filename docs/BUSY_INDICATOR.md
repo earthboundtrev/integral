@@ -71,18 +71,18 @@ def open_my_window(tracker):
     indicator.start()
 
     def build_content():
-    try:
-        # Build content while indicator is armed.
-        # Use win.update() periodically to allow event loop to process timer.
-        _build_my_window_body(tracker, win)
-        
-        # Stop and clean up after build is complete.
-        indicator.stop()
-        busy_host.destroy()
-        delattr(win, '_busy_indicator')
-    except Exception:
-        indicator.stop()
-        raise
+        try:
+            # Build the actual UI here while indicator is armed.
+            # Use win.update() periodically to allow event loop to process timer.
+            _build_my_window_body(tracker, win)
+            
+            # Stop and clean up after build is complete.
+            indicator.stop()
+            busy_host.destroy()
+            delattr(win, '_busy_indicator')
+        except Exception:
+            indicator.stop()
+            raise
 
     # Use after(1) instead of after_idle so the event loop can process the timer.
     win.after(1, build_content)
