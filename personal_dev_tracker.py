@@ -124,6 +124,12 @@ class PersonalDevelopmentTracker:
         self._nav_buttons: dict[str, ttk.Widget] = {}
         self._nav_pack_order: list[str] = []
         self._nav_frame: ttk.Frame | None = None
+        self._shell_frame: ttk.Frame | None = None
+        self._shell_header: ttk.Frame | None = None
+        self._content_pane: ttk.Frame | None = None
+        self._shell_footer: ttk.Frame | None = None
+        self._banner_host: ttk.Frame | None = None
+        self._sidebar_slot: ttk.Frame | None = None
 
         if is_encrypted_file(DATA_FILE) and not prompt_vault_unlock(self):
             messagebox.showerror("Locked", "Cannot open encrypted journal without passphrase.")
@@ -858,7 +864,8 @@ class PersonalDevelopmentTracker:
             self.settings = pruned
             self.save_data(flush=True)
 
-        log_bar = ttk.LabelFrame(self.root, text="Today's Log", padding=14, style="Card.TLabelframe")
+        parent = self._content_pane if self._content_pane is not None else self.root
+        log_bar = ttk.LabelFrame(parent, text="Today's Log", padding=14, style="Card.TLabelframe")
         self._log_bar = log_bar
         log_bar.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=16, pady=(0, 10))
 
@@ -1218,7 +1225,8 @@ class PersonalDevelopmentTracker:
         if full or not self._dashboard_ready:
             self.create_dashboard()
             return
-
+        
+        # Shell exists, just rebuild content
         if recompute:
             self._invalidate_caches()
         self.insights = self._get_insights()
@@ -1229,9 +1237,8 @@ class PersonalDevelopmentTracker:
         if self._date_label is not None:
             self._date_label.config(text=f"Today · {datetime.now().strftime('%B %d, %Y')}")
 
-        if self._log_bar is not None:
-            self._log_bar.destroy()
-        self.create_todays_log_bar()
+        # Rebuild content pane instead of just the log bar
+        self._build_content()
 
         try:
             if self._activity_grid is not None:
@@ -1310,22 +1317,37 @@ class PersonalDevelopmentTracker:
 
     def create_dashboard(self) -> None:
         self._dashboard_ready = False
-        self._deep_work_banner = None
-        self._deep_work_timer_label = None
-        self._nav_buttons = {}
-        self._nav_pack_order = []
-        self._nav_frame = None
         self._close_streak_details_window()
-
-        for widget in self.root.winfo_children():
-            widget.destroy()
-
+        
+        # First-time creation or full rebuild
+        needs_shell = self._shell_frame is None or not self._shell_frame.winfo_exists()
+        
+        if needs_shell:
+            # Full teardown and shell creation
+            for widget in self.root.winfo_children():
+                widget.destroy()
+            self._deep_work_banner = None
+            self._deep_work_timer_label = None
+            self._nav_buttons = {}
+            self._nav_pack_order = []
+            self._nav_frame = None
+            self._ensure_shell()
+        
         self.apply_current_theme(force=True)
+        self._build_content()
+        self._dashboard_ready = True
 
-        header = ttk.Frame(self.root)
-        header.pack(fill=tk.X, padx=16, pady=(16, 10))
-
-        title_block = ttk.Frame(header)
+    def _ensure_shell(self) -> None:
+        """Create the persistent shell frame structure."""
+        # Shell container
+        self._shell_frame = ttk.Frame(self.root)
+        self._shell_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Header (persistent)
+        self._shell_header = ttk.Frame(self._shell_frame)
+        self._shell_header.pack(fill=tk.X, padx=16, pady=(16, 10))
+        
+        title_block = ttk.Frame(self._shell_header)
         title_block.pack(side=tk.LEFT)
         ttk.Label(title_block, text=APP_NAME, style="Title.TLabel").pack(anchor="w")
         ttk.Label(
@@ -1333,8 +1355,8 @@ class PersonalDevelopmentTracker:
             text="Holistic life tracking",
             style="Muted.TLabel",
         ).pack(anchor="w", pady=(2, 0))
-
-        right_header = ttk.Frame(header)
+        
+        right_header = ttk.Frame(self._shell_header)
         right_header.pack(side=tk.RIGHT)
         streak_frame = streak_badge(
             right_header,
@@ -1353,21 +1375,30 @@ class PersonalDevelopmentTracker:
             style="Muted.TLabel",
         )
         self._date_label.pack(side=tk.RIGHT)
-
-        footer = ttk.Frame(self.root)
-        footer.pack(side=tk.BOTTOM, fill=tk.X, padx=16, pady=(4, 12))
-        ttk.Separator(footer, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=(0, 10))
+        
+        # Sidebar slot (empty for now, for #131)
+        self._sidebar_slot = ttk.Frame(self._shell_frame)
+        # Not packed yet - will be used in #131
+        
+        # Banner host (persistent, for Deep Work and future banners)
+        self._banner_host = ttk.Frame(self._shell_frame)
+        self._banner_host.pack(fill=tk.X, padx=16, pady=(0, 0))
+        
+        # Content pane (persistent frame, children rebuilt)
+        self._content_pane = ttk.Frame(self._shell_frame)
+        self._content_pane.pack(fill=tk.BOTH, expand=True)
+        
+        # Footer (persistent)
+        self._shell_footer = ttk.Frame(self._shell_frame)
+        self._shell_footer.pack(side=tk.BOTTOM, fill=tk.X, padx=16, pady=(4, 12))
+        ttk.Separator(self._shell_footer, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=(0, 10))
         nav_host, nav, _nav_canvas = ui_scroll.make_horizontal_scroll_row(
-            footer,
+            self._shell_footer,
             overflow_hint="Scroll for more →",
         )
         nav_host.pack(fill=tk.X)
-
-        self.create_todays_log_bar()
-
-        self._invalidate_caches()
-        self.insights = self._get_insights()
-
+        
+        # Navigation buttons
         ttk.Button(
             nav,
             text="Refresh",
@@ -1405,13 +1436,28 @@ class PersonalDevelopmentTracker:
         ttk.Button(nav, text=mode_label, command=self.toggle_dark_mode).pack(side=tk.RIGHT)
         self._nav_frame = nav
         self._register_nav_buttons(nav)
-        self._ensure_deep_work_banner(footer)
+        self._ensure_deep_work_banner(self._banner_host)
         self._apply_deep_work_chrome()
         if not getattr(self, "_goto_shortcut_bound", False):
             self.root.bind_all("<Control-k>", lambda _e: self.show_goto())
             self.root.bind_all("<Control-K>", lambda _e: self.show_goto())
             self._goto_shortcut_bound = True
-        self._dashboard_ready = True
+    
+    def _build_content(self) -> None:
+        """Build or rebuild the content pane (Today's Log and Overview)."""
+        if self._content_pane is None:
+            return
+        
+        # Clear existing content
+        for child in self._content_pane.winfo_children():
+            child.destroy()
+        
+        # Build Today's Log bar
+        self.create_todays_log_bar()
+        
+        # Recompute insights
+        self._invalidate_caches()
+        self.insights = self._get_insights()
 
     def _build_overview_tab(self, parent: ttk.Frame) -> None:
         outer, main, canvas = ui_scroll.make_scrollable_frame(parent)
@@ -2407,17 +2453,17 @@ class PersonalDevelopmentTracker:
                 self._nav_buttons[label] = child
                 self._nav_pack_order.append(label)
 
-    def _ensure_deep_work_banner(self, footer: ttk.Frame | None = None) -> None:
+    def _ensure_deep_work_banner(self, banner_host: ttk.Frame | None = None) -> None:
         if self._deep_work_banner is not None:
             try:
                 if self._deep_work_banner.winfo_exists():
                     return
             except tk.TclError:
                 self._deep_work_banner = None
-        host = footer
+        host = banner_host if banner_host is not None else self._banner_host
         if host is None:
             host = ttk.Frame(self.root)
-            host.pack(side=tk.BOTTOM, fill=tk.X, padx=16, pady=(0, 4))
+            host.pack(side=tk.TOP, fill=tk.X, padx=16, pady=(0, 4))
         banner = ttk.Frame(host)
         self._deep_work_banner = banner
         self._deep_work_timer_label = ttk.Label(banner, text="", style="Subheading.TLabel")
