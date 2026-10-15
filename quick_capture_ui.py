@@ -38,7 +38,14 @@ def open_quick_capture_panel(tracker: PersonalDevelopmentTracker) -> tk.Toplevel
         try:
             if existing.winfo_exists():
                 existing.lift()
-                existing.focus_force()
+                # Don't steal focus when just refreshing lists
+                if getattr(tracker, "_qc_should_focus", False):
+                    existing.focus_force()
+                    tracker._qc_should_focus = False
+                # Trigger a refresh if the rebuild callback exists
+                rebuild = getattr(tracker, "_qc_rebuild_todos", None)
+                if rebuild:
+                    rebuild()
                 return existing
         except tk.TclError:
             pass
@@ -46,6 +53,7 @@ def open_quick_capture_panel(tracker: PersonalDevelopmentTracker) -> tk.Toplevel
     theme = tracker.theme
     win = tk.Toplevel(tracker.root)
     tracker._quick_capture_win = win
+    tracker._qc_should_focus = True
     win.title("Quick Capture")
     win.geometry("420x720")
     win.configure(bg=theme["bg"])
@@ -306,6 +314,9 @@ def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
             )
         win.update_idletasks()
         refresh_scroll_region(canvas, inner)
+    
+    # Store rebuild callback for external refresh
+    tracker._qc_rebuild_todos = rebuild_todo_lists
 
     def add_todo() -> None:
         text = new_text.get().strip()
@@ -322,11 +333,13 @@ def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
                 parent=win,
             )
             return
+        
+        work_date = date_var.get().strip() or tracker.today_str()
         try:
             tracker.todos = todos.add_todo(
                 tracker.todos,
                 text=text,
-                work_date=date_var.get().strip() or tracker.today_str(),
+                work_date=work_date,
                 category=category,
             )
             tracker.settings["last_todo_category"] = category

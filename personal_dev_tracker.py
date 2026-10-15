@@ -914,18 +914,15 @@ class PersonalDevelopmentTracker:
             if text == "Add a todo… (Enter to save, Ctrl+Shift+T from anywhere)" or not text:
                 return "break"
             
-            # Check IME composition state
-            try:
-                if hasattr(todo_entry, "tk") and todo_entry.tk.call("imm::composition", todo_entry):
-                    return "break"
-            except Exception:
-                pass
+            # Note: IME composition handling not available in standard Tk.
+            # Users completing IME input should press Enter after composition is committed.
             
             error = self.add_todo_quick(text)
             if error:
                 error_label.config(text=error)
                 error_label.pack(side=tk.LEFT, padx=(8, 0))
                 self.root.after(5000, lambda: error_label.pack_forget())
+                # Keep text in field on error so user can fix it
             else:
                 todo_var.set("")
                 on_focus_out(None)
@@ -2207,11 +2204,12 @@ class PersonalDevelopmentTracker:
         if category is None:
             category = self.settings.get("last_todo_category", "")
         
+        # If the stored category is invalid/missing, fall back to blank
         resolved = resolve_category_name(
             category, list(self.categories.keys()), allow_blank=True
         )
         if resolved is None:
-            return "Pick a category from the list (or leave blank)."
+            resolved = ""
         
         try:
             self.todos = todos.add_todo(
