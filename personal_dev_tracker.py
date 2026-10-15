@@ -2890,6 +2890,13 @@ class PersonalDevelopmentTracker:
         self._invalidate_caches()
         self.refresh_dashboard()
         self.save_data(recompute_fitness=True)
+        
+        # Refresh workout history view if open
+        if hasattr(self, '_workout_history_view') and self._workout_history_view:
+            try:
+                self._workout_history_view.refresh()
+            except Exception:
+                pass
 
     def _fitness_session_count_for_date(self, date_str: str) -> int:
         return self._activity_session_counts().get(date_str, 0)
@@ -2978,10 +2985,10 @@ class PersonalDevelopmentTracker:
         self._workout_history_window = win
         
         def on_log_workout_with_refresh():
+            # Store view reference before opening log
+            view_ref = self._workout_history_view if hasattr(self, '_workout_history_view') else None
             self.show_log_exercise()
-            # Refresh history after dialog closes
-            if hasattr(self, '_workout_history_view'):
-                self.root.after(100, lambda: self._workout_history_view.refresh() if hasattr(self, '_workout_history_view') else None)
+            # Note: actual refresh happens via _on_fitness_session_saved callback
         
         history_view = WorkoutHistoryView(
             parent=win,
