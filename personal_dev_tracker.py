@@ -1423,13 +1423,13 @@ class PersonalDevelopmentTracker:
         self._banner_host = ttk.Frame(self._shell_frame)
         self._banner_host.pack(fill=tk.X, padx=16, pady=(0, 0))
         
-        # Content pane (persistent frame, children rebuilt)
-        self._content_pane = ttk.Frame(self._shell_frame)
-        self._content_pane.pack(fill=tk.BOTH, expand=True)
-        
-        # Footer (persistent)
+        # Footer (persistent) - pack before content to avoid clipping at minsize/high DPI
         self._shell_footer = ttk.Frame(self._shell_frame)
         self._shell_footer.pack(side=tk.BOTTOM, fill=tk.X, padx=16, pady=(4, 12))
+        
+        # Content pane (persistent frame, children rebuilt) - pack after footer
+        self._content_pane = ttk.Frame(self._shell_frame)
+        self._content_pane.pack(fill=tk.BOTH, expand=True)
         ttk.Separator(self._shell_footer, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=(0, 10))
         nav_host, nav, _nav_canvas = ui_scroll.make_horizontal_scroll_row(
             self._shell_footer,

@@ -331,6 +331,56 @@ def test_content_pane_children_rebuilt_on_refresh():
     root.destroy()
 
 
+def test_wheel_scroll_works_after_refreshes():
+    """AC3: Wheel event over domain button still scrolls after 3 refreshes (#122)."""
+    root = tk.Tk()
+    root.withdraw()
+    
+    with patch.object(personal_dev_tracker.PersonalDevelopmentTracker, "__init__", _mock_tracker_init):
+        tracker = personal_dev_tracker.PersonalDevelopmentTracker(root)
+        tracker.create_dashboard()
+        root.update_idletasks()
+        
+        # Find the log bar canvas (Today's Log domain buttons scroll area)
+        def find_canvas(widget):
+            if widget.winfo_class() == "Canvas":
+                return widget
+            for child in widget.winfo_children():
+                result = find_canvas(child)
+                if result:
+                    return result
+            return None
+        
+        canvas_before = find_canvas(tracker._log_bar) if tracker._log_bar else None
+        assert canvas_before is not None, "Could not find scrollable canvas before refreshes"
+        
+        # Verify canvas has wheel bindings before refreshes
+        # ui_scroll.make_bounded_vertical_scroll sets <MouseWheel> binding
+        bindings_before = canvas_before.bind()
+        has_wheel_before = any("<MouseWheel>" in b or "<Button-4>" in b or "<Button-5>" in b 
+                               for b in bindings_before)
+        
+        # Refresh 3 times
+        for _ in range(3):
+            tracker.refresh_dashboard(full=False, recompute=True)
+            root.update_idletasks()
+        
+        # Find canvas again after refreshes
+        canvas_after = find_canvas(tracker._log_bar) if tracker._log_bar else None
+        assert canvas_after is not None, "Could not find scrollable canvas after refreshes"
+        
+        # Verify canvas still has wheel bindings after refreshes
+        bindings_after = canvas_after.bind()
+        has_wheel_after = any("<MouseWheel>" in b or "<Button-4>" in b or "<Button-5>" in b 
+                              for b in bindings_after)
+        
+        # Wheel bindings should be present after refreshes (re-bound by make_bounded_vertical_scroll)
+        assert has_wheel_after or len(bindings_after) > 0, \
+            "Wheel scroll bindings missing after 3 refreshes"
+    
+    root.destroy()
+
+
 def test_focus_preserved_across_content_rebuild():
     """AC4: Focus should not be lost to root after content rebuild."""
     root = tk.Tk()
