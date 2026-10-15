@@ -518,28 +518,26 @@ class WorkoutHistoryView:
         self.detail_text.config(state=tk.DISABLED)
     
     def _display_exercises(self, session: WorkoutSession, sets: list[WorkoutSet]) -> None:
-        """Display exercises with volume and trends (batched queries, ≤3 SQL)."""
+        """Display exercises with volume and trends (batched queries)."""
         exercise_ids = []
         for wset in sets:
             if wset.exercise_id not in exercise_ids:
                 exercise_ids.append(wset.exercise_id)
         
-        # Batch 1: Fetch exercise names (part of trends batch now)
-        # Batch 2-3: Fetch trends with compare_to_previous_session
-        trends = self._batch_fetch_trends(session, exercise_ids)
-        
-        # Get exercise names from connection
+        # Batch exercise names (one SQL), excluding soft-deleted
         exercise_names = {}
-        if self._conn:
-            try:
-                placeholders = ','.join('?' * len(exercise_ids))
-                for row in self._conn.execute(
-                    f"SELECT id, name FROM exercises WHERE id IN ({placeholders})",
-                    exercise_ids
-                ).fetchall():
-                    exercise_names[row["id"]] = row["name"]
-            except Exception:
-                pass
+        try:
+            placeholders = ','.join('?' * len(exercise_ids))
+            for row in self._conn.execute(
+                f"SELECT id, name FROM exercises WHERE id IN ({placeholders}) AND deleted_at IS NULL",
+                exercise_ids
+            ).fetchall():
+                exercise_names[row["id"]] = row["name"]
+        except Exception:
+            pass
+        
+        # Fetch trends (compare_to_previous_session does internal batching per exercise)
+        trends = self._batch_fetch_trends(session, exercise_ids)
         
         for ex_id in exercise_ids:
             ex_sets = [s for s in sets if s.exercise_id == ex_id]

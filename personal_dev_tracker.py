@@ -621,17 +621,32 @@ class PersonalDevelopmentTracker:
             self.sessions = migrated.get("sessions", [])
             self._invalidate_session_counts()
             
-            # Migrate legacy program sessions to fitness.db
+            # Migrate legacy program sessions to fitness.db (with backup)
             if self.sessions:
-                from legacy_fitness_migration import migrate_legacy_sessions
-                from progression.db import FitnessRepository, get_fitness_db_path
+                from legacy_fitness_migration import run_migration
+                from progression.db import get_fitness_db_path
                 try:
-                    repo = FitnessRepository(db_path=get_fitness_db_path())
-                    result = migrate_legacy_sessions(data, repo, dry_run=False)
-                    if result.get("errors"):
-                        print(f"Legacy migration warnings: {len(result['errors'])} issues")
+                    # Check if any unmigrated sessions remain
+                    needs_migration = any(
+                        not sess.get("migrated_to_fitness_db")
+                        for sess in self.sessions
+                    )
+                    if needs_migration:
+                        result = run_migration(
+                            data_path=DATA_FILE,
+                            fitness_db_path=get_fitness_db_path(),
+                            mark_migrated=True
+                        )
+                        if result.get("migrated_count", 0) > 0:
+                            print(f"Legacy migration: {result['migrated_count']} sessions migrated")
+                        if result.get("errors"):
+                            print(f"Legacy migration warnings: {len(result['errors'])} issues")
                 except Exception as e:
-                    print(f"Legacy migration failed (skipped): {e}")
+                    messagebox.showerror(
+                        "Migration Failed",
+                        f"Legacy fitness session migration failed:\n\n{e}\n\n"
+                        "Your data is safe. Backups were created if migration started."
+                    )
             
             self.milestones = merge_milestones(migrated.get("milestones"))
             self.journal = journal.normalize_journal(migrated.get("journal"))
