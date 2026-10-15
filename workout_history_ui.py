@@ -113,7 +113,7 @@ def format_session_row_text(
     sets: list[WorkoutSet],
     repo: FitnessRepository,
 ) -> str:
-    """Format session row as: 'Tue Oct 14 · 5 exercises · 45 min · ↑3'."""
+    """Format session row as: 'Tue Oct 14 · 5 exercises · 45 min · volume'."""
     date_str = format_date_display(session.date)
     
     exercise_ids = list({wset.exercise_id for wset in sets})
@@ -127,12 +127,6 @@ def format_session_row_text(
     volume, unit, weighted_count = calculate_session_volume(sets, repo)
     if weighted_count > 0:
         parts.append(f"{volume:.1f} {unit}")
-    
-    up, same, down = count_exercise_indicators(session, sets, repo)
-    if up > 0:
-        parts.append(f"↑{up}")
-    if down > 0:
-        parts.append(f"↓{down}")
     
     return " · ".join(parts)
 
@@ -252,13 +246,20 @@ class WorkoutHistoryView:
             style="OnSurfaceSubheading.TLabel",
         )
         
+        self.empty_log_btn = ttk.Button(
+            self.container,
+            text="Log workout",
+            style="Accent.TButton",
+            command=self.on_log_workout if self.on_log_workout else lambda: None,
+        )
+        
         self.loading_label = ttk.Label(
             self.container,
             text="Loading...",
             style="OnSurfaceMuted.TLabel",
         )
         
-        self.container.bind_all("<Control-f>", lambda e: self._focus_filter())
+        self._ctrl_f_binding = self.container.bind_all("<Control-f>", lambda e: self._focus_filter())
     
     def _focus_filter(self) -> None:
         """Focus the filter entry (Ctrl+F)."""
@@ -290,6 +291,7 @@ class WorkoutHistoryView:
             
             if not sessions:
                 self._hide_loading_indicator()
+                self._hide_empty_state()
                 self._show_empty_state()
                 return
             
@@ -301,12 +303,22 @@ class WorkoutHistoryView:
             self.has_more = len(sessions) >= 20
             
             self._hide_loading_indicator()
+            self._hide_empty_state()
             self._refresh_session_list()
             
             if sessions:
-                self.session_list.selection_set(0)
+                # Select first session row (skip month header)
+                first_session_idx = self._get_listbox_index_for_session(0)
+                if first_session_idx is not None:
+                    self.session_list.selection_set(first_session_idx)
+                    self.session_list.see(first_session_idx)
                 self.selected_session = sessions[0]
                 self._display_session_detail(sessions[0])
+        except Exception as e:
+            self._hide_loading_indicator()
+            # Show error but don't crash
+            import tkinter.messagebox as messagebox
+            messagebox.showerror("Error loading sessions", str(e), parent=self.container.winfo_toplevel())
         finally:
             self.is_loading = False
     
@@ -365,16 +377,16 @@ class WorkoutHistoryView:
     
     def _show_empty_state(self) -> None:
         """Show empty state with Log workout button."""
-        self.empty_label.pack(side=tk.TOP, pady=20)
+        self.session_list.delete(0, tk.END)
+        self.detail_text.config(state=tk.NORMAL)
+        self.detail_text.delete("1.0", tk.END)
+        self.detail_text.config(state=tk.DISABLED)
         
-        if self.on_log_workout:
-            btn = ttk.Button(
-                self.container,
-                text="Log workout",
-                style="Accent.TButton",
-                command=self.on_log_workout,
-            )
-            btn.pack(side=tk.TOP, pady=10)
+        if not self.empty_label.winfo_ismapped():
+            self.empty_label.pack(side=tk.TOP, pady=20)
+        
+        if self.on_log_workout and not self.empty_log_btn.winfo_ismapped():
+            self.empty_log_btn.pack(side=tk.TOP, pady=10)
     
     def _refresh_session_list(self) -> None:
         """Refresh the session list display."""
@@ -429,6 +441,24 @@ class WorkoutHistoryView:
                     return session_idx
                 session_idx += 1
         return None
+    
+    def _get_listbox_index_for_session(self, session_idx: int) -> int | None:
+        """Map session index to listbox index (accounting for month headers)."""
+        current_session_idx = 0
+        for i in range(self.session_list.size()):
+            item_text = self.session_list.get(i)
+            if not item_text.startswith("─── "):
+                if current_session_idx == session_idx:
+                    return i
+                current_session_idx += 1
+        return None
+    
+    def _hide_empty_state(self) -> None:
+        """Hide empty state widgets."""
+        if self.empty_label.winfo_ismapped():
+            self.empty_label.pack_forget()
+        if self.empty_log_btn.winfo_ismapped():
+            self.empty_log_btn.pack_forget()
     
     def _display_session_detail(self, session: WorkoutSession) -> None:
         """Display detail for selected session."""
@@ -507,6 +537,7 @@ class WorkoutHistoryView:
                 current_session_id=session.id,
                 exercise_id=ex_id,
                 current_date=session.date,
+                current_created_at=session.created_at,
             )
             
             trend = comparison.get("trend", "")
@@ -548,8 +579,11 @@ class WorkoutHistoryView:
         self.detail_text.focus_set()
     
     def _on_escape_from_list(self) -> None:
-        """Close the history view."""
-        self.destroy()
+        """Close the history view window."""
+        toplevel = self.container.winfo_toplevel()
+        if isinstance(toplevel, tk.Toplevel):
+            toplevel.destroy()
+        return "break"
     
     def _on_escape_from_detail(self) -> None:
         """Return focus to session list."""
@@ -567,4 +601,9 @@ class WorkoutHistoryView:
         """Clean up and destroy the view."""
         if self.loading_after_id is not None:
             self.container.after_cancel(self.loading_after_id)
+        if self._ctrl_f_binding:
+            try:
+                self.container.unbind_all("<Control-f>")
+            except Exception:
+                pass
         self.container.destroy()

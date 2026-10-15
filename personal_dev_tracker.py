@@ -2960,6 +2960,12 @@ class PersonalDevelopmentTracker:
         import fitness_ui
         from workout_history_ui import WorkoutHistoryView
         
+        # Check if window already exists
+        if hasattr(self, '_workout_history_window') and self._workout_history_window and self._workout_history_window.winfo_exists():
+            self._workout_history_window.lift()
+            self._workout_history_window.focus_set()
+            return
+        
         repo = fitness_ui.get_profile_repo(self.settings.get("fitness"))
         fitness_ui.ensure_fitness_seeded(repo, self.settings.get("fitness"))
         
@@ -2969,17 +2975,19 @@ class PersonalDevelopmentTracker:
         win.minsize(800, 500)
         win.configure(bg=self.theme["bg"])
         win.transient(self.root)
+        self._workout_history_window = win
         
         history_view = WorkoutHistoryView(
             parent=win,
             repo=repo,
             theme=self.theme,
-            on_log_workout=lambda: (win.destroy(), self.show_log_exercise()),
+            on_log_workout=lambda: self.show_log_exercise(),
         )
         
         def on_close():
             history_view.destroy()
             win.destroy()
+            self._workout_history_window = None
         
         win.protocol("WM_DELETE_WINDOW", on_close)
 
