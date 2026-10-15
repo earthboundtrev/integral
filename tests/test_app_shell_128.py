@@ -334,22 +334,41 @@ def test_content_pane_children_rebuilt_on_refresh():
 def test_focus_preserved_across_content_rebuild():
     """AC4: Focus should not be lost to root after content rebuild."""
     root = tk.Tk()
-    root.withdraw()
+    # Don't withdraw - focus only works on mapped windows
+    root.geometry("800x600+0+0")
+    root.update()
     
     with patch.object(personal_dev_tracker.PersonalDevelopmentTracker, "__init__", _mock_tracker_init):
         tracker = personal_dev_tracker.PersonalDevelopmentTracker(root)
         tracker.create_dashboard()
-        root.update_idletasks()
+        root.update()
         
-        # Get initial focus
-        initial_focus = root.focus_get()
+        # Find a focusable widget in content pane
+        def find_entry(widget):
+            if widget.winfo_class() in ("TEntry", "Entry"):
+                return widget
+            for child in widget.winfo_children():
+                result = find_entry(child)
+                if result:
+                    return result
+            return None
+        
+        entry = find_entry(tracker._content_pane) if tracker._content_pane else None
+        if entry:
+            entry.focus_set()
+            root.update()
+            assert root.focus_get() == entry, "Could not set initial focus"
         
         # Refresh content
         tracker._build_content(recompute=True)
-        root.update_idletasks()
+        root.update()
+        # Allow after(10) callback to run
+        root.after(50)
+        root.update()
         
         # Focus should not be lost to root
         new_focus = root.focus_get()
         assert new_focus is not root, "Focus lost to root after content rebuild"
+        assert new_focus is not None, "Focus is None after content rebuild"
     
     root.destroy()

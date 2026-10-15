@@ -1318,6 +1318,9 @@ class PersonalDevelopmentTracker:
         # First-time creation or full rebuild
         needs_shell = self._shell_frame is None or not self._shell_frame.winfo_exists()
         
+        # Apply theme before shell creation so colors are correct
+        self.apply_current_theme(force=True)
+        
         if needs_shell:
             # Full teardown and shell creation
             for widget in self.root.winfo_children():
@@ -1332,7 +1335,6 @@ class PersonalDevelopmentTracker:
             # Shell exists, refresh header chrome (for backup restore, etc.)
             self._refresh_header_chrome()
         
-        self.apply_current_theme(force=True)
         self._build_content(recompute=True)
         self._dashboard_ready = True
     
@@ -1340,22 +1342,36 @@ class PersonalDevelopmentTracker:
         """Set focus to first focusable control in content pane."""
         if self._content_pane is None or not self._content_pane.winfo_exists():
             return
-        for child in self._content_pane.winfo_children():
-            if child.winfo_class() in ("TEntry", "Entry", "Text", "TButton", "Button"):
-                child.focus_set()
-                return
-            # Recurse into frames
-            for subchild in child.winfo_children():
-                if subchild.winfo_class() in ("TEntry", "Entry", "Text"):
-                    subchild.focus_set()
-                    return
+        
+        # Deep search for first focusable widget
+        def find_focusable(widget):
+            """Recursively find first focusable widget."""
+            if widget.winfo_class() in ("TEntry", "Entry", "Text"):
+                return widget
+            for child in widget.winfo_children():
+                result = find_focusable(child)
+                if result:
+                    return result
+            return None
+        
+        focusable = find_focusable(self._content_pane)
+        if focusable:
+            focusable.focus_set()
     
     def _refresh_header_chrome(self) -> None:
         """Update header widgets (streak, date) without rebuilding shell."""
         if self._streak_pill is not None:
-            self._streak_pill.config(text=f"🔥 {self.get_streak()} day streak")
+            try:
+                if self._streak_pill.winfo_exists():
+                    self._streak_pill.config(text=f"🔥 {self.get_streak()} day streak · details")
+            except tk.TclError:
+                pass
         if self._date_label is not None:
-            self._date_label.config(text=f"Today · {datetime.now().strftime('%B %d, %Y')}")
+            try:
+                if self._date_label.winfo_exists():
+                    self._date_label.config(text=f"Today · {datetime.now().strftime('%B %d, %Y')}")
+            except tk.TclError:
+                pass
 
     def _ensure_shell(self) -> None:
         """Create the persistent shell frame structure."""
