@@ -42,3 +42,9 @@ def test_derive_key_is_cached():
     second = vault._derive_key("secret", salt)
     assert first == second
     assert len(vault._derived_key_cache) == 1
+
+
+def test_derive_key_raises_friendly_error_when_crypto_unavailable(monkeypatch):
+    monkeypatch.setattr(vault, "CRYPTO_AVAILABLE", False)
+    with pytest.raises(RuntimeError, match="Install cryptography"):
+        vault._derive_key("secret", b"0123456789abcdef")
