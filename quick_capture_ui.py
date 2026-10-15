@@ -38,7 +38,21 @@ def open_quick_capture_panel(tracker: PersonalDevelopmentTracker) -> tk.Toplevel
         try:
             if existing.winfo_exists():
                 existing.lift()
-                existing.focus_force()
+                # Don't steal focus when just refreshing lists
+                if getattr(tracker, "_qc_should_focus", False):
+                    existing.focus_force()
+                tracker._qc_should_focus = False
+                # Apply prefill text if set
+                prefill = getattr(tracker, "_qc_prefill_text", "")
+                if prefill:
+                    todo_var = getattr(tracker, "_qc_todo_var", None)
+                    if todo_var:
+                        todo_var.set(prefill)
+                    tracker._qc_prefill_text = ""
+                # Trigger a refresh if the rebuild callback exists
+                rebuild = getattr(tracker, "_qc_rebuild_todos", None)
+                if rebuild:
+                    rebuild()
                 return existing
         except tk.TclError:
             pass
@@ -260,6 +274,16 @@ def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
     add_frame.pack(fill=tk.X, pady=(0, 10))
     ttk.Label(add_frame, text="New todo").pack(anchor="w")
     new_text = tk.StringVar()
+    
+    # Store todo StringVar for external prefill
+    tracker._qc_todo_var = new_text
+    
+    # Pre-fill text if carried over from inline field
+    prefill = getattr(tracker, "_qc_prefill_text", "")
+    if prefill:
+        new_text.set(prefill)
+        tracker._qc_prefill_text = ""
+    
     ttk.Entry(add_frame, textvariable=new_text).pack(fill=tk.X, pady=2)
     row = ttk.Frame(add_frame)
     row.pack(fill=tk.X, pady=2)
@@ -306,12 +330,26 @@ def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
             )
         win.update_idletasks()
         refresh_scroll_region(canvas, inner)
+    
+    # Store rebuild callback for external refresh
+    tracker._qc_rebuild_todos = rebuild_todo_lists
 
     def add_todo() -> None:
         text = new_text.get().strip()
         if not text:
             messagebox.showinfo("Todos", "Enter a todo.", parent=win)
             return
+        
+        # Enforce same length limit as inline add
+        MAX_TODO_LENGTH = 500
+        if len(text) > MAX_TODO_LENGTH:
+            messagebox.showwarning(
+                "Todos",
+                f"Todo text is too long (max {MAX_TODO_LENGTH} characters).",
+                parent=win,
+            )
+            return
+        
         category = resolve_category_name(
             new_cat.get(), list(tracker.categories.keys()), allow_blank=True
         )
@@ -322,13 +360,16 @@ def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
                 parent=win,
             )
             return
+        
+        work_date = date_var.get().strip() or tracker.today_str()
         try:
             tracker.todos = todos.add_todo(
                 tracker.todos,
                 text=text,
-                work_date=date_var.get().strip() or tracker.today_str(),
+                work_date=work_date,
                 category=category,
             )
+            tracker.settings["last_todo_category"] = category
         except ValueError as exc:
             messagebox.showwarning("Todos", str(exc), parent=win)
             return
