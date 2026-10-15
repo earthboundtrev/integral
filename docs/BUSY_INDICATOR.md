@@ -177,7 +177,7 @@ The following screens should use BusyIndicator for their loading states:
 - **#124:** Weekly Summary window (279 ms)
 - **#98, #116:** Other loading states in dashboard
 
-Follow the same pattern as Quick Capture: create a busy host, start the indicator, build content with `after_idle`, then stop and destroy the busy host.
+Follow the same pattern as Quick Capture: create a busy host, start the indicator, build content with `after(1)` and strategic `win.update()` calls, then stop and destroy the busy host.
 
 ## Design Notes
 

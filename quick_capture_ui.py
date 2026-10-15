@@ -75,15 +75,24 @@ def open_quick_capture_panel(tracker: PersonalDevelopmentTracker) -> tk.Toplevel
             # The indicator will show if this takes > 180 ms.
             result = _build_quick_capture_body(tracker, win, theme, on_close)
             
-            # Only stop and clean up after build is complete.
-            indicator.stop()
-            busy_host.destroy()
-            delattr(win, '_busy_indicator')
+            # Only stop and clean up after build is complete, if window still exists.
+            try:
+                if win.winfo_exists():
+                    indicator.stop()
+                    busy_host.destroy()
+                    if hasattr(win, '_busy_indicator'):
+                        delattr(win, '_busy_indicator')
+            except tk.TclError:
+                pass
             
             return result
         except Exception:
-            # Stop indicator on error.
-            indicator.stop()
+            # Stop indicator on error if window still exists.
+            try:
+                if win.winfo_exists():
+                    indicator.stop()
+            except tk.TclError:
+                pass
             # Don't leave a blank cached Toplevel if build fails mid-way.
             tracker._quick_capture_win = None
             try:
@@ -185,6 +194,11 @@ def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
 
     # Yield to event loop after Deep Work section (allow indicator to show/animate).
     win.update()
+    try:
+        if not win.winfo_exists():
+            return win
+    except tk.TclError:
+        return win
 
     # --- Today / Upcoming todos (collapsible) ---
     def _make_section(title: str, section_key: str) -> tk.Frame:
@@ -312,6 +326,11 @@ def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
 
     # Yield to event loop after todo section (allow indicator to animate).
     win.update()
+    try:
+        if not win.winfo_exists():
+            return win
+    except tk.TclError:
+        return win
 
     # --- Quick log launcher ---
     log_box = ttk.LabelFrame(pad, text="Quick log", padding=8)
@@ -447,6 +466,11 @@ def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
 
     # Yield to event loop after all sections built (final animation frame).
     win.update()
+    try:
+        if not win.winfo_exists():
+            return win
+    except tk.TclError:
+        return win
 
     rebuild_todo_lists()
     refresh_dw_timer()
