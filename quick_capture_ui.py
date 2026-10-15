@@ -134,8 +134,8 @@ def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
 
     # Yield to event loop after footer (allow indicator timer to fire).
     # Guard against window close during update().
-    win.update()
     try:
+        win.update()
         if not win.winfo_exists():
             return win
     except tk.TclError:
@@ -211,8 +211,8 @@ def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
     ttk.Button(dw_btns, text="End", command=end_deep_work).pack(side=tk.LEFT)
 
     # Yield to event loop after Deep Work section (allow indicator to show/animate).
-    win.update()
     try:
+        win.update()
         if not win.winfo_exists():
             return win
     except tk.TclError:
@@ -343,8 +343,8 @@ def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
     )
 
     # Yield to event loop after todo section (allow indicator to animate).
-    win.update()
     try:
+        win.update()
         if not win.winfo_exists():
             return win
     except tk.TclError:
@@ -483,8 +483,8 @@ def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
     )
 
     # Yield to event loop after all sections built (final animation frame).
-    win.update()
     try:
+        win.update()
         if not win.winfo_exists():
             return win
     except tk.TclError:
