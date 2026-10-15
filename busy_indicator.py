@@ -66,7 +66,7 @@ class BusyIndicator:
         Args:
             label: Optional label to use instead of the initial one.
         """
-        if label:
+        if label is not None:
             self._label_text = label
 
         # Cancel any existing timer.
@@ -80,6 +80,10 @@ class BusyIndicator:
         # Hide if already visible (restarting).
         if self._visible:
             self._hide()
+
+        # Validate delay_ms.
+        if self._delay_ms < 0:
+            self._delay_ms = 0
 
         # Arm the timer.
         self._timer_id = self._parent.after(self._delay_ms, self._show)
@@ -111,12 +115,21 @@ class BusyIndicator:
         if self._visible:
             return
 
+        # Check parent is still alive.
+        try:
+            if not self._parent.winfo_exists():
+                return
+        except tk.TclError:
+            return
+
         self._timer_id = None
-        self._visible = True
 
         # Build the UI: centered frame with spinner + label.
-        self._frame = tk.Frame(self._parent, bg=self._theme["bg"])
+        self._frame = tk.Frame(self._parent, bg=self._theme["bg"], cursor="watch")
         self._frame.pack(fill=tk.BOTH, expand=True)
+
+        # Set _visible only after frame is created successfully.
+        self._visible = True
 
         inner = tk.Frame(self._frame, bg=self._theme["bg"])
         inner.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
@@ -130,17 +143,28 @@ class BusyIndicator:
         self._spinner.pack(pady=(0, 8))
         self._spinner.start(interval=50)  # 50 ms interval for smooth animation.
 
-        # Label below the spinner.
-        self._label_var = tk.StringVar(value=self._label_text)
-        ttk.Label(
+        # Label below the spinner using explicit colors for theme support.
+        self._label_var = tk.StringVar(master=self._parent, value=self._label_text)
+        label = tk.Label(
             inner,
             textvariable=self._label_var,
-            style="Muted.TLabel",
-        ).pack()
+            bg=self._theme["bg"],
+            fg=self._theme.get("muted", self._theme["fg"]),
+        )
+        label.pack()
 
-        # Wire Esc to cancel hook (if provided).
+        # Wire Esc to cancel hook on the toplevel (not just _frame).
         if self._on_cancel:
-            self._frame.bind("<Escape>", lambda _e: self._on_cancel())
+            toplevel = self._frame.winfo_toplevel()
+            
+            def on_escape(_e):
+                self.stop()
+                if self._on_cancel:
+                    self._on_cancel()
+            
+            toplevel.bind("<Escape>", on_escape, add=True)
+            # Store binding so we can unbind later.
+            self._escape_binding = on_escape
 
     def _hide(self) -> None:
         """Internal: destroy the indicator widgets."""
@@ -148,6 +172,15 @@ class BusyIndicator:
             return
 
         self._visible = False
+
+        # Unbind escape from toplevel if we bound it.
+        if hasattr(self, '_escape_binding') and self._frame:
+            try:
+                toplevel = self._frame.winfo_toplevel()
+                toplevel.unbind("<Escape>", self._escape_binding)
+            except tk.TclError:
+                pass
+            delattr(self, '_escape_binding')
 
         if self._spinner:
             try:

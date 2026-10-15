@@ -139,8 +139,10 @@ class TestBusyIndicator(unittest.TestCase):
         indicator.stop()
 
     def test_on_cancel_hook_called_on_escape(self):
-        """Esc during loading calls the cancel hook."""
-        parent = tk.Frame(self.root)
+        """Esc during loading calls the cancel hook (bound to toplevel)."""
+        # Create a toplevel so we can test the actual binding behavior.
+        toplevel = tk.Toplevel(self.root)
+        parent = tk.Frame(toplevel)
         parent.pack()
 
         cancel_called = {"value": False}
@@ -158,13 +160,14 @@ class TestBusyIndicator(unittest.TestCase):
 
         self.assertTrue(indicator._visible)
 
-        # Simulate Esc key.
-        indicator._frame.event_generate("<Escape>")
+        # Simulate Esc key on the toplevel (not the frame).
+        toplevel.event_generate("<Escape>")
         self.root.update()
 
         self.assertTrue(cancel_called["value"])
+        self.assertFalse(indicator._visible)  # stop() was called
 
-        indicator.stop()
+        toplevel.destroy()
 
     def test_light_and_dark_themes(self):
         """Light and dark themes are applied without crashing."""

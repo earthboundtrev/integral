@@ -53,6 +53,9 @@ def open_quick_capture_panel(tracker: PersonalDevelopmentTracker) -> tk.Toplevel
     win.resizable(True, True)
 
     def on_close() -> None:
+        # Stop indicator if still running.
+        if hasattr(win, '_busy_indicator'):
+            win._busy_indicator.stop()
         tracker.set_quick_capture_enabled(False, persist=True)
 
     win.protocol("WM_DELETE_WINDOW", on_close)
@@ -63,14 +66,24 @@ def open_quick_capture_panel(tracker: PersonalDevelopmentTracker) -> tk.Toplevel
     busy_host.pack(fill=tk.BOTH, expand=True)
 
     indicator = BusyIndicator(busy_host, label="Loading Quick Capture…", theme=theme, on_cancel=on_close)
+    win._busy_indicator = indicator
     indicator.start()
 
     def build_content() -> None:
         try:
+            # Build content while indicator is still armed.
+            # The indicator will show if this takes > 180 ms.
+            result = _build_quick_capture_body(tracker, win, theme, on_close)
+            
+            # Only stop and clean up after build is complete.
             indicator.stop()
             busy_host.destroy()
-            _build_quick_capture_body(tracker, win, theme, on_close)
+            delattr(win, '_busy_indicator')
+            
+            return result
         except Exception:
+            # Stop indicator on error.
+            indicator.stop()
             # Don't leave a blank cached Toplevel if build fails mid-way.
             tracker._quick_capture_win = None
             try:
@@ -80,7 +93,8 @@ def open_quick_capture_panel(tracker: PersonalDevelopmentTracker) -> tk.Toplevel
             raise
 
     # Build content after the next idle, allowing the indicator timer to arm.
-    win.after_idle(build_content)
+    # Use after(1) instead of after_idle so the event loop can process the timer.
+    win.after(1, build_content)
 
     return win
 

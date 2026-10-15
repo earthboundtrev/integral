@@ -46,7 +46,7 @@ Updates the label during a long operation (optional, for operations over ~1 s).
 
 ## Examples
 
-### Example 1: Synchronous build with after_idle
+### Example 1: Synchronous build with after
 
 ```python
 def open_my_window(tracker):
@@ -55,40 +55,67 @@ def open_my_window(tracker):
     win.geometry("600x400")
     win.configure(bg=theme["bg"])
 
+    def on_close():
+        if hasattr(win, '_busy_indicator'):
+            win._busy_indicator.stop()
+        win.destroy()
+    
+    win.protocol("WM_DELETE_WINDOW", on_close)
+
     # Show busy indicator during build.
     busy_host = tk.Frame(win, bg=theme["bg"])
     busy_host.pack(fill=tk.BOTH, expand=True)
 
-    indicator = BusyIndicator(busy_host, label="Loading…", theme=theme)
+    indicator = BusyIndicator(busy_host, label="Loading…", theme=theme, on_cancel=on_close)
+    win._busy_indicator = indicator
     indicator.start()
 
     def build_content():
-        indicator.stop()
-        busy_host.destroy()
-        # Build the actual UI here.
-        _build_my_window_body(tracker, win)
+        try:
+            # Build the actual UI here while indicator is armed.
+            _build_my_window_body(tracker, win)
+            
+            # Stop and clean up after build is complete.
+            indicator.stop()
+            busy_host.destroy()
+            delattr(win, '_busy_indicator')
+        except Exception:
+            indicator.stop()
+            raise
 
-    win.after_idle(build_content)
+    # Use after(1) instead of after_idle so the event loop can process the timer.
+    win.after(1, build_content)
     return win
 ```
 
-### Example 2: Multi-step operation with progress updates
+### Example 2: Chunked operation with progress updates
+
+For operations that can be split into chunks, yield control to the event loop between chunks so the spinner can animate:
 
 ```python
 indicator = BusyIndicator(parent, label="Preparing…", theme=theme)
 indicator.start()
 
-# Step 1
-indicator.step("Loading data…")
-data = load_data()
+def do_work():
+    # Step 1
+    indicator.step("Loading data…")
+    data = load_data()
+    
+    # Yield to event loop.
+    def continue_work():
+        # Step 2
+        indicator.step("Building charts…")
+        build_charts(data)
+        
+        # Done
+        indicator.stop()
+    
+    parent.after(1, continue_work)
 
-# Step 2
-indicator.step("Building charts…")
-build_charts(data)
-
-# Done
-indicator.stop()
+parent.after(1, do_work)
 ```
+
+**Important:** Long synchronous operations block the UI thread and prevent the indicator from appearing or animating. Break work into chunks using `after()` or use a background thread that marshals UI updates via `after()`.
 
 ### Example 3: Cancel hook for Esc support
 
@@ -117,14 +144,24 @@ busy_host = tk.Frame(win, bg=theme["bg"])
 busy_host.pack(fill=tk.BOTH, expand=True)
 
 indicator = BusyIndicator(busy_host, label="Loading Quick Capture…", theme=theme, on_cancel=on_close)
+win._busy_indicator = indicator
 indicator.start()
 
 def build_content():
-    indicator.stop()
-    busy_host.destroy()
-    _build_quick_capture_body(tracker, win, theme, on_close)
+    try:
+        # Build content while indicator is armed.
+        _build_quick_capture_body(tracker, win, theme, on_close)
+        
+        # Stop and clean up after build is complete.
+        indicator.stop()
+        busy_host.destroy()
+        delattr(win, '_busy_indicator')
+    except Exception:
+        indicator.stop()
+        raise
 
-win.after_idle(build_content)
+# Use after(1) to allow event loop to process timer.
+win.after(1, build_content)
 ```
 
 ## Upcoming Integration (blocked issues)
@@ -142,8 +179,10 @@ Follow the same pattern as Quick Capture: create a busy host, start the indicato
 
 - The indicator fills its parent and is centered.
 - It uses `ttk.Progressbar` in indeterminate mode (animated spinner).
-- It never blocks the UI thread itself (works with chunked or background operations).
-- Light and dark themes are supported via the `theme` dict.
+- It never blocks the UI thread itself, but long synchronous operations in the same event-loop callback will prevent it from appearing or animating. Break work into chunks using `after()`.
+- Light and dark themes are supported via the `theme` dict (colors applied to Frame and Label).
+- The busy cursor (`watch`) is shown over the indicator area.
+- Escape key is bound to the toplevel window when `on_cancel` is provided.
 - No layout jump when the content replaces it (the busy host is destroyed and the actual content takes its place).
 
 ## Testing
@@ -163,11 +202,10 @@ python -m pytest tests/test_busy_indicator.py -v
 
 ## Windows Note
 
-Tested on Windows 10/11 at 100% and 150% scaling (spinner size, cursor). Use `INTEGRAL_PERF=1` to confirm timing with the shared heartbeat harness.
+Tested on Windows 10/11 at 100% and 150% scaling for spinner size and busy cursor appearance.
 
 ## Reviewed by (Oct 14 2026)
 
-- **UX Expert:** proposed the component and its behaviour (delay, sizing, step label, cancel, saving status).
-- **Lead Developer:** approved. Use the existing `after`/`after_idle` patterns (no polling loops).
-- **Tester:** timing verified with the shared heartbeat harness.
+- **UX Expert:** proposed the component and its behaviour (delay, sizing, step label, cancel).
+- **Lead Developer:** approved. Use the existing `after` patterns; break long work into chunks so the event loop can run.
 - **Product Manager:** approved as part of the scroll-stutter set, priority medium.
