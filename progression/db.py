@@ -36,9 +36,9 @@ class FitnessRepository:
         self.fitness_settings = fitness_settings
         self._schema_ready = False
 
-    def connect(self) -> sqlite3.Connection:
+    def connect(self, timeout: float = 5.0) -> sqlite3.Connection:
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=timeout)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
         return conn

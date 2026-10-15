@@ -518,11 +518,14 @@ class WorkoutHistoryView:
         self.detail_text.config(state=tk.DISABLED)
     
     def _display_exercises(self, session: WorkoutSession, sets: list[WorkoutSet]) -> None:
-        """Display exercises with volume (trends omitted for performance)."""
+        """Display exercises with volume and trends (batched queries)."""
         exercise_ids = []
         for wset in sets:
             if wset.exercise_id not in exercise_ids:
                 exercise_ids.append(wset.exercise_id)
+        
+        # Batch-fetch previous sessions for all exercises in one pass
+        trends = self._batch_fetch_trends(session, exercise_ids)
         
         for ex_id in exercise_ids:
             ex_sets = [s for s in sets if s.exercise_id == ex_id]
@@ -553,7 +556,128 @@ class WorkoutHistoryView:
                 
                 self.detail_text.insert(tk.END, f"  {' · '.join(parts)}\n")
             
+            # Show trend indicator
+            trend_info = trends.get(ex_id, {})
+            trend = trend_info.get("trend", "")
+            prev_display = trend_info.get("previous_best_display", "")
+            
+            if trend and prev_display:
+                if trend == "up":
+                    self.detail_text.insert(tk.END, f"  ↑ {prev_display}\n", "trend_up")
+                elif trend == "down":
+                    self.detail_text.insert(tk.END, f"  ↓ {prev_display}\n", "trend_down")
+                elif trend == "same":
+                    self.detail_text.insert(tk.END, f"  = {prev_display}\n", "trend_same")
+            
             self.detail_text.insert(tk.END, "\n")
+    
+    def _batch_fetch_trends(self, session: WorkoutSession, exercise_ids: list[str]) -> dict[str, dict]:
+        """Batch-fetch trend comparisons for all exercises in one query pass.
+        
+        Returns:
+            Dict mapping exercise_id to {trend, previous_best_display}
+        """
+        if not exercise_ids:
+            return {}
+        
+        from progression.recent_compare import (
+            aggregate_exercise_sets,
+            compare_volume_to_prior,
+            format_volume,
+        )
+        
+        trends = {}
+        
+        # Get current snapshots for all exercises
+        current_sets_by_ex = {}
+        for wset in self.sets_by_session.get(session.id, []):
+            if wset.exercise_id not in current_sets_by_ex:
+                current_sets_by_ex[wset.exercise_id] = []
+            current_sets_by_ex[wset.exercise_id].append(wset)
+        
+        # Batch query: get previous sessions for all exercises in one query
+        # Using a single connection and query
+        if not self._conn or not hasattr(self._conn, 'execute'):
+            self._conn = self.repo.connect()
+        
+        try:
+            placeholders = ','.join('?' * len(exercise_ids))
+            rows = self._conn.execute(
+                f"""
+                SELECT DISTINCT ws.exercise_id, s.id as session_id, s.date, s.created_at
+                FROM workout_sessions s
+                INNER JOIN workout_sets ws ON ws.session_id = s.id
+                WHERE ws.exercise_id IN ({placeholders})
+                  AND s.date <= ?
+                  AND s.id != ?
+                ORDER BY ws.exercise_id, s.date DESC, s.created_at DESC, s.id DESC
+                """,
+                (*exercise_ids, session.date, session.id)
+            ).fetchall()
+            
+            # Group by exercise_id
+            previous_sessions_by_ex = {}
+            for row in rows:
+                ex_id = row["exercise_id"]
+                if ex_id not in previous_sessions_by_ex:
+                    previous_sessions_by_ex[ex_id] = row
+            
+            # Compare each exercise
+            for ex_id in exercise_ids:
+                current_sets = current_sets_by_ex.get(ex_id, [])
+                if not current_sets:
+                    continue
+                
+                current_snap = aggregate_exercise_sets(session, current_sets)
+                if not current_snap or current_snap.volume is None:
+                    trends[ex_id] = {"trend": "none", "previous_best_display": ""}
+                    continue
+                
+                prev_row = previous_sessions_by_ex.get(ex_id)
+                if not prev_row:
+                    trends[ex_id] = {"trend": "none", "previous_best_display": ""}
+                    continue
+                
+                # Get previous session's sets
+                prev_sets = [
+                    s for s in self.repo.list_workout_sets(prev_row["session_id"])
+                    if s.exercise_id == ex_id
+                ]
+                prev_session = WorkoutSession(
+                    id=prev_row["session_id"],
+                    date=prev_row["date"],
+                    created_at=prev_row["created_at"]
+                )
+                prev_snap = aggregate_exercise_sets(prev_session, prev_sets)
+                
+                if not prev_snap or prev_snap.volume is None:
+                    trends[ex_id] = {"trend": "none", "previous_best_display": ""}
+                    continue
+                
+                cue = compare_volume_to_prior(current_snap, prev_snap)
+                
+                if cue.direction == "up":
+                    trends[ex_id] = {
+                        "trend": "up",
+                        "previous_best_display": f"vs last: {format_volume(prev_snap.volume, prev_snap.volume_kind)}",
+                    }
+                elif cue.direction == "down":
+                    trends[ex_id] = {
+                        "trend": "down",
+                        "previous_best_display": f"vs last: {format_volume(prev_snap.volume, prev_snap.volume_kind)}",
+                    }
+                elif cue.direction == "flat":
+                    trends[ex_id] = {
+                        "trend": "same",
+                        "previous_best_display": f"same as last: {format_volume(prev_snap.volume, prev_snap.volume_kind)}",
+                    }
+                else:
+                    trends[ex_id] = {"trend": "none", "previous_best_display": ""}
+        except Exception:
+            # If batch fetch fails, return empty trends
+            return {}
+        
+        return trends
     
     def _on_arrow_key(self) -> None:
         """Handle arrow key navigation."""
@@ -615,4 +739,10 @@ class WorkoutHistoryView:
                 self.container.unbind_all("<Control-f>")
             except Exception:
                 pass
+        if self._conn:
+            try:
+                self._conn.close()
+            except Exception:
+                pass
+            self._conn = None
         self.container.destroy()
