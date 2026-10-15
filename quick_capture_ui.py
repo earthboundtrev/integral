@@ -7,6 +7,7 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 from typing import TYPE_CHECKING
 
+from busy_indicator import BusyIndicator
 import deep_work as dw
 import focus_shield
 import quick_capture
@@ -56,16 +57,32 @@ def open_quick_capture_panel(tracker: PersonalDevelopmentTracker) -> tk.Toplevel
 
     win.protocol("WM_DELETE_WINDOW", on_close)
 
-    try:
-        return _build_quick_capture_body(tracker, win, theme, on_close)
-    except Exception:
-        # Don't leave a blank cached Toplevel if build fails mid-way.
-        tracker._quick_capture_win = None
+    # Show a delayed busy indicator during build (issue #120).
+    # The indicator appears only if the build takes longer than 180 ms.
+    busy_host = tk.Frame(win, bg=theme["bg"])
+    busy_host.pack(fill=tk.BOTH, expand=True)
+
+    indicator = BusyIndicator(busy_host, label="Loading Quick Capture…", theme=theme, on_cancel=on_close)
+    indicator.start()
+
+    def build_content() -> None:
         try:
-            win.destroy()
-        except tk.TclError:
-            pass
-        raise
+            indicator.stop()
+            busy_host.destroy()
+            _build_quick_capture_body(tracker, win, theme, on_close)
+        except Exception:
+            # Don't leave a blank cached Toplevel if build fails mid-way.
+            tracker._quick_capture_win = None
+            try:
+                win.destroy()
+            except tk.TclError:
+                pass
+            raise
+
+    # Build content after the next idle, allowing the indicator timer to arm.
+    win.after_idle(build_content)
+
+    return win
 
 
 def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:

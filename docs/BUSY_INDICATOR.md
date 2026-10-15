@@ -1,0 +1,173 @@
+# BusyIndicator Component
+
+**Issue:** #120 | **Blocks:** #121, #123, #124, and the loading states in #98 and #116
+
+## Overview
+
+`BusyIndicator` is a shared, reusable Tkinter component that shows a loading spinner only if the work takes longer than a configurable threshold (default 180 ms, per Trevor's decision). Fast operations complete with no flicker.
+
+## Quick Start
+
+```python
+from busy_indicator import BusyIndicator
+
+# In your UI build function:
+indicator = BusyIndicator(parent, label="Loading…", theme=theme)
+indicator.start()
+
+# ... do work (possibly chunked with after_idle) ...
+
+indicator.stop()  # Hides the spinner or cancels the timer if it never appeared.
+```
+
+## API
+
+### `BusyIndicator(parent, label="Loading…", *, theme=None, delay_ms=180, on_cancel=None)`
+
+**Parameters:**
+- `parent` (tk.Misc): The Tkinter widget that will host the indicator.
+- `label` (str): Initial label text (default "Loading…").
+- `theme` (dict | None): Theme dict from `theme.py` (bg, fg, muted, etc.). Falls back to a light theme if None.
+- `delay_ms` (int): Milliseconds before the indicator becomes visible (default 180 ms).
+- `on_cancel` (Callable[[], None] | None): Optional callback when user presses Esc or closes during loading.
+
+### Methods
+
+#### `start(label=None)`
+Arms the timer. If work completes before `delay_ms`, nothing is shown.
+- `label` (str | None): Optional label to use instead of the initial one.
+
+#### `stop()`
+Hides the indicator or cancels the timer if it never appeared. No flicker on fast machines.
+
+#### `step(text)`
+Updates the label during a long operation (optional, for operations over ~1 s).
+- `text` (str): New label text (e.g., "Building charts…").
+
+## Examples
+
+### Example 1: Synchronous build with after_idle
+
+```python
+def open_my_window(tracker):
+    win = tk.Toplevel(tracker.root)
+    win.title("My Window")
+    win.geometry("600x400")
+    win.configure(bg=theme["bg"])
+
+    # Show busy indicator during build.
+    busy_host = tk.Frame(win, bg=theme["bg"])
+    busy_host.pack(fill=tk.BOTH, expand=True)
+
+    indicator = BusyIndicator(busy_host, label="Loading…", theme=theme)
+    indicator.start()
+
+    def build_content():
+        indicator.stop()
+        busy_host.destroy()
+        # Build the actual UI here.
+        _build_my_window_body(tracker, win)
+
+    win.after_idle(build_content)
+    return win
+```
+
+### Example 2: Multi-step operation with progress updates
+
+```python
+indicator = BusyIndicator(parent, label="Preparing…", theme=theme)
+indicator.start()
+
+# Step 1
+indicator.step("Loading data…")
+data = load_data()
+
+# Step 2
+indicator.step("Building charts…")
+build_charts(data)
+
+# Done
+indicator.stop()
+```
+
+### Example 3: Cancel hook for Esc support
+
+```python
+work_cancelled = {"value": False}
+
+def on_cancel():
+    work_cancelled["value"] = True
+    win.destroy()
+
+indicator = BusyIndicator(parent, label="Processing…", theme=theme, on_cancel=on_cancel)
+indicator.start()
+
+# ... do work, checking work_cancelled periodically ...
+
+indicator.stop()
+```
+
+## Integration in Quick Capture
+
+Quick Capture (issue #120) uses the BusyIndicator during window build:
+
+```python
+# Show a delayed busy indicator during build.
+busy_host = tk.Frame(win, bg=theme["bg"])
+busy_host.pack(fill=tk.BOTH, expand=True)
+
+indicator = BusyIndicator(busy_host, label="Loading Quick Capture…", theme=theme, on_cancel=on_close)
+indicator.start()
+
+def build_content():
+    indicator.stop()
+    busy_host.destroy()
+    _build_quick_capture_body(tracker, win, theme, on_close)
+
+win.after_idle(build_content)
+```
+
+## Upcoming Integration (blocked issues)
+
+The following screens should use BusyIndicator for their loading states:
+
+- **#121:** Graphs & Summaries window (slow matplotlib builds, 1,453 ms)
+- **#123:** Full History window (466 ms)
+- **#124:** Weekly Summary window (279 ms)
+- **#98, #116:** Other loading states in dashboard
+
+Follow the same pattern as Quick Capture: create a busy host, start the indicator, build content with `after_idle`, then stop and destroy the busy host.
+
+## Design Notes
+
+- The indicator fills its parent and is centered.
+- It uses `ttk.Progressbar` in indeterminate mode (animated spinner).
+- It never blocks the UI thread itself (works with chunked or background operations).
+- Light and dark themes are supported via the `theme` dict.
+- No layout jump when the content replaces it (the busy host is destroyed and the actual content takes its place).
+
+## Testing
+
+See `tests/test_busy_indicator.py` for coverage:
+- Fast tasks (< 180 ms) never show the indicator.
+- Slow tasks (> 180 ms) show the indicator and hide it when done.
+- `stop()` cancels the timer before it becomes visible.
+- `step()` updates the label during long operations.
+- Esc calls the cancel hook.
+- Light and dark themes work.
+
+Run tests:
+```bash
+python -m pytest tests/test_busy_indicator.py -v
+```
+
+## Windows Note
+
+Tested on Windows 10/11 at 100% and 150% scaling (spinner size, cursor). Use `INTEGRAL_PERF=1` to confirm timing with the shared heartbeat harness.
+
+## Reviewed by (Oct 14 2026)
+
+- **UX Expert:** proposed the component and its behaviour (delay, sizing, step label, cancel, saving status).
+- **Lead Developer:** approved. Use the existing `after`/`after_idle` patterns (no polling loops).
+- **Tester:** timing verified with the shared heartbeat harness.
+- **Product Manager:** approved as part of the scroll-stutter set, priority medium.
