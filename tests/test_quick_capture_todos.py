@@ -137,6 +137,130 @@ def test_merge_allows_same_text_different_todo_ids():
     assert "(#b2)" in notes
 
 
+def test_add_todo_quick_with_category():
+    """Test add_todo_quick with explicit category."""
+    from personal_dev_tracker import PersonalDevelopmentTracker
+    import tkinter as tk
+    
+    root = tk.Tk()
+    try:
+        tracker = PersonalDevelopmentTracker(root)
+        tracker.categories = {"Admin": {}, "Health": {}}
+        tracker.todos = todos.empty_todos()
+        
+        error = tracker.add_todo_quick("Pay rent", category="Admin")
+        assert error is None
+        items = todos.list_items(tracker.todos)
+        assert len(items) == 1
+        assert items[0]["text"] == "Pay rent"
+        assert items[0]["category"] == "Admin"
+        assert tracker.settings.get("last_todo_category") == "Admin"
+    finally:
+        root.destroy()
+
+
+def test_add_todo_quick_uses_last_category():
+    """Test add_todo_quick falls back to last-used category."""
+    from personal_dev_tracker import PersonalDevelopmentTracker
+    import tkinter as tk
+    
+    root = tk.Tk()
+    try:
+        tracker = PersonalDevelopmentTracker(root)
+        tracker.categories = {"Admin": {}, "Health": {}}
+        tracker.todos = todos.empty_todos()
+        tracker.settings["last_todo_category"] = "Health"
+        
+        error = tracker.add_todo_quick("Exercise 30min")
+        assert error is None
+        items = todos.list_items(tracker.todos)
+        assert len(items) == 1
+        assert items[0]["category"] == "Health"
+    finally:
+        root.destroy()
+
+
+def test_add_todo_quick_allows_blank_category():
+    """Test add_todo_quick with no category defaults to blank."""
+    from personal_dev_tracker import PersonalDevelopmentTracker
+    import tkinter as tk
+    
+    root = tk.Tk()
+    try:
+        tracker = PersonalDevelopmentTracker(root)
+        tracker.categories = {"Admin": {}}
+        tracker.todos = todos.empty_todos()
+        
+        error = tracker.add_todo_quick("Generic task")
+        assert error is None
+        items = todos.list_items(tracker.todos)
+        assert len(items) == 1
+        assert items[0]["category"] == ""
+    finally:
+        root.destroy()
+
+
+def test_add_todo_quick_trims_whitespace():
+    """Test add_todo_quick trims input."""
+    from personal_dev_tracker import PersonalDevelopmentTracker
+    import tkinter as tk
+    
+    root = tk.Tk()
+    try:
+        tracker = PersonalDevelopmentTracker(root)
+        tracker.categories = {}
+        tracker.todos = todos.empty_todos()
+        
+        error = tracker.add_todo_quick("  Task with spaces  ")
+        assert error is None
+        items = todos.list_items(tracker.todos)
+        assert items[0]["text"] == "Task with spaces"
+    finally:
+        root.destroy()
+
+
+def test_add_todo_quick_rejects_empty():
+    """Test add_todo_quick returns None for empty input."""
+    from personal_dev_tracker import PersonalDevelopmentTracker
+    import tkinter as tk
+    
+    root = tk.Tk()
+    try:
+        tracker = PersonalDevelopmentTracker(root)
+        tracker.categories = {}
+        tracker.todos = todos.empty_todos()
+        
+        error = tracker.add_todo_quick("")
+        assert error is None
+        assert len(todos.list_items(tracker.todos)) == 0
+        
+        error = tracker.add_todo_quick("   ")
+        assert error is None
+        assert len(todos.list_items(tracker.todos)) == 0
+    finally:
+        root.destroy()
+
+
+def test_add_todo_quick_enforces_length_limit():
+    """Test add_todo_quick enforces 500 character limit."""
+    from personal_dev_tracker import PersonalDevelopmentTracker
+    import tkinter as tk
+    
+    root = tk.Tk()
+    try:
+        tracker = PersonalDevelopmentTracker(root)
+        tracker.categories = {}
+        tracker.todos = todos.empty_todos()
+        
+        long_text = "x" * 501
+        error = tracker.add_todo_quick(long_text)
+        assert error is not None
+        assert "too long" in error.lower()
+        assert len(todos.list_items(tracker.todos)) == 0
+    finally:
+        root.destroy()
+
+
 def test_todo_done_note_present_requires_exact_text():
     notes = "[Todo done 15:05] Buy milk"
     assert quick_capture.todo_done_note_present(notes, "Buy milk")

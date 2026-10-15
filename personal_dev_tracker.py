@@ -873,6 +873,119 @@ class PersonalDevelopmentTracker:
             style="OnSurfaceMuted.TLabel",
         ).pack(anchor="w", pady=(4, 10))
 
+        # --- Inline todo entry and quick action buttons ---
+        quick_actions_frame = ttk.Frame(log_bar, style="Surface.TFrame")
+        quick_actions_frame.pack(fill=tk.X, pady=(0, 12))
+        
+        # Inline todo field
+        todo_row = ttk.Frame(quick_actions_frame, style="Surface.TFrame")
+        todo_row.pack(fill=tk.X, pady=(0, 8))
+        
+        todo_var = tk.StringVar()
+        todo_entry = ttk.Entry(
+            todo_row,
+            textvariable=todo_var,
+            font=(FONTS["family"], 11),
+        )
+        todo_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8))
+        self._inline_todo_entry = todo_entry
+        self._inline_todo_var = todo_var
+        
+        # Placeholder simulation
+        def on_focus_in(event):
+            if todo_var.get() == "Add a todo… (Enter to save, Ctrl+Shift+T from anywhere)":
+                todo_var.set("")
+                todo_entry.config(foreground=self.theme["fg"])
+        
+        def on_focus_out(event):
+            if not todo_var.get():
+                todo_var.set("Add a todo… (Enter to save, Ctrl+Shift+T from anywhere)")
+                todo_entry.config(foreground=self.theme["muted"])
+        
+        todo_var.set("Add a todo… (Enter to save, Ctrl+Shift+T from anywhere)")
+        todo_entry.config(foreground=self.theme["muted"])
+        todo_entry.bind("<FocusIn>", on_focus_in)
+        todo_entry.bind("<FocusOut>", on_focus_out)
+        
+        error_label = ttk.Label(todo_row, text="", foreground="#DC2626", style="OnSurfaceMuted.TLabel")
+        
+        def add_inline_todo(event=None):
+            text = todo_var.get().strip()
+            if text == "Add a todo… (Enter to save, Ctrl+Shift+T from anywhere)" or not text:
+                return "break"
+            
+            # Check IME composition state
+            try:
+                if hasattr(todo_entry, "tk") and todo_entry.tk.call("imm::composition", todo_entry):
+                    return "break"
+            except Exception:
+                pass
+            
+            error = self.add_todo_quick(text)
+            if error:
+                error_label.config(text=error)
+                error_label.pack(side=tk.LEFT, padx=(8, 0))
+                self.root.after(5000, lambda: error_label.pack_forget())
+            else:
+                todo_var.set("")
+                on_focus_out(None)
+                error_label.pack_forget()
+                self.refresh_dashboard(full=False)
+                # Restore focus after refresh
+                self.root.after(10, lambda: self._restore_inline_todo_focus())
+                self.sync_quick_capture_panel()
+            
+            return "break"
+        
+        def clear_todo(event):
+            if todo_var.get() and todo_var.get() != "Add a todo… (Enter to save, Ctrl+Shift+T from anywhere)":
+                todo_var.set("")
+                on_focus_out(None)
+                error_label.pack_forget()
+                return "break"
+            else:
+                # Second Escape: move focus to + Todo button
+                if hasattr(self, "_add_todo_button"):
+                    self._add_todo_button.focus_set()
+                return "break"
+        
+        todo_entry.bind("<Return>", add_inline_todo)
+        todo_entry.bind("<Escape>", clear_todo)
+        
+        # Quick action buttons
+        buttons_row = ttk.Frame(quick_actions_frame, style="Surface.TFrame")
+        buttons_row.pack(fill=tk.X)
+        
+        add_todo_btn = ttk.Button(
+            buttons_row,
+            text="+ Todo",
+            style="Accent.TButton",
+            command=lambda: todo_entry.focus_set()
+        )
+        add_todo_btn.pack(side=tk.LEFT, padx=(0, 8), ipady=4)
+        self._add_todo_button = add_todo_btn
+        
+        log_workout_btn = ttk.Button(
+            buttons_row,
+            text="Log workout",
+            style="Accent.TButton",
+            command=self.show_log_exercise
+        )
+        log_workout_btn.pack(side=tk.LEFT, padx=(0, 8), ipady=4)
+        
+        def reflect_action():
+            next_cat = self.first_unlogged_category()
+            if next_cat:
+                self.open_log_dialog(next_cat)
+        
+        reflect_btn = ttk.Button(
+            buttons_row,
+            text="Reflect",
+            style="Accent.TButton",
+            command=reflect_action
+        )
+        reflect_btn.pack(side=tk.LEFT, ipady=4)
+
         actions_host, actions, _actions_canvas = ui_scroll.make_horizontal_scroll_row(
             log_bar,
             height=40,
@@ -2078,6 +2191,49 @@ class PersonalDevelopmentTracker:
 
     def toggle_quick_capture(self) -> None:
         self.set_quick_capture_enabled(not quick_capture.is_quick_capture_enabled(self.settings))
+
+    def add_todo_quick(self, text: str, category: str | None = None) -> str | None:
+        """Add a todo for today with optional category. Return error string or None on success."""
+        from category_picker import resolve_category_name
+
+        cleaned = text.strip()
+        if not cleaned:
+            return None
+        
+        MAX_TODO_LENGTH = 500
+        if len(cleaned) > MAX_TODO_LENGTH:
+            return f"Todo text is too long (max {MAX_TODO_LENGTH} characters)."
+        
+        if category is None:
+            category = self.settings.get("last_todo_category", "")
+        
+        resolved = resolve_category_name(
+            category, list(self.categories.keys()), allow_blank=True
+        )
+        if resolved is None:
+            return "Pick a category from the list (or leave blank)."
+        
+        try:
+            self.todos = todos.add_todo(
+                self.todos,
+                text=cleaned,
+                work_date=self.today_str(),
+                category=resolved,
+            )
+            self.settings["last_todo_category"] = resolved
+            self.save_data()
+            return None
+        except ValueError as exc:
+            return str(exc)
+
+    def _restore_inline_todo_focus(self) -> None:
+        """Restore focus to inline todo entry after dashboard refresh."""
+        if hasattr(self, "_inline_todo_entry"):
+            try:
+                if self._inline_todo_entry.winfo_exists():
+                    self._inline_todo_entry.focus_set()
+            except tk.TclError:
+                pass
 
     def show_writing_projects(self) -> None:
         show_writing_projects_window(self)

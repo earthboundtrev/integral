@@ -329,6 +329,7 @@ def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
                 work_date=date_var.get().strip() or tracker.today_str(),
                 category=category,
             )
+            tracker.settings["last_todo_category"] = category
         except ValueError as exc:
             messagebox.showwarning("Todos", str(exc), parent=win)
             return
