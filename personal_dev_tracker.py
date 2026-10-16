@@ -150,6 +150,8 @@ class PersonalDevelopmentTracker:
         self._sidebar_slot: ttk.Frame | None = None
         self._theme_reopen_banner: ttk.Frame | None = None
         self._open_windows: dict[str, tk.Toplevel] = {}  # Track windows for raise-if-open
+        self._more_menu_popup: Any | None = None
+        self._footer_more_btn: ttk.Button | None = None
 
         if is_encrypted_file(DATA_FILE) and not prompt_vault_unlock(self):
             messagebox.showerror("Locked", "Cannot open encrypted journal without passphrase.")
@@ -1572,52 +1574,17 @@ class PersonalDevelopmentTracker:
         self._content_pane = ttk.Frame(self._shell_frame)
         self._content_pane.pack(fill=tk.BOTH, expand=True)
         ttk.Separator(self._shell_footer, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=(0, 10))
-        nav_host, nav, _nav_canvas = ui_scroll.make_horizontal_scroll_row(
-            self._shell_footer,
-            overflow_hint="Scroll for more →",
-            theme=self.theme,
-            chrome_bg=self.theme["bg"],
+        footer_actions = ttk.Frame(self._shell_footer)
+        footer_actions.pack(fill=tk.X)
+        self._footer_more_btn = ttk.Button(
+            footer_actions,
+            text="More… ▾",
+            command=self._toggle_footer_more_menu,
         )
-        nav_host.pack(fill=tk.X)
-        
-        # Navigation buttons
-        ttk.Button(
-            nav,
-            text="Refresh",
-            command=lambda: self.refresh_dashboard(full=False, recompute=False),
-        ).pack(side=tk.LEFT)
-        ttk.Button(
-            nav, text="Go to…", style="Accent.TButton", command=self.show_goto
-        ).pack(side=tk.LEFT, padx=6)
-        ttk.Button(nav, text="Guidance", command=self.show_guidance).pack(side=tk.LEFT, padx=6)
-        ttk.Button(nav, text="Weekly Summary", command=self.show_weekly_summary).pack(side=tk.LEFT, padx=6)
-        ttk.Button(nav, text="Full History", command=self.show_history).pack(side=tk.LEFT, padx=6)
-        ttk.Button(nav, text="Search Notes", command=self.show_search).pack(side=tk.LEFT, padx=6)
-        ttk.Button(nav, text="Graphs & Progress", command=self.show_graphs).pack(side=tk.LEFT, padx=6)
-        ttk.Button(nav, text="Journal", style="Accent.TButton", command=self.show_journal).pack(
-            side=tk.LEFT, padx=6
-        )
-        ttk.Button(nav, text="Writing Projects", command=self.show_writing_projects).pack(
-            side=tk.LEFT, padx=6
-        )
-        ttk.Button(nav, text="Deep Work", style="Accent.TButton", command=self.show_deep_work).pack(
-            side=tk.LEFT, padx=6
-        )
-        ttk.Button(
-            nav,
-            text="Quick Capture",
-            style="Accent.TButton",
-            command=self.toggle_quick_capture,
-        ).pack(side=tk.LEFT, padx=6)
-        ttk.Button(nav, text="Milestones", command=self.show_milestones).pack(side=tk.LEFT, padx=6)
-        ttk.Button(nav, text="Export", command=self.show_export).pack(side=tk.LEFT, padx=6)
-        ttk.Button(nav, text="Backup", command=self.show_backup).pack(side=tk.LEFT, padx=6)
-        ttk.Button(nav, text="Edit Categories", command=self.show_settings).pack(side=tk.LEFT, padx=6)
-        ttk.Button(nav, text="Data & Security", command=self.show_security).pack(side=tk.LEFT, padx=6)
-        mode_label = "Light Mode" if self.settings.get("dark_mode") else "Dark Mode"
-        ttk.Button(nav, text=mode_label, command=self.toggle_dark_mode).pack(side=tk.RIGHT)
-        self._nav_frame = nav
-        self._register_nav_buttons(nav)
+        self._footer_more_btn.pack(side=tk.RIGHT)
+        self._nav_frame = footer_actions
+        self._nav_buttons = {}
+        self._nav_pack_order = []
         self._ensure_deep_work_banner(self._banner_host)
         self._apply_deep_work_chrome()
         if not getattr(self, "_goto_shortcut_bound", False):
@@ -1730,10 +1697,10 @@ class PersonalDevelopmentTracker:
         
         more_frame = tk.Frame(container, bg=sidebar_bg)
         more_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=8, pady=(0, 16))
-        more_btn = tk.Button(
+        self._sidebar_more_btn = tk.Button(
             more_frame,
             text="⋯ More",
-            command=self.show_goto,
+            command=self._toggle_sidebar_more_menu,
             bg=sidebar_bg,
             fg=theme["muted"],
             font=FONTS["caption"],
@@ -1742,7 +1709,7 @@ class PersonalDevelopmentTracker:
             anchor="w",
             padx=8,
         )
-        more_btn.pack(fill=tk.X)
+        self._sidebar_more_btn.pack(fill=tk.X)
 
     def _raise_or_open(self, window_key: str) -> None:
         """Open a window or raise it if already open (#131)."""
@@ -2937,34 +2904,10 @@ class PersonalDevelopmentTracker:
 
     def _apply_deep_work_chrome(self) -> None:
         active = bool(self._deep_work_session and self._deep_work_session.running)
-        labels = self._nav_pack_order or list(self._nav_buttons.keys())
-        for label in labels:
-            widget = self._nav_buttons.get(label)
-            if widget is None:
-                continue
-            try:
-                if not widget.winfo_exists():
-                    continue
-            except tk.TclError:
-                continue
-            if label in deep_work.DEEP_WORK_KEEP_NAV_LABELS:
-                continue
-            should_hide = active and (
-                label in deep_work.DEEP_WORK_HIDDEN_NAV_LABELS
-                or label not in deep_work.DEEP_WORK_KEEP_NAV_LABELS
-            )
-            if should_hide:
-                widget.pack_forget()
-                continue
-            if widget.winfo_ismapped():
-                continue
-            # Restore in original pack order after Deep Work (#47 / #50).
-            if label in {"Light Mode", "Dark Mode"}:
-                widget.pack(side=tk.RIGHT)
-            elif label == "Refresh":
-                widget.pack(side=tk.LEFT)
-            else:
-                widget.pack(side=tk.LEFT, padx=6)
+        if active:
+            from more_menu_ui import close_more_menu
+
+            close_more_menu(self)
         if self._deep_work_banner is not None:
             try:
                 if active:
@@ -3138,8 +3081,23 @@ class PersonalDevelopmentTracker:
 
     def show_goto(self) -> None:
         from goto_ui import open_goto_palette
+        from more_menu_ui import close_more_menu
 
+        close_more_menu(self)
         open_goto_palette(self)
+
+    def _toggle_footer_more_menu(self) -> None:
+        from more_menu_ui import toggle_more_menu
+
+        if self._footer_more_btn is not None:
+            toggle_more_menu(self, self._footer_more_btn)
+
+    def _toggle_sidebar_more_menu(self) -> None:
+        from more_menu_ui import toggle_more_menu
+
+        btn = getattr(self, "_sidebar_more_btn", None)
+        if btn is not None:
+            toggle_more_menu(self, btn)
 
     def show_search(self) -> None:
         window = tk.Toplevel(self.root)
