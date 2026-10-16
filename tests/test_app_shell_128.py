@@ -140,17 +140,20 @@ def test_no_widget_leaks_after_10_refreshes():
     with patch.object(personal_dev_tracker.PersonalDevelopmentTracker, "__init__", _mock_tracker_init):
         tracker = personal_dev_tracker.PersonalDevelopmentTracker(root)
         tracker.create_dashboard()
+        root.update_idletasks()  # Let initial chunked build complete
         
         # First refresh and count
         tracker.refresh_dashboard(full=False, recompute=True)
-        root.update_idletasks()
+        root.update_idletasks()  # Process chunked build
+        root.update_idletasks()  # Process any remaining callbacks
         count_after_1 = _count_widgets_recursive(root)
         root_children_after_1 = len(root.winfo_children())
         
         # 9 more refreshes (total 10)
         for _ in range(9):
             tracker.refresh_dashboard(full=False, recompute=True)
-            root.update_idletasks()
+            root.update_idletasks()  # Process chunked build
+            root.update_idletasks()  # Process any remaining callbacks
         
         count_after_10 = _count_widgets_recursive(root)
         root_children_after_10 = len(root.winfo_children())
@@ -316,6 +319,8 @@ def test_content_pane_children_rebuilt_on_refresh():
     with patch.object(personal_dev_tracker.PersonalDevelopmentTracker, "__init__", _mock_tracker_init):
         tracker = personal_dev_tracker.PersonalDevelopmentTracker(root)
         tracker.create_dashboard()
+        root.update_idletasks()  # Let initial chunked build complete
+        root.update_idletasks()  # Process any remaining callbacks
         
         # Get initial log bar
         initial_log_bar = tracker._log_bar
@@ -323,6 +328,8 @@ def test_content_pane_children_rebuilt_on_refresh():
         
         # Refresh
         tracker.refresh_dashboard(full=False, recompute=True)
+        root.update_idletasks()  # Process chunked build
+        root.update_idletasks()  # Process any remaining callbacks
         
         # New log bar should be created (content rebuilt)
         assert tracker._log_bar is not initial_log_bar, "Log bar not rebuilt on refresh"
