@@ -1668,7 +1668,10 @@ class PersonalDevelopmentTracker:
             del self._open_windows[window_key]
         
         if window_key == "today":
-            self.show_streak_details()
+            self.root.lift()
+            self.root.focus_force()
+            if self._content_pane and self._content_pane.winfo_exists():
+                self._content_pane.focus_set()
         elif window_key == "fitness":
             self.show_fitness_hub()
         elif window_key == "journal":
@@ -1677,12 +1680,20 @@ class PersonalDevelopmentTracker:
             self.show_graphs()
     
     def _track_window(self, window_key: str, window: tk.Toplevel) -> None:
-        """Track a window for raise-if-open behavior."""
+        """Track a window for raise-if-open behavior. Wraps existing WM_DELETE_WINDOW."""
         self._open_windows[window_key] = window
+        existing_handler = window.protocol("WM_DELETE_WINDOW")
+        
         def on_close():
             if window_key in self._open_windows:
                 del self._open_windows[window_key]
-            window.destroy()
+            if existing_handler and callable(existing_handler):
+                try:
+                    window.call(existing_handler)
+                except tk.TclError:
+                    window.destroy()
+            else:
+                window.destroy()
         window.protocol("WM_DELETE_WINDOW", on_close)
 
     def show_reflect(self) -> None:
@@ -2593,16 +2604,15 @@ class PersonalDevelopmentTracker:
                 pass
             del self._open_windows["journal"]
         
+        before_children = set(self.root.winfo_children())
         show_journal_window(self)
-        
-        for child in self.root.winfo_children():
-            if isinstance(child, tk.Toplevel) and child not in self._open_windows.values():
-                try:
-                    if "Journal" in child.title():
-                        self._track_window("journal", child)
-                        break
-                except tk.TclError:
-                    pass
+        self.root.update_idletasks()
+        after_children = set(self.root.winfo_children())
+        new_windows = after_children - before_children
+        for child in new_windows:
+            if isinstance(child, tk.Toplevel):
+                self._track_window("journal", child)
+                break
 
     def set_quick_capture_enabled(self, enabled: bool, *, persist: bool = True) -> None:
         self.settings = quick_capture.apply_quick_capture_settings(
@@ -3153,6 +3163,7 @@ class PersonalDevelopmentTracker:
             del self._open_windows["graphs"]
         
         from graphs import open_graphs
+        before_children = set(self.root.winfo_children())
         open_graphs(
             self.root,
             self.entries,
@@ -3163,15 +3174,13 @@ class PersonalDevelopmentTracker:
             app_settings=self.settings,
             on_graph_settings_changed=self._save_graph_settings,
         )
-        
-        for child in self.root.winfo_children():
-            if isinstance(child, tk.Toplevel) and child not in self._open_windows.values():
-                try:
-                    if "Graphing" in child.title():
-                        self._track_window("graphs", child)
-                        break
-                except tk.TclError:
-                    pass
+        self.root.update_idletasks()
+        after_children = set(self.root.winfo_children())
+        new_windows = after_children - before_children
+        for child in new_windows:
+            if isinstance(child, tk.Toplevel):
+                self._track_window("graphs", child)
+                break
 
     def _save_graph_settings(self, payload: dict) -> None:
         self.settings["graphs"] = payload.get("graphs", {})
@@ -3286,6 +3295,7 @@ class PersonalDevelopmentTracker:
             self.settings["fitness"] = updated
             self.save_data(flush=True)
 
+        before_children = set(self.root.winfo_children())
         fitness_ui.show_fitness_window(
             self.root,
             on_session_saved=self._on_fitness_session_saved,
@@ -3294,15 +3304,13 @@ class PersonalDevelopmentTracker:
             on_fitness_settings_changed=on_fitness_settings_changed,
             on_log_practice=self.show_log_practice,
         )
-        
-        for child in self.root.winfo_children():
-            if isinstance(child, tk.Toplevel) and child not in self._open_windows.values():
-                try:
-                    if "Fitness" in child.title():
-                        self._track_window("fitness", child)
-                        break
-                except tk.TclError:
-                    pass
+        self.root.update_idletasks()
+        after_children = set(self.root.winfo_children())
+        new_windows = after_children - before_children
+        for child in new_windows:
+            if isinstance(child, tk.Toplevel):
+                self._track_window("fitness", child)
+                break
 
     def show_workout_history(self) -> None:
         """Show workout history in a modal window."""
