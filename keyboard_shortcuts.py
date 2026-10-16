@@ -7,7 +7,7 @@ from tkinter import scrolledtext, ttk
 from typing import Any, Callable
 
 import nav_items
-from theme import FONTS, style_text_widget
+from theme import FONTS, LIGHT, style_text_widget
 
 # Tk event.state bits (platform quirks: treat Meta/Mod1 as Alt for AltGr rejection).
 _SHIFT_MASK = 0x0001
@@ -60,13 +60,8 @@ def alt_in_event_state(state: int) -> bool:
 
 
 def effective_control_shift(event: tk.Event) -> bool:
-    """Shift required for Ctrl+Shift chords; Caps Lock upper-case counts as Shift."""
-    if event.state & _SHIFT_MASK:
-        return True
-    keysym = event.keysym or ""
-    if len(keysym) == 1 and keysym.isalpha() and keysym.isupper():
-        return True
-    return False
+    """True when the Shift modifier is held (Caps Lock alone does not count)."""
+    return bool(event.state & _SHIFT_MASK)
 
 
 def shortcut_may_run(tracker: Any, event: tk.Event | None = None) -> bool:
@@ -102,12 +97,14 @@ def _wrap_plain(tracker: Any, action: Callable[[], None]) -> Callable[[tk.Event]
     return handler
 
 
-def _wrap_goto(tracker: Any) -> Callable[[tk.Event], str]:
-    def handler(event: tk.Event) -> str:
+def _wrap_goto(tracker: Any) -> Callable[[tk.Event], str | None]:
+    def handler(event: tk.Event) -> str | None:
         if alt_in_event_state(int(event.state)):
-            return "break"
+            return None
+        if event.state & _SHIFT_MASK:
+            return None
         if not shortcut_may_run(tracker, event):
-            return "break"
+            return None
         tracker.show_goto()
         return "break"
 
@@ -184,8 +181,16 @@ def show_keyboard_shortcuts(tracker: Any) -> None:
     ttk.Button(footer, text="Close", command=on_close).pack(side=tk.RIGHT)
 
 
-def attach_shortcut_tooltip(widget: tk.Misc, base_text: str, shortcut: str) -> None:
+def attach_shortcut_tooltip(
+    widget: tk.Misc,
+    base_text: str,
+    shortcut: str,
+    theme: dict | None = None,
+) -> None:
     """Hover tooltip showing base label and shortcut chord."""
+    colors = theme or LIGHT
+    tip_bg = colors.get("surface_alt", colors["bg"])
+    tip_fg = colors["fg"]
     tip_state: dict[str, tk.Toplevel | None] = {"win": None}
 
     def show(_event: tk.Event) -> None:
@@ -198,8 +203,8 @@ def attach_shortcut_tooltip(widget: tk.Misc, base_text: str, shortcut: str) -> N
         tk.Label(
             tip,
             text=text,
-            bg="#FFFFE0",
-            fg="#000000",
+            bg=tip_bg,
+            fg=tip_fg,
             relief=tk.SOLID,
             borderwidth=1,
             padx=6,
@@ -282,7 +287,6 @@ def install_global_shortcuts(tracker: Any) -> None:
     for seq in (
         "<Control-Shift-slash>",
         "<Control-Shift-question>",
-        "<Control-Shift-asciitilde>",  # some layouts: Shift+/ → other keysym
     ):
         try:
             root.bind_all(seq, show_list, add="+")
@@ -304,4 +308,4 @@ def apply_sidebar_shortcut_tooltips(tracker: Any) -> None:
             continue
         label = id_by_label.get(nav_id, nav_id)
         for child in frame.winfo_children():
-            attach_shortcut_tooltip(child, label, shortcut)
+            attach_shortcut_tooltip(child, label, shortcut, tracker.theme)

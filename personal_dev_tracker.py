@@ -1153,7 +1153,12 @@ class PersonalDevelopmentTracker:
         log_workout_btn.pack(side=tk.LEFT, padx=(0, 8), ipady=4)
         from keyboard_shortcuts import INLINE_BUTTON_SHORTCUTS, attach_shortcut_tooltip
 
-        attach_shortcut_tooltip(log_workout_btn, "Log workout", INLINE_BUTTON_SHORTCUTS["Log workout"])
+        attach_shortcut_tooltip(
+            log_workout_btn,
+            "Log workout",
+            INLINE_BUTTON_SHORTCUTS["Log workout"],
+            self.theme,
+        )
         
         def reflect_action():
             next_cat = self.first_unlogged_category()
@@ -1166,7 +1171,9 @@ class PersonalDevelopmentTracker:
             command=reflect_action
         )
         reflect_btn.pack(side=tk.LEFT, ipady=4)
-        attach_shortcut_tooltip(reflect_btn, "Reflect", INLINE_BUTTON_SHORTCUTS["Reflect"])
+        attach_shortcut_tooltip(
+            reflect_btn, "Reflect", INLINE_BUTTON_SHORTCUTS["Reflect"], self.theme
+        )
 
         actions_host, actions, _actions_canvas = ui_scroll.make_horizontal_scroll_row(
             log_bar,
@@ -1192,7 +1199,9 @@ class PersonalDevelopmentTracker:
             ).pack(side=tk.LEFT)
         journal_btn = ttk.Button(actions, text="Journal", command=self.show_journal)
         journal_btn.pack(side=tk.LEFT, padx=(0, 8))
-        attach_shortcut_tooltip(journal_btn, "Journal", INLINE_BUTTON_SHORTCUTS["Journal"])
+        attach_shortcut_tooltip(
+            journal_btn, "Journal", INLINE_BUTTON_SHORTCUTS["Journal"], self.theme
+        )
         qc_btn = ttk.Button(
             actions,
             text="Quick Capture",
@@ -1200,7 +1209,10 @@ class PersonalDevelopmentTracker:
         )
         qc_btn.pack(side=tk.LEFT, padx=(0, 8))
         attach_shortcut_tooltip(
-            qc_btn, "Quick Capture", INLINE_BUTTON_SHORTCUTS["Quick Capture"]
+            qc_btn,
+            "Quick Capture",
+            INLINE_BUTTON_SHORTCUTS["Quick Capture"],
+            self.theme,
         )
 
         from more_menu_ui import populate_today_more_menu
@@ -1592,11 +1604,11 @@ class PersonalDevelopmentTracker:
         self._nav_pack_order = []
         self._ensure_deep_work_banner(self._banner_host)
         self._apply_deep_work_chrome()
-        if not getattr(self, "_keyboard_shortcuts_bound", False):
-            from keyboard_shortcuts import apply_sidebar_shortcut_tooltips, install_global_shortcuts
+        from keyboard_shortcuts import apply_sidebar_shortcut_tooltips, install_global_shortcuts
 
+        if not getattr(self, "_keyboard_shortcuts_bound", False):
             install_global_shortcuts(self)
-            apply_sidebar_shortcut_tooltips(self)
+        apply_sidebar_shortcut_tooltips(self)
 
     def _build_sidebar(self) -> None:
         """Build the left sidebar navigation (#131)."""
