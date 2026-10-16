@@ -12,20 +12,27 @@ LIGHT = {
     "name": "light",
     "bg": "#F4F5F7",
     "fg": "#1A1D21",
-    "muted": "#5C6370",
+    "muted": "#666666",  # Darkened from #5C6370 for 4.5:1 contrast on #EBEBEB
     "accent": "#2F7A7B",
     "accent_dark": "#256264",
+    "accent_soft": "#D1E7E7",  # v2: soft accent background
+    "on_accent": "#FFFFFF",  # v2: text on accent buttons
     "streak": "#D97706",
     "success": "#059669",
     "success_bg": "#ECFDF5",
     "link": "#2563EB",
     "surface": "#FFFFFF",
     "surface_alt": "#EEF0F3",
+    "sidebar": "#FAFBFC",  # v2: sidebar background
     "card_border": "#D8DCE3",
     "text_bg": "#FFFFFF",
     "text_fg": "#1A1D21",
+    "field_bg": "#FFFFFF",  # v2: input field background
     "select_bg": "#D1E7E7",
     "warning_bg": "#FEF3C7",
+    "error": "#DC2626",  # v2: error text
+    "error_bg": "#FEE2E2",  # v2: error background
+    "disabled": "#9CA3AF",  # v2: disabled text
 }
 
 DARK = {
@@ -33,22 +40,30 @@ DARK = {
     "bg": "#12151A",
     "fg": "#E8ECF1",
     "muted": "#9AA5B1",
-    "accent": "#3D9A9B",
-    "accent_dark": "#2F7A7B",
+    "accent": "#2F7A7B",  # Darkened from #3D9A9B for better contrast with white text
+    "accent_dark": "#256264",
+    "accent_soft": "#1E4A4B",  # v2: soft accent background
+    "on_accent": "#FFFFFF",  # v2: text on accent buttons  
     "streak": "#F5A623",
     "success": "#3DDB87",
     "success_bg": "#0F2A22",
     "link": "#60A5FA",
     "surface": "#1C2128",
     "surface_alt": "#252B33",
+    "sidebar": "#0D0F12",  # v2: sidebar background
     "card_border": "#3E4C59",
     "text_bg": "#1C2128",
     "text_fg": "#E8ECF1",
+    "field_bg": "#1C2128",  # v2: input field background
     "select_bg": "#2A4A4B",
     "warning_bg": "#3D3420",
+    "error": "#F87171",  # v2: error text
+    "error_bg": "#3F1F1F",  # v2: error background
+    "disabled": "#6B7280",  # v2: disabled text
 }
 
 FONTS = {
+    # Existing keys (keep for compatibility)
     "title": (_FONT, 22, "bold"),
     "heading": (_FONT, 14, "bold"),
     "subheading": (_FONT, 12, "bold"),
@@ -57,6 +72,23 @@ FONTS = {
     "small": (_FONT, 9),
     "stat": (_FONT, 13, "bold"),
     "button": (_FONT, 10),
+    # v2 additions (§2.2)
+    "h1": (_FONT, 24, "bold"),
+    "h3": (_FONT, 16, "bold"),
+    "brand": (_FONT, 20, "bold"),
+    "caption": (_FONT, 11),
+    "hint": (_FONT, 9),
+    "menu_header": (_FONT, 10, "bold"),
+}
+
+# v2: Spacing tokens on 8px grid (§2.1)
+SPACING = {
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "xxl": 32,
 }
 
 CATEGORY_ACCENTS = {
