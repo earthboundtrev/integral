@@ -32,8 +32,19 @@ def atomic_copy_file(src: str, dest: str) -> None:
     """Atomically copy file from src to dest using temp + fsync + os.replace.
     
     For one-time migrations and bootstraps. Uses save lock for JSON files.
+    If src is already a .tmp file for dest, just rename it instead of creating another temp.
     """
     os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)
+    
+    # If source is already the temp file for this destination, just rename it
+    if src == f"{dest}.tmp":
+        if dest.endswith(".json"):
+            with _save_lock:
+                os.replace(src, dest)
+        else:
+            os.replace(src, dest)
+        return
+    
     temp_path = f"{dest}.tmp"
     
     # Use lock for .json files to serialize with saves

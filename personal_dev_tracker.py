@@ -152,7 +152,11 @@ class PersonalDevelopmentTracker:
             root.destroy()
             return
 
-        self.load_data()
+        if not self.load_data():
+            # load_data returned False (user declined recovery or fatal error)
+            # root.destroy() was already called, stop initialization
+            return
+        
         self.apply_current_theme()
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self.create_dashboard()
@@ -578,9 +582,16 @@ class PersonalDevelopmentTracker:
             self.save_data(categories=merged)
         return merged
 
-    def load_data(self) -> None:
+    def load_data(self) -> bool:
         ensure_data_file()
-        if os.path.exists(DATA_FILE):
+        # Check if we have any data files (main, backup, or temp) to attempt recovery
+        has_any_data = (
+            os.path.exists(DATA_FILE) or 
+            os.path.exists(f"{DATA_FILE}.bak") or 
+            os.path.exists(f"{DATA_FILE}.tmp")
+        )
+        
+        if has_any_data:
             def on_recovery_prompt(bak_path, bak_timestamp):
                 """Prompt user to restore from backup."""
                 return messagebox.askyesno(
@@ -610,17 +621,37 @@ class PersonalDevelopmentTracker:
                 )
             except PermissionError:
                 if not prompt_vault_unlock(self):
-                    raise
-                data = load_data_file_with_recovery(
-                    DATA_FILE, 
-                    self.vault_passphrase,
-                    on_recovery_prompt=on_recovery_prompt,
-                    on_both_corrupt_prompt=on_both_corrupt_prompt
+                    self.root.destroy()
+                    return False
+                try:
+                    data = load_data_file_with_recovery(
+                        DATA_FILE, 
+                        self.vault_passphrase,
+                        on_recovery_prompt=on_recovery_prompt,
+                        on_both_corrupt_prompt=on_both_corrupt_prompt
+                    )
+                except RuntimeError as e:
+                    # User declined recovery - files preserved, exit cleanly
+                    messagebox.showinfo(
+                        "Recovery Declined",
+                        f"{e}\n\nThe app will now exit. To start fresh later, "
+                        "manually delete or move these files from your data directory."
+                    )
+                    self.root.destroy()
+                    return False
+                except Exception as e:
+                    messagebox.showerror("Cannot Load Data", f"Failed to load data file: {e}")
+                    self.root.destroy()
+                    return False
+            except RuntimeError as e:
+                # User declined recovery - files preserved, exit cleanly
+                messagebox.showinfo(
+                    "Recovery Declined",
+                    f"{e}\n\nThe app will now exit. To start fresh later, "
+                    "manually delete or move these files from your data directory."
                 )
-            except ValueError as e:
-                # User declined recovery
-                messagebox.showerror("Cannot Continue", str(e))
-                raise
+                self.root.destroy()
+                return False
                 
             migrated = migrate_data(data, self.programs)
             self.categories = self.merge_categories_with_defaults(migrated.get("categories"))
@@ -716,6 +747,8 @@ class PersonalDevelopmentTracker:
             self.practices = practices.empty_practices()
             self.program_state = compute_program_state(self.programs, self.sessions, self.settings)
             self.save_data(flush=True)
+        
+        return True
 
     def _payload(self, *, recompute_fitness: bool = False) -> dict:
         if recompute_fitness or self._fitness_state_dirty or not self.program_state:
@@ -761,6 +794,8 @@ class PersonalDevelopmentTracker:
         self._save_after_id = self.root.after(250, lambda: self._flush_save(sync=False))
 
     def _flush_save(self, sync: bool = False) -> None:
+        import logging
+        
         self._save_after_id = None
         payload = self._pending_save_payload
         if payload is None:
@@ -771,10 +806,34 @@ class PersonalDevelopmentTracker:
         path = DATA_FILE
 
         def write() -> None:
-            save_data_file(path, payload, encrypted=encrypted, passphrase=passphrase)
+            try:
+                save_data_file(path, payload, encrypted=encrypted, passphrase=passphrase)
+            except Exception as e:
+                logging.error(f"Save failed: {e}", exc_info=True)
+                # Schedule UI notification on main thread
+                try:
+                    self.root.after(0, lambda: messagebox.showerror(
+                        "Save Failed",
+                        f"Failed to save data: {e}\n\nYour changes may be lost. "
+                        "Check the log and try saving manually (Settings → Export Backup)."
+                    ))
+                except Exception:
+                    pass
+                # Re-raise if sync (flush=True) so caller knows it failed
+                if sync:
+                    raise
 
         if sync:
-            write()
+            try:
+                write()
+            except Exception as e:
+                # Show error immediately for flush=True saves
+                messagebox.showerror(
+                    "Save Failed",
+                    f"Failed to save data: {e}\n\nYour changes may be lost. "
+                    "Check the log and try saving manually (Settings → Export Backup)."
+                )
+                raise
             return
         threading.Thread(target=write, daemon=True).start()
 
