@@ -434,8 +434,14 @@ class MoreMenuPopup:
         x = ax + aw - ww
         y = ay + ah + 4
         try:
+            root_x = self.root.winfo_rootx()
             root_y = self.root.winfo_rooty()
+            root_w = self.root.winfo_width()
             root_h = self.root.winfo_height()
+            if x < root_x:
+                x = root_x
+            if x + ww > root_x + root_w:
+                x = root_x + root_w - ww
             if y + wh > root_y + root_h:
                 y = ay - wh - 4
         except tk.TclError:
@@ -535,18 +541,26 @@ class MoreMenuPopup:
             pass
         self._place_near_anchor()
 
+    def _point_in_widget(self, x_root: int, y_root: int, widget: tk.Misc) -> bool:
+        try:
+            wx = widget.winfo_rootx()
+            wy = widget.winfo_rooty()
+            ww = widget.winfo_width()
+            wh = widget.winfo_height()
+        except tk.TclError:
+            return False
+        return wx <= x_root < wx + ww and wy <= y_root < wy + wh
+
     def _on_global_click(self, event: tk.Event) -> None:
         if getattr(self.tracker, "_more_menu_popup", None) is not self:
             return
-        widget = event.widget
-        w: tk.Misc | None = widget
-        while w is not None:
-            if w is self.window or w is self.anchor:
-                return
-            try:
-                w = w.master
-            except AttributeError:
-                break
+        x_root = int(getattr(event, "x_root", 0))
+        y_root = int(getattr(event, "y_root", 0))
+        if self._point_in_widget(x_root, y_root, self.anchor):
+            self.close()
+            return
+        if self._point_in_widget(x_root, y_root, self.window):
+            return
         self.close()
 
     def _on_escape(self, _event: tk.Event) -> str | None:

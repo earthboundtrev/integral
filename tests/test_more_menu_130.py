@@ -192,10 +192,60 @@ def test_outside_click_closes_menu(more_menu_env):
     toggle_more_menu(tracker, anchor)
     root.update()
     popup: MoreMenuPopup = tracker._more_menu_popup
+    px = popup.window.winfo_rootx()
+    py = popup.window.winfo_rooty()
+    pw = popup.window.winfo_width()
+    ph = popup.window.winfo_height()
     event = tk.Event()
     event.widget = outside
+    event.x_root = px + pw + 50
+    event.y_root = py + ph + 50
     popup._on_global_click(event)
     assert tracker._more_menu_popup is None
+
+
+def test_global_click_with_grab_uses_pointer_not_widget(more_menu_env):
+    tracker, anchor, root = more_menu_env
+    toggle_more_menu(tracker, anchor)
+    root.update()
+    popup: MoreMenuPopup = tracker._more_menu_popup
+    assert popup._had_grab
+    px = popup.window.winfo_rootx()
+    py = popup.window.winfo_rooty()
+    pw = popup.window.winfo_width()
+    ph = popup.window.winfo_height()
+    event = tk.Event()
+    event.widget = popup.window
+    event.x_root = px + pw + 50
+    event.y_root = py + ph + 50
+    popup._on_global_click(event)
+    assert tracker._more_menu_popup is None
+
+
+def test_global_click_on_anchor_closes_with_grab(more_menu_env):
+    tracker, anchor, root = more_menu_env
+    toggle_more_menu(tracker, anchor)
+    root.update()
+    popup: MoreMenuPopup = tracker._more_menu_popup
+    event = tk.Event()
+    event.widget = popup.window
+    event.x_root = anchor.winfo_rootx() + 2
+    event.y_root = anchor.winfo_rooty() + 2
+    popup._on_global_click(event)
+    assert tracker._more_menu_popup is None
+
+
+def test_popup_x_clamped_to_root_window(more_menu_env):
+    tracker, anchor, root = more_menu_env
+    root.geometry("800x600+0+50")
+    anchor.pack_forget()
+    anchor.place(x=0, y=0)
+    root.update_idletasks()
+    toggle_more_menu(tracker, anchor)
+    root.update_idletasks()
+    popup: MoreMenuPopup = tracker._more_menu_popup
+    root_x = root.winfo_rootx()
+    assert popup.window.winfo_rootx() >= root_x
 
 
 def test_toggle_more_menu_singleton(more_menu_env):
