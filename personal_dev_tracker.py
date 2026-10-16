@@ -146,6 +146,7 @@ class PersonalDevelopmentTracker:
         self._shell_footer: ttk.Frame | None = None
         self._banner_host: ttk.Frame | None = None
         self._sidebar_slot: ttk.Frame | None = None
+        self._open_windows: dict[str, tk.Toplevel] = {}  # Track windows for raise-if-open
 
         if is_encrypted_file(DATA_FILE) and not prompt_vault_unlock(self):
             messagebox.showerror("Locked", "Cannot open encrypted journal without passphrase.")
@@ -1466,9 +1467,10 @@ class PersonalDevelopmentTracker:
         )
         self._date_label.pack(side=tk.RIGHT)
         
-        # Sidebar slot (empty for now, for #131)
+        # Sidebar (#131) - pack before content
         self._sidebar_slot = ttk.Frame(self._shell_frame)
-        # Not packed yet - will be used in #131
+        self._sidebar_slot.pack(side=tk.LEFT, fill=tk.Y)
+        self._build_sidebar()
         
         # Banner host (persistent, for Deep Work and future banners)
         self._banner_host = ttk.Frame(self._shell_frame)
@@ -1531,7 +1533,181 @@ class PersonalDevelopmentTracker:
         if not getattr(self, "_goto_shortcut_bound", False):
             self.root.bind_all("<Control-k>", lambda _e: self.show_goto())
             self.root.bind_all("<Control-K>", lambda _e: self.show_goto())
+            self.root.bind_all("<Control-R>", lambda _e: self.show_reflect())
+            self.root.bind_all("<Control-J>", lambda _e: self._raise_or_open("journal"))
+            self.root.bind_all("<Control-G>", lambda _e: self._raise_or_open("graphs"))
+            self.root.bind_all("<Control-I>", lambda _e: self.show_weekly_summary())
             self._goto_shortcut_bound = True
+
+    def _build_sidebar(self) -> None:
+        """Build the left sidebar navigation (#131)."""
+        from theme import FONTS
+        
+        theme = self.theme
+        sidebar_bg = theme.get("sidebar", theme["bg"])
+        
+        container = tk.Frame(self._sidebar_slot, bg=sidebar_bg, width=240)
+        container.pack(fill=tk.BOTH, expand=True)
+        container.pack_propagate(False)
+        
+        brand_frame = tk.Frame(container, bg=sidebar_bg)
+        brand_frame.pack(fill=tk.X, padx=16, pady=(16, 8))
+        brand_label = tk.Label(
+            brand_frame,
+            text="Integral",
+            bg=sidebar_bg,
+            fg=theme["fg"],
+            font=FONTS["brand"],
+        )
+        brand_label.pack(anchor="w")
+        tagline = tk.Label(
+            brand_frame,
+            text="Tend every area of your life",
+            bg=sidebar_bg,
+            fg=theme["muted"],
+            font=FONTS["caption"],
+        )
+        tagline.pack(anchor="w")
+        
+        nav_items = [
+            {"label": "Today", "action": lambda: self._raise_or_open("today"), "key": None},
+            {"label": "Fitness Hub", "action": lambda: self._raise_or_open("fitness"), "key": None},
+            {"label": "Reflect", "action": lambda: self.show_reflect(), "key": "Ctrl+Shift+R"},
+            {"label": "Journal", "action": lambda: self._raise_or_open("journal"), "key": "Ctrl+Shift+J"},
+            {"label": "Graphs & Progress", "action": lambda: self._raise_or_open("graphs"), "key": "Ctrl+Shift+G"},
+            {"label": "Weekly Summary", "action": lambda: self.show_weekly_summary(), "key": "Ctrl+Shift+I"},
+        ]
+        
+        nav_container = tk.Frame(container, bg=sidebar_bg)
+        nav_container.pack(fill=tk.BOTH, expand=True, pady=(8, 0))
+        
+        self._sidebar_nav_buttons = []
+        
+        for item in nav_items:
+            btn_frame = tk.Frame(nav_container, bg=sidebar_bg, height=36)
+            btn_frame.pack(fill=tk.X, padx=8, pady=1)
+            btn_frame.pack_propagate(False)
+            
+            btn = tk.Button(
+                btn_frame,
+                text=item["label"],
+                command=item["action"],
+                bg=sidebar_bg,
+                fg=theme["fg"],
+                font=FONTS["caption"],
+                relief=tk.FLAT,
+                cursor="hand2",
+                anchor="w",
+                padx=8,
+            )
+            btn.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            self._sidebar_nav_buttons.append(btn)
+            
+            def on_enter(e, b=btn):
+                if b["state"] != "disabled":
+                    b.configure(bg=theme["surface"])
+            
+            def on_leave(e, b=btn):
+                b.configure(bg=sidebar_bg)
+            
+            btn.bind("<Enter>", on_enter)
+            btn.bind("<Leave>", on_leave)
+        
+        goto_frame = tk.Frame(container, bg=sidebar_bg)
+        goto_frame.pack(fill=tk.X, padx=16, pady=(16, 8))
+        goto_btn = tk.Button(
+            goto_frame,
+            text="🔍 Go to…",
+            command=self.show_goto,
+            bg=theme["field_bg"],
+            fg=theme["muted"],
+            font=FONTS["caption"],
+            relief=tk.FLAT,
+            cursor="hand2",
+            anchor="w",
+            padx=8,
+        )
+        goto_btn.pack(fill=tk.X)
+        
+        hint_label = tk.Label(
+            goto_frame,
+            text="Ctrl+K",
+            bg=sidebar_bg,
+            fg=theme["muted"],
+            font=FONTS["hint"],
+        )
+        hint_label.pack(anchor="w", pady=(4, 0))
+        
+        more_frame = tk.Frame(container, bg=sidebar_bg)
+        more_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=8, pady=(0, 16))
+        more_btn = tk.Button(
+            more_frame,
+            text="⋯ More",
+            command=self.show_goto,
+            bg=sidebar_bg,
+            fg=theme["muted"],
+            font=FONTS["caption"],
+            relief=tk.FLAT,
+            cursor="hand2",
+            anchor="w",
+            padx=8,
+        )
+        more_btn.pack(fill=tk.X)
+
+    def _raise_or_open(self, window_key: str) -> None:
+        """Open a window or raise it if already open (#131)."""
+        existing = self._open_windows.get(window_key)
+        if existing is not None:
+            try:
+                if existing.winfo_exists():
+                    existing.lift()
+                    existing.focus_force()
+                    return
+            except tk.TclError:
+                pass
+            del self._open_windows[window_key]
+        
+        if window_key == "today":
+            self.root.lift()
+            self.root.focus_force()
+            if self._content_pane and self._content_pane.winfo_exists():
+                self._content_pane.focus_set()
+        elif window_key == "fitness":
+            self.show_fitness_hub()
+        elif window_key == "journal":
+            self.show_journal()
+        elif window_key == "graphs":
+            self.show_graphs()
+    
+    def _track_window(self, window_key: str, window: tk.Toplevel) -> None:
+        """Track a window for raise-if-open behavior. Wraps existing WM_DELETE_WINDOW."""
+        self._open_windows[window_key] = window
+        existing_handler = window.protocol("WM_DELETE_WINDOW")
+        
+        def on_close():
+            if window_key in self._open_windows:
+                del self._open_windows[window_key]
+            if existing_handler and callable(existing_handler):
+                try:
+                    window.call(existing_handler)
+                except tk.TclError:
+                    window.destroy()
+            else:
+                window.destroy()
+        window.protocol("WM_DELETE_WINDOW", on_close)
+
+    def show_reflect(self) -> None:
+        """Open Reflect: first unlogged domain or banner if all logged (#131)."""
+        first_unlogged = self.first_unlogged_category()
+        if first_unlogged:
+            self.open_log_dialog(first_unlogged)
+        else:
+            from tkinter import messagebox
+            messagebox.showinfo(
+                "All domains logged today",
+                "You've logged all life domains for today — great work!",
+                parent=self.root,
+            )
     
     def _build_content(self, *, recompute: bool = True) -> None:
         """Build or rebuild the content pane (Today's Log and Overview).
@@ -2314,7 +2490,19 @@ class PersonalDevelopmentTracker:
                 text.insert(tk.END, f"{item.get('body', '')}\n")
 
     def show_weekly_summary(self) -> None:
+        existing = self._open_windows.get("weekly_summary")
+        if existing is not None:
+            try:
+                if existing.winfo_exists():
+                    existing.lift()
+                    existing.focus_force()
+                    return
+            except tk.TclError:
+                pass
+            del self._open_windows["weekly_summary"]
+        
         window = tk.Toplevel(self.root)
+        self._track_window("weekly_summary", window)
         window.title("Weekly Summary")
         window.geometry("900x680")
         window.minsize(560, 400)
@@ -2405,7 +2593,26 @@ class PersonalDevelopmentTracker:
         show_milestones_dialog(self)
 
     def show_journal(self) -> None:
+        existing = self._open_windows.get("journal")
+        if existing is not None:
+            try:
+                if existing.winfo_exists():
+                    existing.lift()
+                    existing.focus_force()
+                    return
+            except tk.TclError:
+                pass
+            del self._open_windows["journal"]
+        
+        before_children = set(self.root.winfo_children())
         show_journal_window(self)
+        self.root.update_idletasks()
+        after_children = set(self.root.winfo_children())
+        new_windows = after_children - before_children
+        for child in new_windows:
+            if isinstance(child, tk.Toplevel):
+                self._track_window("journal", child)
+                break
 
     def set_quick_capture_enabled(self, enabled: bool, *, persist: bool = True) -> None:
         self.settings = quick_capture.apply_quick_capture_settings(
@@ -2944,8 +3151,19 @@ class PersonalDevelopmentTracker:
         run_search()
 
     def show_graphs(self) -> None:
+        existing = self._open_windows.get("graphs")
+        if existing is not None:
+            try:
+                if existing.winfo_exists():
+                    existing.lift()
+                    existing.focus_force()
+                    return
+            except tk.TclError:
+                pass
+            del self._open_windows["graphs"]
+        
         from graphs import open_graphs
-
+        before_children = set(self.root.winfo_children())
         open_graphs(
             self.root,
             self.entries,
@@ -2956,6 +3174,13 @@ class PersonalDevelopmentTracker:
             app_settings=self.settings,
             on_graph_settings_changed=self._save_graph_settings,
         )
+        self.root.update_idletasks()
+        after_children = set(self.root.winfo_children())
+        new_windows = after_children - before_children
+        for child in new_windows:
+            if isinstance(child, tk.Toplevel):
+                self._track_window("graphs", child)
+                break
 
     def _save_graph_settings(self, payload: dict) -> None:
         self.settings["graphs"] = payload.get("graphs", {})
@@ -3053,12 +3278,24 @@ class PersonalDevelopmentTracker:
         )
 
     def show_fitness_hub(self) -> None:
+        existing = self._open_windows.get("fitness")
+        if existing is not None:
+            try:
+                if existing.winfo_exists():
+                    existing.lift()
+                    existing.focus_force()
+                    return
+            except tk.TclError:
+                pass
+            del self._open_windows["fitness"]
+        
         import fitness_ui
 
         def on_fitness_settings_changed(updated: dict) -> None:
             self.settings["fitness"] = updated
             self.save_data(flush=True)
 
+        before_children = set(self.root.winfo_children())
         fitness_ui.show_fitness_window(
             self.root,
             on_session_saved=self._on_fitness_session_saved,
@@ -3067,6 +3304,13 @@ class PersonalDevelopmentTracker:
             on_fitness_settings_changed=on_fitness_settings_changed,
             on_log_practice=self.show_log_practice,
         )
+        self.root.update_idletasks()
+        after_children = set(self.root.winfo_children())
+        new_windows = after_children - before_children
+        for child in new_windows:
+            if isinstance(child, tk.Toplevel):
+                self._track_window("fitness", child)
+                break
 
     def show_workout_history(self) -> None:
         """Show workout history in a modal window."""
