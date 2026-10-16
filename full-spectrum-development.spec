@@ -74,6 +74,7 @@ a = Analysis(
         "todays_log",
         "category_picker",
         "goto_ui",
+        "more_menu_ui",
         "todos",
         "focus_shield",
         "autostart_windows",

@@ -112,7 +112,7 @@ User data: `%APPDATA%\Integral\data.json` (encrypted optional via Data & Securit
 
 | Area | Features |
 |------|----------|
-| **Left sidebar navigation** | 240px persistent sidebar with brand, tagline, and quick access to Today, Fitness Hub, Reflect, Journal, Graphs, Weekly Summary; **Go to…** search (Ctrl+K); keyboard shortcuts (Ctrl+Shift+R/J/G/I); **Reflect** opens the first unlogged domain or confirms all-logged; open windows raise-if-open instead of duplicate |
+| **Left sidebar navigation** | 240px persistent sidebar with brand, tagline, and quick access to Today, Fitness Hub, Reflect, Journal, Graphs, Weekly Summary; **Go to…** search (Ctrl+K); keyboard shortcuts (Ctrl+Shift+R/J/G/I); **Reflect** opens the first unlogged domain or confirms all-logged; open windows raise-if-open instead of duplicate; footer and sidebar **More…** opens a grouped popup (14 actions in VIEW / WORK MODES / DATA & SETTINGS) with ↑↓ Enter Esc, type-ahead, and shortcut hints where available |
 | **Life domains (18)** | Ratings, checklists, metrics, notes, streaks, guidance — **optional depth**; one check-in is enough; never scored as N/18 completeness; **Today's Log** inline todo (type + Enter for today, last-used category), one-tap **+ Todo / Log workout / Reflect**, Find filter + All/Unlogged/Logged, pin up to 5 favorites (right-click), and a **More…** menu |
 | **Go to…** | Command palette (footer or Ctrl+K) to jump to any screen or Log a domain by typing |
 | **Domain templates** | One-click starter packs (**Gut Healing**, **Personal Health & Alignment**) add a coherent set of pre-configured domains; applied from onboarding or the category editor, never overwriting existing domains |

@@ -108,3 +108,29 @@ DEEP_WORK_KEEP_NAV_LABELS = frozenset(
         "Quick Capture",
     }
 )
+
+# Grouped More menu (#130) — hide distractors; keep focus-friendly actions.
+DEEP_WORK_HIDDEN_MORE_LABELS = frozenset(
+    {
+        "Guidance",
+        "Full History",
+        "Search Notes",
+        "Milestones",
+        "Export",
+        "Backup",
+        "Edit Categories",
+        "Data & Security",
+        "Light Mode",
+        "Dark Mode",
+    }
+)
+
+DEEP_WORK_KEEP_MORE_LABELS = frozenset(
+    {
+        "Refresh",
+        "AI Insight",
+        "Quick Capture",
+        "Writing Projects",
+        "Deep Work",
+    }
+)
