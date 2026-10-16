@@ -82,8 +82,6 @@ SIDEBAR_NAV_LABELS: tuple[str, ...] = (
     "Weekly Summary",
 )
 
-GOTO_ONLY_LABELS: frozenset[str] = frozenset({"Plan Tomorrow", "Log Exercise"})
-
 THEME_LABEL_ALIASES: frozenset[str] = frozenset({"Dark Mode", "Light Mode"})
 
 
@@ -195,18 +193,6 @@ def reachable_surfaces_for_label(label: str) -> set[str]:
     if label in SIDEBAR_NAV_LABELS:
         return {"sidebar"}
     return set()
-
-
-def _more_menu_labels_flat(*, include_theme: bool = False) -> frozenset[str]:
-    labels: set[str] = set()
-    for group in MORE_GROUPS:
-        for item in group["items"]:
-            if item["id"] == "toggle_theme":
-                if include_theme:
-                    labels.update(THEME_LABEL_ALIASES)
-            else:
-                labels.add(str(item["label"]))
-    return frozenset(labels)
 
 
 def assert_legacy_features_reachable() -> None:
