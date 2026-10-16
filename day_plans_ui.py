@@ -58,7 +58,9 @@ def show_plan_window(tracker: "PersonalDevelopmentTracker", plan_date: str | Non
         style="OnSurfaceMuted.TLabel",
     ).pack(side=tk.LEFT)
 
-    outer, inner, _canvas = ui_scroll.make_scrollable_frame(body)
+    outer, inner, _canvas = ui_scroll.make_scrollable_frame(
+        body, theme=theme, chrome_bg=theme["bg"]
+    )
     outer.pack(fill=tk.BOTH, expand=True)
 
     ttk.Label(inner, text="Day intention", style="OnSurfaceSubheading.TLabel").pack(anchor="w", padx=4)
@@ -187,7 +189,9 @@ def show_plan_comparison_window(tracker: "PersonalDevelopmentTracker", date_str:
 
     scroll_host = ttk.Frame(win, padding=(16, 0, 16, 8))
     scroll_host.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
-    outer, inner, _canvas = ui_scroll.make_scrollable_frame(scroll_host)
+    outer, inner, _canvas = ui_scroll.make_scrollable_frame(
+        scroll_host, theme=theme, chrome_bg=theme["bg"]
+    )
     outer.pack(fill=tk.BOTH, expand=True)
 
     if comparison.get("day_intention"):

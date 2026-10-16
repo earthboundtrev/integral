@@ -91,6 +91,23 @@ SPACING = {
     "xxl": 32,
 }
 
+# System / Tk default backgrounds that must not appear on chrome widgets (#133).
+FORBIDDEN_CHROME_BACKGROUNDS = frozenset(
+    {
+        "#d9d9d9",
+        "#D9D9D9",
+        "white",
+        "#ffffff",
+        "#FFFFFF",
+        "SystemButtonFace",
+        "SystemWindow",
+        "#f0f0f0",
+        "#F0F0F0",
+    }
+)
+
+_CHROME_THEME_KEYS = ("bg", "surface", "sidebar", "surface_alt", "text_bg", "field_bg")
+
 CATEGORY_ACCENTS = {
     "Money/Freedom": "#3B82F6",
     "Career & Vocation": "#6366F1",
@@ -117,12 +134,76 @@ def get_theme(dark_mode: bool) -> dict:
     return DARK if dark_mode else LIGHT
 
 
+def is_forbidden_chrome_background(value: str | None) -> bool:
+    if not value:
+        return False
+    normalized = value.strip()
+    if normalized in FORBIDDEN_CHROME_BACKGROUNDS:
+        return True
+    if normalized.lower() in {c.lower() for c in FORBIDDEN_CHROME_BACKGROUNDS if c.startswith("#")}:
+        return True
+    return False
+
+
+def _remap_chrome_background(old_bg: str, theme: dict) -> str:
+    """Map a prior theme chrome colour to the equivalent token in the active theme."""
+    old_lower = old_bg.lower()
+    for token in _CHROME_THEME_KEYS:
+        for palette in (LIGHT, DARK):
+            candidate = palette.get(token)
+            if candidate is None:
+                continue
+            if candidate == old_bg or candidate.lower() == old_lower:
+                return theme[token]
+    if is_forbidden_chrome_background(old_bg):
+        return theme["bg"]
+    return old_bg
+
+
+def apply_tk_option_defaults(root: tk.Misc, theme: dict) -> None:
+    """Tcl option database defaults for plain tk widgets (§6.1)."""
+    priority = 20
+    options = {
+        "*Background": theme["bg"],
+        "*Foreground": theme["fg"],
+        "*selectBackground": theme["select_bg"],
+        "*selectForeground": theme["fg"],
+        "*insertBackground": theme["fg"],
+        "*highlightBackground": theme["card_border"],
+        "*highlightColor": theme["accent"],
+        "*Menu.background": theme["surface"],
+        "*Menu.foreground": theme["fg"],
+        "*Menu.activeBackground": theme["select_bg"],
+        "*Menu.activeForeground": theme["fg"],
+        "*Menu.disabledForeground": theme["disabled"],
+        "*Listbox.background": theme["text_bg"],
+        "*Listbox.foreground": theme["text_fg"],
+        "*Listbox.selectBackground": theme["select_bg"],
+        "*Listbox.selectForeground": theme["fg"],
+        "*Text.background": theme["text_bg"],
+        "*Text.foreground": theme["text_fg"],
+        "*Text.selectBackground": theme["select_bg"],
+        "*Text.insertBackground": theme["fg"],
+        "*Entry.background": theme["field_bg"],
+        "*Entry.foreground": theme["fg"],
+        "*Entry.insertBackground": theme["fg"],
+        "*Canvas.background": theme["bg"],
+        "*TCombobox*Listbox.background": theme["surface"],
+        "*TCombobox*Listbox.foreground": theme["fg"],
+        "*TCombobox*Listbox.selectBackground": theme["select_bg"],
+        "*TCombobox*Listbox.selectForeground": theme["fg"],
+    }
+    for pattern, value in options.items():
+        root.option_add(pattern, value, priority)
+
+
 def category_accent(category_name: str) -> str:
     return CATEGORY_ACCENTS.get(category_name, LIGHT["accent"])
 
 
 def apply_theme(root: tk.Misc, theme: dict) -> None:
     root.configure(bg=theme["bg"])
+    apply_tk_option_defaults(root, theme)
     style = ttk.Style(root)
     try:
         style.theme_use("clam")
@@ -207,8 +288,38 @@ def apply_theme(root: tk.Misc, theme: dict) -> None:
         "TCombobox",
         fieldbackground=surface,
         background=surface,
+        foreground=fg,
+        arrowcolor=fg,
+        bordercolor=theme["card_border"],
         padding=4,
     )
+    style.map(
+        "TCombobox",
+        fieldbackground=[("readonly", surface), ("disabled", theme["surface_alt"])],
+        selectbackground=[("readonly", theme["select_bg"])],
+        selectforeground=[("readonly", fg)],
+    )
+    style.configure(
+        "TCombobox.Listbox",
+        background=surface,
+        foreground=fg,
+        selectbackground=theme["select_bg"],
+        selectforeground=fg,
+        borderwidth=0,
+    )
+    for orient, name in (("vertical", "Vertical"), ("horizontal", "Horizontal")):
+        style.configure(
+            f"{name}.TScrollbar",
+            background=theme["surface_alt"],
+            troughcolor=bg,
+            bordercolor=theme["card_border"],
+            arrowcolor=fg,
+            relief="flat",
+        )
+        style.map(
+            f"{name}.TScrollbar",
+            background=[("active", theme["card_border"]), ("pressed", theme["card_border"])],
+        )
     style.configure(
         "Horizontal.TProgressbar",
         troughcolor=theme["surface_alt"],
@@ -235,6 +346,7 @@ def apply_theme(root: tk.Misc, theme: dict) -> None:
     )
     style.map("Treeview", background=[("selected", theme["select_bg"])], foreground=[("selected", fg)])
     style.configure("TSeparator", background=theme["card_border"])
+    reapply_theme_subtree(root, theme)
 
 
 def configure_fitness_tree_tags(tree: ttk.Treeview, theme: dict) -> None:
@@ -299,33 +411,150 @@ def streak_badge(
     return frame
 
 
-def style_text_widget(widget: tk.Text, theme: dict) -> None:
+def reapply_text_widget_colors(widget: tk.Text, theme: dict) -> None:
+    """Update Text colours only — preserves layout from initial style_text_widget."""
     widget.configure(
         bg=theme["text_bg"],
         fg=theme["text_fg"],
         insertbackground=theme["fg"],
         selectbackground=theme["select_bg"],
-        relief=tk.FLAT,
-        highlightthickness=1,
+        selectforeground=theme["fg"],
         highlightbackground=theme["card_border"],
         highlightcolor=theme["accent"],
+    )
+
+
+def style_text_widget(widget: tk.Text, theme: dict) -> None:
+    reapply_text_widget_colors(widget, theme)
+    widget.configure(
+        relief=tk.FLAT,
+        highlightthickness=1,
         font=FONTS["body"],
         padx=8,
         pady=8,
     )
 
 
-def style_listbox(widget: tk.Listbox, theme: dict) -> None:
+def reapply_listbox_colors(widget: tk.Listbox, theme: dict) -> None:
+    """Update Listbox colours only — preserves layout from initial style_listbox."""
     widget.configure(
         bg=theme["text_bg"],
         fg=theme["text_fg"],
         selectbackground=theme["select_bg"],
         selectforeground=theme["fg"],
+    )
+
+
+def style_listbox(widget: tk.Listbox, theme: dict) -> None:
+    reapply_listbox_colors(widget, theme)
+    widget.configure(
         highlightthickness=0,
         borderwidth=1,
         font=FONTS["body"],
     )
 
 
-def style_canvas(widget: tk.Canvas, theme: dict) -> None:
-    widget.configure(bg=theme["bg"], highlightthickness=0)
+def style_canvas(widget: tk.Canvas, theme: dict, *, bg: str | None = None) -> None:
+    widget.configure(bg=bg or theme["bg"], highlightthickness=0)
+
+
+def style_menu(menu: tk.Menu, theme: dict) -> None:
+    menu.configure(
+        bg=theme["surface"],
+        fg=theme["fg"],
+        activebackground=theme["select_bg"],
+        activeforeground=theme["fg"],
+        disabledforeground=theme["disabled"],
+        borderwidth=0,
+        relief=tk.FLAT,
+    )
+
+
+def apply_scroll_chrome(
+    outer: tk.Misc,
+    inner: tk.Misc,
+    canvas: tk.Canvas,
+    theme: dict,
+    *,
+    bg: str | None = None,
+) -> None:
+    """Style plain tk scroll hosts (Frames + Canvas) to match the active theme."""
+    fill = bg or theme["bg"]
+    for widget in (outer, inner):
+        try:
+            widget.configure(bg=fill, highlightthickness=0)
+        except tk.TclError:
+            pass
+    style_canvas(canvas, theme, bg=fill)
+
+
+def _reapply_tk_widget(widget: tk.Misc, theme: dict) -> None:
+    cls = widget.winfo_class()
+    try:
+        if cls == "Canvas":
+            current = widget.cget("bg")
+            bg = _remap_chrome_background(current, theme)
+            style_canvas(widget, theme, bg=bg)
+        elif cls == "Text":
+            reapply_text_widget_colors(widget, theme)
+        elif cls == "Listbox":
+            reapply_listbox_colors(widget, theme)
+        elif cls == "Menu":
+            style_menu(widget, theme)
+        elif cls == "Entry":
+            widget.configure(
+                bg=theme["field_bg"],
+                fg=theme["fg"],
+                insertbackground=theme["fg"],
+                selectbackground=theme["select_bg"],
+                selectforeground=theme["fg"],
+                highlightbackground=theme["card_border"],
+                highlightcolor=theme["accent"],
+            )
+        elif cls in ("Frame", "Label"):
+            current = widget.cget("bg")
+            if is_forbidden_chrome_background(current) or current in {
+                LIGHT[k] for k in _CHROME_THEME_KEYS
+            } | {DARK[k] for k in _CHROME_THEME_KEYS}:
+                widget.configure(bg=_remap_chrome_background(current, theme), highlightthickness=0)
+            if cls == "Label":
+                fg = widget.cget("fg")
+                if fg in (LIGHT["fg"], DARK["fg"]):
+                    widget.configure(fg=theme["fg"])
+                elif fg in (LIGHT["muted"], DARK["muted"]):
+                    widget.configure(fg=theme["muted"])
+    except tk.TclError:
+        return
+
+
+def reapply_theme_subtree(root: tk.Misc, theme: dict) -> None:
+    """Live re-theme for plain tk widgets under root (§6.3).
+
+    Skips ``Toplevel`` children of the main ``Tk`` — Q10 retrhemes those explicitly.
+    """
+    _reapply_tk_widget(root, theme)
+    skip_toplevels = isinstance(root, tk.Tk)
+    for child in root.winfo_children():
+        if skip_toplevels and isinstance(child, tk.Toplevel):
+            continue
+        reapply_theme_subtree(child, theme)
+
+
+def collect_forbidden_backgrounds(root: tk.Misc) -> list[tuple[str, str, str]]:
+    """Return (widget_path, class, bg) for widgets using forbidden chrome backgrounds."""
+    hits: list[tuple[str, str, str]] = []
+
+    def walk(widget: tk.Misc) -> None:
+        cls = widget.winfo_class()
+        if cls in ("Frame", "Canvas", "Label", "Listbox", "Text", "Entry"):
+            try:
+                bg = widget.cget("bg")
+            except tk.TclError:
+                bg = ""
+            if is_forbidden_chrome_background(bg):
+                hits.append((str(widget), cls, bg))
+        for child in widget.winfo_children():
+            walk(child)
+
+    walk(root)
+    return hits

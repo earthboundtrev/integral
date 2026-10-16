@@ -86,6 +86,9 @@ def _mock_tracker_init(self, root):
     self._shell_footer = None
     self._banner_host = None
     self._sidebar_slot = None
+    self._theme_reopen_banner = None
+    self._open_windows = {}
+    self._goto_window = None
 
 
 def _count_widgets_recursive(widget):

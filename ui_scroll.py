@@ -232,7 +232,14 @@ def configure_treeview_scroll(tree) -> None:
     bind_mousewheel(tree, tree.yview)
 
 
-def make_horizontal_scroll_row(parent, *, height: int = 44, overflow_hint: str = "Scroll for more →"):
+def make_horizontal_scroll_row(
+    parent,
+    *,
+    height: int = 44,
+    overflow_hint: str = "Scroll for more →",
+    chrome_bg=None,
+    theme=None,
+):
     """
     Horizontal strip for toolbars that overflow on narrow windows.
 
@@ -254,6 +261,12 @@ def make_horizontal_scroll_row(parent, *, height: int = 44, overflow_hint: str =
     viewport.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
     canvas = tk.Canvas(viewport, height=height, highlightthickness=0, bd=0)
+    if theme is not None:
+        from theme import style_canvas
+
+        style_canvas(canvas, theme, bg=chrome_bg)
+    elif chrome_bg is not None:
+        canvas.configure(bg=chrome_bg, highlightthickness=0)
     scrollbar = ttk.Scrollbar(viewport, orient=tk.HORIZONTAL)
     inner = ttk.Frame(canvas)
     window_id = canvas.create_window((0, 0), window=inner, anchor="nw")
@@ -373,6 +386,8 @@ def make_bounded_vertical_scroll(
     *,
     max_height: int,
     overflow_hint: str = "↓ Scroll for more",
+    chrome_bg=None,
+    theme=None,
 ):
     """
     Vertical scroll area with a fixed max height and an overflow hint label.
@@ -383,7 +398,12 @@ def make_bounded_vertical_scroll(
     hint = ttk.Label(wrapper, text="", style="Muted.TLabel")
     hint.pack(side=tk.BOTTOM, anchor="e", pady=(2, 0))
 
-    outer, inner, canvas = make_scrollable_frame(wrapper, height=max_height)
+    outer, inner, canvas = make_scrollable_frame(
+        wrapper,
+        height=max_height,
+        chrome_bg=chrome_bg,
+        theme=theme,
+    )
     outer.pack(fill=tk.X, expand=False)
 
     scrollbar = next((w for w in outer.winfo_children() if isinstance(w, ttk.Scrollbar)), None)
@@ -442,7 +462,7 @@ def make_bounded_vertical_scroll(
     return wrapper, inner, canvas
 
 
-def make_scrollable_frame(parent, *, width=None, height=None):
+def make_scrollable_frame(parent, *, width=None, height=None, chrome_bg=None, theme=None):
     """
     Return (outer_frame, inner_frame, canvas).
     Pack/grid widgets into inner_frame; outer_frame fills the parent.
@@ -479,6 +499,15 @@ def make_scrollable_frame(parent, *, width=None, height=None):
 
     canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
     scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+    if theme is not None:
+        from theme import apply_scroll_chrome
+
+        apply_scroll_chrome(outer, inner, canvas, theme, bg=chrome_bg)
+    elif chrome_bg is not None:
+        for widget in (outer, inner):
+            widget.configure(bg=chrome_bg, highlightthickness=0)
+        canvas.configure(bg=chrome_bg, highlightthickness=0)
 
     return outer, inner, canvas
 
@@ -517,7 +546,7 @@ def create_dialog_shell(
     scroll_host = ttk.Frame(dialog)
     scroll_host.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
-    outer, inner, canvas = make_scrollable_frame(scroll_host)
+    outer, inner, canvas = make_scrollable_frame(scroll_host, theme={"bg": bg} if bg else None, chrome_bg=bg)
     outer.pack(fill=tk.BOTH, expand=True)
 
     def refresh_scroll() -> None:

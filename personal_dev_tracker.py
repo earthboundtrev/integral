@@ -52,9 +52,11 @@ from theme import (
     category_accent,
     get_theme,
     make_card,
+    reapply_theme_subtree,
     streak_badge,
     style_canvas,
     style_listbox,
+    style_menu,
     style_text_widget,
 )
 import ui_scroll
@@ -146,6 +148,7 @@ class PersonalDevelopmentTracker:
         self._shell_footer: ttk.Frame | None = None
         self._banner_host: ttk.Frame | None = None
         self._sidebar_slot: ttk.Frame | None = None
+        self._theme_reopen_banner: ttk.Frame | None = None
         self._open_windows: dict[str, tk.Toplevel] = {}  # Track windows for raise-if-open
 
         if is_encrypted_file(DATA_FILE) and not prompt_vault_unlock(self):
@@ -470,6 +473,78 @@ class PersonalDevelopmentTracker:
         self._theme_dark = dark
         self.theme = get_theme(dark)
         apply_theme(self.root, self.theme)
+        self._retheme_open_windows()
+
+    def _retheme_open_windows(self) -> None:
+        """Live re-theme for Q10 popups (Go to… palette) after a theme change (#133)."""
+        goto = getattr(self, "_goto_window", None)
+        if goto is None:
+            return
+        try:
+            if not goto.winfo_exists():
+                return
+            goto.configure(bg=self.theme["bg"])
+            reapply_theme_subtree(goto, self.theme)
+        except tk.TclError:
+            return
+
+    def _other_open_toplevels(self) -> list[tk.Toplevel]:
+        """Open Toplevels that are not live-rethemed per Q10 (Go to… only)."""
+        goto = getattr(self, "_goto_window", None)
+        others: list[tk.Toplevel] = []
+        for child in self.root.winfo_children():
+            if not isinstance(child, tk.Toplevel):
+                continue
+            try:
+                if not child.winfo_exists():
+                    continue
+            except tk.TclError:
+                continue
+            if child is goto:
+                continue
+            others.append(child)
+        return others
+
+    def _ensure_theme_reopen_banner(self) -> None:
+        host = self._banner_host
+        if host is None:
+            return
+        if self._theme_reopen_banner is not None:
+            try:
+                if self._theme_reopen_banner.winfo_exists():
+                    return
+            except tk.TclError:
+                self._theme_reopen_banner = None
+        banner = ttk.Frame(host)
+        ttk.Label(
+            banner,
+            text="Reopen other windows to apply the theme.",
+            style="Muted.TLabel",
+        ).pack(side=tk.LEFT)
+        ttk.Button(banner, text="Dismiss", command=self._dismiss_theme_reopen_banner).pack(
+            side=tk.RIGHT, padx=(8, 0)
+        )
+        self._theme_reopen_banner = banner
+
+    def _dismiss_theme_reopen_banner(self) -> None:
+        banner = getattr(self, "_theme_reopen_banner", None)
+        if banner is None:
+            return
+        try:
+            banner.pack_forget()
+        except tk.TclError:
+            pass
+
+    def _update_theme_reopen_banner(self) -> None:
+        if not self._other_open_toplevels():
+            self._dismiss_theme_reopen_banner()
+            return
+        self._ensure_theme_reopen_banner()
+        if self._theme_reopen_banner is not None:
+            try:
+                self._theme_reopen_banner.pack(fill=tk.X, pady=(0, 8))
+            except tk.TclError:
+                pass
 
     def _invalidate_caches(self) -> None:
         self._insights_cache = None
@@ -540,9 +615,15 @@ class PersonalDevelopmentTracker:
         self.save_data()
         # Force full shell rebuild for theme changes (chrome colors + mode button label)
         if self._shell_frame is not None:
-            self._shell_frame.destroy()
+            try:
+                self._shell_frame.destroy()
+            except tk.TclError:
+                pass
             self._shell_frame = None
         self.create_dashboard()
+        self.sync_quick_capture_panel()
+        self._retheme_open_windows()
+        self._update_theme_reopen_banner()
 
     def merge_categories_with_defaults(self, stored: dict | None) -> dict:
         defaults = self.get_default_categories()
@@ -1081,6 +1162,8 @@ class PersonalDevelopmentTracker:
             log_bar,
             height=40,
             overflow_hint="Scroll for more →",
+            theme=self.theme,
+            chrome_bg=self.theme["surface"],
         )
         actions_host.pack(fill=tk.X, pady=(0, 4))
         next_cat = self.first_unlogged_category()
@@ -1109,6 +1192,7 @@ class PersonalDevelopmentTracker:
 
         more = ttk.Menubutton(actions, text="More…")
         more_menu = tk.Menu(more, tearoff=0)
+        style_menu(more_menu, self.theme)
         more_menu.add_command(label="Go to…", command=self.show_goto)
         more_menu.add_separator()
         more_menu.add_command(label="Writing Projects", command=self.show_writing_projects)
@@ -1180,6 +1264,8 @@ class PersonalDevelopmentTracker:
             cat_scroll_host,
             max_height=252,
             overflow_hint="↓ Scroll for more categories",
+            theme=self.theme,
+            chrome_bg=self.theme["surface"],
         )
         _cat_wrap.pack(fill=tk.X)
         match_hint = ttk.Label(log_bar, text="", style="OnSurfaceMuted.TLabel")
@@ -1212,6 +1298,7 @@ class PersonalDevelopmentTracker:
 
             def pin_menu(event, cat: str) -> None:
                 menu = tk.Menu(btn_row, tearoff=0)
+                style_menu(menu, self.theme)
                 if cat in pin_set:
                     menu.add_command(
                         label="Unpin domain",
@@ -1365,8 +1452,7 @@ class PersonalDevelopmentTracker:
 
     def create_dashboard(self) -> None:
         self._dashboard_ready = False
-        self._close_streak_details_window()
-        
+
         # Check if theme changed (for backup restore with different dark_mode)
         theme_changed = self._theme_dark != self.settings.get("dark_mode", False)
         
@@ -1377,8 +1463,10 @@ class PersonalDevelopmentTracker:
         self.apply_current_theme(force=True)
         
         if needs_shell:
-            # Full teardown and shell creation
+            # Full teardown and shell creation (preserve open Toplevels — Q10 / #133 AC3)
             for widget in self.root.winfo_children():
+                if isinstance(widget, tk.Toplevel):
+                    continue
                 widget.destroy()
             self._deep_work_banner = None
             self._deep_work_timer_label = None
@@ -1487,6 +1575,8 @@ class PersonalDevelopmentTracker:
         nav_host, nav, _nav_canvas = ui_scroll.make_horizontal_scroll_row(
             self._shell_footer,
             overflow_hint="Scroll for more →",
+            theme=self.theme,
+            chrome_bg=self.theme["bg"],
         )
         nav_host.pack(fill=tk.X)
         
@@ -1797,8 +1887,7 @@ class PersonalDevelopmentTracker:
         self.root.after_idle(chunk_1_setup)
 
     def _build_overview_tab(self, parent: ttk.Frame) -> None:
-        outer, main, canvas = ui_scroll.make_scrollable_frame(parent)
-        style_canvas(canvas, self.theme)
+        outer, main, canvas = ui_scroll.make_scrollable_frame(parent, theme=self.theme, chrome_bg=self.theme["bg"])
         outer.pack(fill=tk.BOTH, expand=True)
 
         main.columnconfigure(0, weight=1)
@@ -1855,8 +1944,7 @@ class PersonalDevelopmentTracker:
         self._render_guidance_panel(main, row=3)
 
     def _build_categories_tab(self, parent: ttk.Frame) -> None:
-        outer, main, canvas = ui_scroll.make_scrollable_frame(parent)
-        style_canvas(canvas, self.theme)
+        outer, main, canvas = ui_scroll.make_scrollable_frame(parent, theme=self.theme, chrome_bg=self.theme["bg"])
         outer.pack(fill=tk.BOTH, expand=True)
 
         main.columnconfigure(0, weight=1)
@@ -2066,7 +2154,9 @@ class PersonalDevelopmentTracker:
 
         scroll_host = ttk.Frame(window)
         scroll_host.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=15, pady=(0, 15))
-        outer, scroll_frame, _canvas = ui_scroll.make_scrollable_frame(scroll_host)
+        outer, scroll_frame, _canvas = ui_scroll.make_scrollable_frame(
+            scroll_host, theme=self.theme, chrome_bg=self.theme["bg"]
+        )
         outer.pack(fill=tk.BOTH, expand=True)
 
         row = 0
@@ -2215,7 +2305,9 @@ class PersonalDevelopmentTracker:
         footer_btns = ttk.Frame(footer)
         footer_btns.pack(fill=tk.X)
 
-        outer, inner, _canvas = ui_scroll.make_scrollable_frame(dialog)
+        outer, inner, _canvas = ui_scroll.make_scrollable_frame(
+            dialog, theme=self.theme, chrome_bg=self.theme["bg"]
+        )
         outer.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
         notes_text = scrolledtext.ScrolledText(inner, height=10, width=62, wrap=tk.WORD, font=("Helvetica", 11))
@@ -3275,6 +3367,7 @@ class PersonalDevelopmentTracker:
             initial_date=target,
             on_session_saved=self._on_fitness_session_saved,
             fitness_settings=self.settings.get("fitness"),
+            theme=self.theme,
         )
 
     def show_fitness_hub(self) -> None:
@@ -3400,7 +3493,9 @@ class PersonalDevelopmentTracker:
         editor_host.grid(row=0, column=1, sticky="nsew")
         editor_host.rowconfigure(0, weight=1)
         editor_host.columnconfigure(0, weight=1)
-        outer, editor_panel, _canvas = ui_scroll.make_scrollable_frame(editor_host)
+        outer, editor_panel, _canvas = ui_scroll.make_scrollable_frame(
+            editor_host, theme=self.theme, chrome_bg=self.theme["bg"]
+        )
         outer.grid(row=0, column=0, sticky="nsew")
 
         ttk.Label(editor_panel, text="Category name").grid(row=0, column=0, sticky="w")

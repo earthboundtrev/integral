@@ -120,13 +120,18 @@ def mount_live_exercise_search(
     height: int = 8,
     focus: bool = True,
     on_selection_change=None,
+    theme=None,
 ) -> dict:
     """Search-as-you-type exercise picker; filters on every keystroke."""
     import tkinter as tk
     from tkinter import ttk
 
     import fitness_programs
+    import theme as app_theme
     import ui_scroll
+
+    if theme is None:
+        theme = app_theme.get_theme(False)
 
     container = ttk.Frame(parent)
     search_var = tk.StringVar(value="")
@@ -142,6 +147,7 @@ def mount_live_exercise_search(
     list_frame = ttk.Frame(container)
     list_frame.pack(fill=tk.BOTH, expand=True)
     listbox = tk.Listbox(list_frame, height=height, activestyle="dotbox", exportselection=False)
+    app_theme.style_listbox(listbox, theme)
     scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=listbox.yview)
     listbox.configure(yscrollcommand=scrollbar.set)
     listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -491,10 +497,12 @@ def open_log_dialog_for_exercise(
     *,
     session_date: str | None = None,
     fitness_settings: dict | None = None,
+    theme=None,
 ):
     import tkinter as tk
     from tkinter import messagebox, scrolledtext, ttk
 
+    import theme as app_theme
     import ui_scroll
     from progression.advancement import format_advancement_hint
     from progression.engine import exercise_log_allowed
@@ -504,6 +512,9 @@ def open_log_dialog_for_exercise(
     exercise = repo.get_exercise(exercise_id)
     if exercise is None:
         return
+
+    if theme is None:
+        theme = app_theme.get_theme(False)
 
     settings = fitness_settings or getattr(repo, "fitness_settings", None) or {}
     if not exercise_log_allowed(repo, exercise_id, fitness_settings=settings):
@@ -522,6 +533,7 @@ def open_log_dialog_for_exercise(
     dialog.minsize(420, 480)
     dialog.transient(parent)
     dialog.grab_set()
+    dialog.configure(bg=theme["bg"])
 
     footer = ttk.Frame(dialog, padding=10)
     footer.pack(side=tk.BOTTOM, fill=tk.X)
@@ -529,7 +541,9 @@ def open_log_dialog_for_exercise(
     footer_btns = ttk.Frame(footer)
     footer_btns.pack(fill=tk.X)
 
-    outer, inner, _canvas = ui_scroll.make_scrollable_frame(dialog)
+    outer, inner, _canvas = ui_scroll.make_scrollable_frame(
+        dialog, theme=theme, chrome_bg=theme["bg"]
+    )
     outer.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
     ttk.Label(inner, text=exercise.name, font=("Helvetica", 12, "bold")).pack(pady=8, padx=12)
@@ -672,12 +686,17 @@ def open_new_session_dialog(
     on_session_saved=None,
     on_after_save=None,
     fitness_settings: dict | None = None,
+    theme=None,
 ):
     """Open the multi-exercise workout session logger (usable outside Fitness Hub)."""
     import tkinter as tk
     from tkinter import messagebox, ttk
 
+    import theme as app_theme
     import ui_scroll
+
+    if theme is None:
+        theme = app_theme.get_theme(False)
 
     dialog = tk.Toplevel(parent)
     dialog.title("Log Exercise Session")
@@ -685,11 +704,14 @@ def open_new_session_dialog(
     dialog.minsize(500, 520)
     dialog.transient(parent)
     dialog.grab_set()
+    dialog.configure(bg=theme["bg"])
 
     btn_row = ttk.Frame(dialog, padding=10)
     btn_row.pack(side=tk.BOTTOM, fill=tk.X)
 
-    outer, inner, _canvas = ui_scroll.make_scrollable_frame(dialog)
+    outer, inner, _canvas = ui_scroll.make_scrollable_frame(
+        dialog, theme=theme, chrome_bg=theme["bg"]
+    )
     outer.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
     date_var = tk.StringVar(value=initial_date or datetime.now().strftime("%Y-%m-%d"))
@@ -790,6 +812,7 @@ def open_new_session_dialog(
         exercise_rows,
         height=9,
         on_selection_change=on_exercise_picked,
+        theme=theme,
     )
     picker_ref["picker"] = picker
     picker["container"].pack(fill=tk.BOTH, expand=True, pady=(0, 8))
@@ -824,6 +847,7 @@ def open_new_session_dialog(
 
     ttk.Label(form, text="Queued sets (this session)").pack(anchor="w", pady=(8, 2))
     preview = tk.Listbox(form, height=6, exportselection=False)
+    app_theme.style_listbox(preview, theme)
     preview.pack(fill=tk.BOTH, expand=True, pady=(0, 4))
     ui_scroll.bind_mousewheel(preview, preview.yview)
 
@@ -949,7 +973,6 @@ def show_fitness_window(
 
     if theme is None:
         theme = app_theme.get_theme(False)
-        app_theme.apply_theme(root, theme)
 
     win = tk.Toplevel(root)
     win.title("Fitness Hub")
@@ -966,6 +989,7 @@ def show_fitness_window(
         footer,
         height=40,
         overflow_hint="Scroll for more →",
+        theme=theme,
     )
     nav_host.pack(fill=tk.X)
 
@@ -1160,6 +1184,7 @@ def show_fitness_window(
             on_saved=refresh_list,
             on_session_saved=on_session_saved,
             fitness_settings=settings,
+            theme=theme,
         )
 
     def open_selected_video():
@@ -1180,6 +1205,7 @@ def show_fitness_window(
             repo,
             on_session_saved=on_session_saved,
             fitness_settings=settings,
+            theme=theme,
         )
 
     def open_fitness_settings():
@@ -1328,6 +1354,7 @@ def show_fitness_window(
             on_session_saved=on_session_saved,
             on_after_save=refresh_list,
             fitness_settings=settings,
+            theme=theme,
         )
 
     _workout_history_window = [None]  # Mutable to capture in closures

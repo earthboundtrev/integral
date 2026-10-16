@@ -158,11 +158,11 @@ def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
     scroll_host = ttk.Frame(win)
     scroll_host.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
-    outer, inner, canvas = ui_scroll.make_scrollable_frame(scroll_host)
-    # Dark-theme ttk labels are light; unstyled tk.Canvas defaults to SystemButtonFace.
-    style_canvas(canvas, theme)
-    outer.configure(bg=theme["bg"])
-    inner.configure(bg=theme["bg"])
+    outer, inner, canvas = ui_scroll.make_scrollable_frame(
+        scroll_host,
+        theme=theme,
+        chrome_bg=theme["bg"],
+    )
     outer.pack(fill=tk.BOTH, expand=True)
 
     pad = ttk.Frame(inner, padding=12)
