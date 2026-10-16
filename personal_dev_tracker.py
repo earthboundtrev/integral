@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import threading
+import time
 import tkinter as tk
 from datetime import datetime, timedelta
 from tkinter import messagebox, scrolledtext, simpledialog, ttk
 
 from activity_grid import ContributionGrid
+from busy_indicator import BusyIndicator
 import day_plans
 from day_plans_ui import show_plan_comparison_window, show_plan_window
 from day_watch import DayWatch
@@ -66,6 +69,16 @@ from todays_log import (
 )
 
 DATA_FILE = data_file()
+
+# Environment variables for debugging and performance measurement (issue #135)
+DEBUG_DELAY_MS = int(os.environ.get("INTEGRAL_DEBUG_DELAY_MS", "0"))
+PERF_LOGGING = os.environ.get("INTEGRAL_PERF", "").lower() in ("1", "true", "yes")
+
+
+def _perf_log(message: str) -> None:
+    """Log performance message if INTEGRAL_PERF=1."""
+    if PERF_LOGGING:
+        print(f"[PERF {time.time():.3f}] {message}", file=sys.stderr, flush=True)
 
 
 class PersonalDevelopmentTracker:
@@ -1518,29 +1531,91 @@ class PersonalDevelopmentTracker:
             self._goto_shortcut_bound = True
     
     def _build_content(self, *, recompute: bool = True) -> None:
-        """Build or rebuild the content pane (Today's Log and Overview)."""
+        """Build or rebuild the content pane (Today's Log and Overview).
+        
+        Issue #135: Chunked build with BusyIndicator (180ms delay).
+        """
         if self._content_pane is None or not self._content_pane.winfo_exists():
             return
         
-        # Save focus widget path for restoration
         focused_widget = self.root.focus_get()
         focused_path = str(focused_widget) if focused_widget else None
         
-        # Clear existing content
         for child in self._content_pane.winfo_children():
             child.destroy()
         
-        # Build Today's Log bar
-        self.create_todays_log_bar()
+        build_start_time = time.time()
+        _perf_log("Content build started")
         
-        # Recompute insights if requested
-        if recompute:
-            self._invalidate_caches()
-            self.insights = self._get_insights()
+        busy = BusyIndicator(
+            self._content_pane,
+            label="Loading today's log…",
+            theme=self.theme,
+            delay_ms=180,
+        )
         
-        # Restore focus to content's first control if prior focus was in content
-        if focused_path and focused_path.startswith(str(self._content_pane)):
-            self.root.after(10, lambda: self._restore_content_focus())
+        if DEBUG_DELAY_MS > 0:
+            _perf_log(f"Applying debug delay: {DEBUG_DELAY_MS}ms")
+        
+        busy.start()
+        
+        chunk_times = []
+        
+        def chunk_1_setup():
+            chunk_start = time.time()
+            if recompute:
+                self._invalidate_caches()
+                self.insights = self._get_insights()
+            chunk_times.append(("setup", time.time() - chunk_start))
+            if DEBUG_DELAY_MS > 0:
+                self.root.after(DEBUG_DELAY_MS, chunk_2_build_log_bar)
+            else:
+                self.root.after_idle(chunk_2_build_log_bar)
+        
+        def chunk_2_build_log_bar():
+            chunk_start = time.time()
+            try:
+                self.create_todays_log_bar()
+            except Exception as e:
+                busy.stop()
+                _show_build_error(e)
+                return
+            chunk_times.append(("log_bar", time.time() - chunk_start))
+            self.root.after_idle(chunk_3_finalize)
+        
+        def chunk_3_finalize():
+            chunk_start = time.time()
+            if focused_path and focused_path.startswith(str(self._content_pane)):
+                self.root.after(10, lambda: self._restore_content_focus())
+            chunk_times.append(("finalize", time.time() - chunk_start))
+            busy.stop()
+            total_time = time.time() - build_start_time
+            _perf_log(f"Content build complete: {total_time*1000:.1f}ms total")
+            for name, duration in chunk_times:
+                _perf_log(f"  - {name}: {duration*1000:.1f}ms")
+        
+        def _show_build_error(error):
+            error_frame = ttk.Frame(self._content_pane, style="Surface.TFrame")
+            error_frame.pack(fill=tk.BOTH, expand=True, padx=16, pady=16)
+            ttk.Label(
+                error_frame,
+                text="Couldn't load today's log.",
+                style="OnSurfaceError.TLabel",
+            ).pack(pady=(0, 8))
+            ttk.Label(
+                error_frame,
+                text=str(error),
+                style="OnSurfaceMuted.TLabel",
+                wraplength=600,
+            ).pack(pady=(0, 16))
+            ttk.Button(
+                error_frame,
+                text="Retry",
+                command=lambda: self.refresh_dashboard(full=False, recompute=True),
+            ).pack()
+            messagebox.showerror("Build Error", f"Couldn't load today's log:\n\n{error}")
+        
+        self.root.after_idle(chunk_1_setup)
 
     def _build_overview_tab(self, parent: ttk.Frame) -> None:
         outer, main, canvas = ui_scroll.make_scrollable_frame(parent)
