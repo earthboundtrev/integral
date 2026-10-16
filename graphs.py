@@ -471,18 +471,23 @@ class GraphWindow:
             if self._dashboard_refresh is not None:
                 self._dashboard_refresh()
 
-        ttk.Button(footer, text="Cancel", command=dialog.destroy).pack(side=tk.RIGHT, padx=(8, 0))
+        cancel_panels_btn = ttk.Button(footer, text="Cancel", command=dialog.destroy)
+        cancel_panels_btn.pack(side=tk.RIGHT, padx=(8, 0))
         ttk.Button(
             footer,
             text="Use auto layout",
             command=lambda: apply_selection(use_auto=True),
         ).pack(side=tk.RIGHT, padx=(8, 0))
-        ttk.Button(
+        save_panels_btn = ttk.Button(
             footer,
             text="Save panels",
             style="Accent.TButton",
             command=lambda: apply_selection(use_auto=False),
-        ).pack(side=tk.RIGHT)
+        )
+        save_panels_btn.pack(side=tk.RIGHT)
+        from ui_accent import wire_dialog_accent_keys
+
+        wire_dialog_accent_keys(dialog, save_panels_btn, cancel_btn=cancel_panels_btn)
 
     def _open_category_quick_view(self, category: str) -> None:
         dialog = tk.Toplevel(self.window)

@@ -218,7 +218,7 @@ def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
 
     dw_btns = ttk.Frame(dw_box)
     dw_btns.pack(fill=tk.X, pady=(6, 0))
-    ttk.Button(dw_btns, text="Start Deep Work…", style="Accent.TButton", command=start_deep_work_flow).pack(
+    ttk.Button(dw_btns, text="Start Deep Work…", command=start_deep_work_flow).pack(
         side=tk.LEFT
     )
     ttk.Button(dw_btns, text="+10 min", command=extend_deep_work).pack(side=tk.LEFT, padx=4)
@@ -284,7 +284,8 @@ def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
         new_text.set(prefill)
         tracker._qc_prefill_text = ""
     
-    ttk.Entry(add_frame, textvariable=new_text).pack(fill=tk.X, pady=2)
+    todo_entry = ttk.Entry(add_frame, textvariable=new_text)
+    todo_entry.pack(fill=tk.X, pady=2)
     row = ttk.Frame(add_frame)
     row.pack(fill=tk.X, pady=2)
     ttk.Label(row, text="Work date").pack(side=tk.LEFT)
@@ -382,6 +383,7 @@ def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
     ttk.Button(add_frame, text="Add todo", style="Accent.TButton", command=add_todo).pack(
         anchor="w", pady=(4, 0)
     )
+    todo_entry.bind("<Return>", lambda _event: add_todo())
 
     # Yield to event loop after todo section (allow indicator to animate).
     try:
@@ -447,7 +449,7 @@ def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
         elif kind == "writing":
             tracker.show_writing_projects()
 
-    ttk.Button(log_box, text="Open", style="Accent.TButton", command=open_quick_log).pack(
+    ttk.Button(log_box, text="Open", command=open_quick_log).pack(
         anchor="w", pady=(8, 0)
     )
 
@@ -499,7 +501,7 @@ def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
         url_var.set("")
         title_var.set("")
 
-    ttk.Button(link_box, text="Save link", style="Accent.TButton", command=save_link).pack(
+    ttk.Button(link_box, text="Save link", command=save_link).pack(
         anchor="w", pady=(4, 0)
     )
 
@@ -519,7 +521,7 @@ def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
         show_journal_window(tracker, tracker.today_str(), seed=seed or None)
         seed_text.delete("1.0", tk.END)
 
-    ttk.Button(journal_box, text="Journal now", style="Accent.TButton", command=journal_now).pack(
+    ttk.Button(journal_box, text="Journal now", command=journal_now).pack(
         anchor="w", pady=(6, 0)
     )
 
@@ -703,10 +705,13 @@ def _pick_category_for_todo_dialog(
         dlg.destroy()
         on_picked(category)
 
-    ttk.Button(btns, text="Cancel", command=cancel).pack(side=tk.RIGHT)
-    ttk.Button(btns, text="Complete", style="Accent.TButton", command=confirm).pack(
-        side=tk.RIGHT, padx=(0, 8)
-    )
+    cancel_btn = ttk.Button(btns, text="Cancel", command=cancel)
+    cancel_btn.pack(side=tk.RIGHT)
+    complete_btn = ttk.Button(btns, text="Complete", style="Accent.TButton", command=confirm)
+    complete_btn.pack(side=tk.RIGHT, padx=(0, 8))
+    from ui_accent import wire_dialog_accent_keys
+
+    wire_dialog_accent_keys(dlg, complete_btn, cancel_btn=cancel_btn)
     dlg.protocol("WM_DELETE_WINDOW", cancel)
     dlg.bind("<Destroy>", lambda e: _notify_closed() if e.widget is dlg else None)
     try:
@@ -769,8 +774,13 @@ def _edit_todo_dialog(tracker, item, categories, on_saved, parent) -> None:
 
     footer = ttk.Frame(dlg, padding=12)
     footer.pack(fill=tk.X, side=tk.BOTTOM)
-    ttk.Button(footer, text="Save", style="Accent.TButton", command=save).pack(side=tk.LEFT)
-    ttk.Button(footer, text="Cancel", command=dlg.destroy).pack(side=tk.RIGHT)
+    save_btn = ttk.Button(footer, text="Save", style="Accent.TButton", command=save)
+    save_btn.pack(side=tk.LEFT)
+    cancel_btn = ttk.Button(footer, text="Cancel", command=dlg.destroy)
+    cancel_btn.pack(side=tk.RIGHT)
+    from ui_accent import wire_dialog_accent_keys
+
+    wire_dialog_accent_keys(dlg, save_btn, cancel_btn=cancel_btn)
 
 
 def _show_deep_work_shield_dialog(tracker: PersonalDevelopmentTracker, *, parent) -> None:
@@ -851,8 +861,13 @@ def _show_deep_work_shield_dialog(tracker: PersonalDevelopmentTracker, *, parent
         dlg.destroy()
         tracker.start_deep_work(minutes, focus_minimize_windows=minimize or None)
 
-    ttk.Button(footer, text="Start", style="Accent.TButton", command=on_start).pack(side=tk.LEFT)
-    ttk.Button(footer, text="Cancel", command=dlg.destroy).pack(side=tk.RIGHT)
+    start_btn = ttk.Button(footer, text="Start", style="Accent.TButton", command=on_start)
+    start_btn.pack(side=tk.LEFT)
+    cancel_btn = ttk.Button(footer, text="Cancel", command=dlg.destroy)
+    cancel_btn.pack(side=tk.RIGHT)
+    from ui_accent import wire_dialog_accent_keys
+
+    wire_dialog_accent_keys(dlg, start_btn, cancel_btn=cancel_btn)
     refresh_scroll()
     dlg.update_idletasks()
 

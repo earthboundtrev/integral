@@ -184,6 +184,11 @@ def show_practice_log_dialog(
 
     footer = ttk.Frame(dlg, padding=12)
     footer.pack(fill=tk.X, side=tk.BOTTOM)
-    ttk.Button(footer, text="Save practice", style="Accent.TButton", command=save).pack(side=tk.LEFT)
-    ttk.Button(footer, text="Cancel", command=dlg.destroy).pack(side=tk.RIGHT)
+    save_btn = ttk.Button(footer, text="Save practice", style="Accent.TButton", command=save)
+    save_btn.pack(side=tk.LEFT)
+    cancel_btn = ttk.Button(footer, text="Cancel", command=dlg.destroy)
+    cancel_btn.pack(side=tk.RIGHT)
+    from ui_accent import wire_dialog_accent_keys
+
+    wire_dialog_accent_keys(dlg, save_btn, cancel_btn=cancel_btn)
     return dlg

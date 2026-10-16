@@ -779,7 +779,11 @@ def show_security_dialog(tracker: PersonalDevelopmentTracker) -> None:
 
     footer = ttk.Frame(window, padding=(15, 8, 15, 12))
     footer.pack(side=tk.BOTTOM, fill=tk.X)
-    ttk.Button(footer, text="Close", command=window.destroy).pack(side=tk.RIGHT)
+    close_btn = ttk.Button(footer, text="Close", command=window.destroy)
+    close_btn.pack(side=tk.RIGHT)
+    from ui_accent import wire_escape_cancel
+
+    wire_escape_cancel(window, cancel_btn=close_btn)
 
 
 def show_youtube_history_dialog(tracker: PersonalDevelopmentTracker) -> None:
@@ -965,8 +969,11 @@ def show_template_picker(
 
     controls = ttk.Frame(dlg, padding=12)
     controls.pack(fill=tk.X, side=tk.BOTTOM)
-    ttk.Button(controls, text="Apply", style="Accent.TButton", command=apply_selected).pack(
-        side=tk.LEFT
-    )
-    ttk.Button(controls, text="Cancel", command=dlg.destroy).pack(side=tk.RIGHT)
+    apply_btn = ttk.Button(controls, text="Apply", style="Accent.TButton", command=apply_selected)
+    apply_btn.pack(side=tk.LEFT)
+    cancel_btn = ttk.Button(controls, text="Cancel", command=dlg.destroy)
+    cancel_btn.pack(side=tk.RIGHT)
+    from ui_accent import wire_dialog_accent_keys
+
+    wire_dialog_accent_keys(dlg, apply_btn, cancel_btn=cancel_btn)
     return dlg

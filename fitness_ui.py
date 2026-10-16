@@ -674,8 +674,13 @@ def open_log_dialog_for_exercise(
         status = progress.status if progress else "logged"
         messagebox.showinfo("Logged", f"{exercise.name}: {status}")
 
-    ttk.Button(footer_btns, text="Save Log", style="Accent.TButton", command=save).pack(side=tk.LEFT, padx=(0, 8))
-    ttk.Button(footer_btns, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT)
+    save_btn = ttk.Button(footer_btns, text="Save Log", style="Accent.TButton", command=save)
+    save_btn.pack(side=tk.LEFT, padx=(0, 8))
+    cancel_btn = ttk.Button(footer_btns, text="Cancel", command=dialog.destroy)
+    cancel_btn.pack(side=tk.LEFT)
+    from ui_accent import wire_dialog_accent_keys
+
+    wire_dialog_accent_keys(dialog, save_btn, cancel_btn=cancel_btn)
 
 
 def open_new_session_dialog(
@@ -934,10 +939,15 @@ def open_new_session_dialog(
         messagebox.showinfo("Saved", f"Workout session logged for {session.date}.", parent=parent)
 
     ttk.Button(btn_row, text="Add Set", command=add_set).pack(side=tk.LEFT)
-    ttk.Button(btn_row, text="Save Session", style="Accent.TButton", command=save_session).pack(
-        side=tk.LEFT, padx=8
+    save_session_btn = ttk.Button(
+        btn_row, text="Save Session", style="Accent.TButton", command=save_session
     )
-    ttk.Button(btn_row, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT)
+    save_session_btn.pack(side=tk.LEFT, padx=8)
+    cancel_session_btn = ttk.Button(btn_row, text="Cancel", command=dialog.destroy)
+    cancel_session_btn.pack(side=tk.LEFT)
+    from ui_accent import wire_dialog_accent_keys
+
+    wire_dialog_accent_keys(dialog, save_session_btn, cancel_btn=cancel_session_btn)
 
 
 def show_fitness_window(
@@ -1245,8 +1255,13 @@ def show_fitness_window(
             dialog.destroy()
             refresh_list()
 
-        ttk.Button(footer, text="Cancel", command=dialog.destroy).pack(side=tk.RIGHT, padx=(8, 0))
-        ttk.Button(footer, text="Save", style="Accent.TButton", command=save_settings).pack(side=tk.RIGHT)
+        cancel_settings_btn = ttk.Button(footer, text="Cancel", command=dialog.destroy)
+        cancel_settings_btn.pack(side=tk.RIGHT, padx=(8, 0))
+        save_settings_btn = ttk.Button(footer, text="Save", style="Accent.TButton", command=save_settings)
+        save_settings_btn.pack(side=tk.RIGHT)
+        from ui_accent import wire_dialog_accent_keys
+
+        wire_dialog_accent_keys(dialog, save_settings_btn, cancel_btn=cancel_settings_btn)
 
     def open_placement_dialog():
         selected = tree.selection()
@@ -1342,10 +1357,15 @@ def show_fitness_window(
                 parent=win,
             )
 
-        ttk.Button(footer, text="Cancel", command=dialog.destroy).pack(side=tk.RIGHT, padx=(8, 0))
-        ttk.Button(footer, text="Apply Placement", style="Accent.TButton", command=apply_placement).pack(
-            side=tk.RIGHT
+        cancel_placement_btn = ttk.Button(footer, text="Cancel", command=dialog.destroy)
+        cancel_placement_btn.pack(side=tk.RIGHT, padx=(8, 0))
+        apply_btn = ttk.Button(
+            footer, text="Apply Placement", style="Accent.TButton", command=apply_placement
         )
+        apply_btn.pack(side=tk.RIGHT)
+        from ui_accent import wire_dialog_accent_keys
+
+        wire_dialog_accent_keys(dialog, apply_btn, cancel_btn=cancel_placement_btn)
 
     def open_session_dialog():
         open_new_session_dialog(
@@ -1400,7 +1420,7 @@ def show_fitness_window(
     search_entry.bind("<Return>", lambda _e: refresh_list())
     search_entry.focus_set()
 
-    ttk.Button(btn_bar, text="Log Selected", style="Accent.TButton", command=open_selected_log).pack(
+    ttk.Button(btn_bar, text="Log Selected", command=open_selected_log).pack(
         side=tk.LEFT
     )
     ttk.Button(btn_bar, text="New Session", command=open_session_dialog).pack(side=tk.LEFT, padx=6)

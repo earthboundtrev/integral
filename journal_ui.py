@@ -411,8 +411,13 @@ def show_journal_window(
 
         btns = ttk.Frame(picker, padding=12)
         btns.pack(fill=tk.X)
-        ttk.Button(btns, text="Insert", style="Accent.TButton", command=do_insert).pack(side=tk.LEFT)
-        ttk.Button(btns, text="Cancel", command=picker.destroy).pack(side=tk.LEFT, padx=8)
+        insert_btn = ttk.Button(btns, text="Insert", style="Accent.TButton", command=do_insert)
+        insert_btn.pack(side=tk.LEFT)
+        cancel_picker_btn = ttk.Button(btns, text="Cancel", command=picker.destroy)
+        cancel_picker_btn.pack(side=tk.LEFT, padx=8)
+        from ui_accent import wire_dialog_accent_keys
+
+        wire_dialog_accent_keys(picker, insert_btn, cancel_btn=cancel_picker_btn)
 
     def save_entry() -> None:
         if str(body_text.cget("state")) == "disabled":
