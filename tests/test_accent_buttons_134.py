@@ -8,8 +8,13 @@ from unittest.mock import patch
 import pytest
 
 from goto_ui import build_goto_destinations
-from theme import DARK, LIGHT
-from ui_accent import count_accent_buttons, secondary_button_border_contrast, wire_dialog_accent_keys
+from theme import DARK, LIGHT, apply_theme, get_theme
+from ui_accent import (
+    count_accent_buttons,
+    secondary_button_border_contrast,
+    ttk_secondary_button_border_contrast,
+    wire_dialog_accent_keys,
+)
 
 import personal_dev_tracker
 from tests.test_sidebar_131 import _mock_tracker_init
@@ -39,8 +44,8 @@ def _open_toplevels(root: tk.Misc) -> list[tk.Toplevel]:
 
 
 def test_main_window_at_most_one_accent(tracker):
-    tracker.root.update_idletasks()
-    assert count_accent_buttons(tracker.root) <= 1
+    tracker.root.update()
+    assert count_accent_buttons(tracker.root) == 1
 
 
 def test_main_window_zero_accent_when_all_domains_logged(tracker):
@@ -50,13 +55,32 @@ def test_main_window_zero_accent_when_all_domains_logged(tracker):
         for cat in tracker.categories
     }
     tracker.refresh_dashboard(full=True)
-    tracker.root.update_idletasks()
+    tracker.root.update()
     assert count_accent_buttons(tracker.root) == 0
 
 
+def test_quick_capture_panel_at_most_one_accent(tracker):
+    import quick_capture_ui
+
+    win = quick_capture_ui.open_quick_capture_panel(tracker)
+    win.update()
+    assert count_accent_buttons(win) == 1
+    win.destroy()
+    tracker._quick_capture_win = None
+
+
 def test_secondary_button_border_contrast_meets_wcag():
-    for theme in (LIGHT, DARK):
+    from tkinter import ttk
+
+    root = tk.Tk()
+    root.withdraw()
+    for dark in (False, True):
+        theme = get_theme(dark)
+        apply_theme(root, theme)
+        style = ttk.Style(root)
         assert secondary_button_border_contrast(theme) >= 3.0
+        assert ttk_secondary_button_border_contrast(style, theme) >= 3.0
+    root.destroy()
 
 
 def test_goto_destinations_each_toplevel_at_most_one_accent(tracker):
@@ -75,11 +99,8 @@ def test_goto_destinations_each_toplevel_at_most_one_accent(tracker):
         if label in skip_labels:
             continue
         before = {id(w) for w in _open_toplevels(tracker.root)}
-        try:
-            dest["action"]()
-        except Exception:
-            continue
-        tracker.root.update_idletasks()
+        dest["action"]()
+        tracker.root.update()
         new_windows = [w for w in _open_toplevels(tracker.root) if id(w) not in before]
         targets = new_windows if new_windows else [tracker.root]
         for win in targets:

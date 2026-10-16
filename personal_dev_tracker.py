@@ -2532,11 +2532,7 @@ class PersonalDevelopmentTracker:
             command=lambda: self._show_ai_insight(default_days=7),
         )
         ai_insight_btn.pack(side=tk.LEFT, padx=(0, 8))
-        close_btn = ttk.Button(footer, text="Close", command=window.destroy)
-        close_btn.pack(side=tk.RIGHT)
-        from ui_accent import wire_dialog_accent_keys
-
-        wire_dialog_accent_keys(window, ai_insight_btn, cancel_btn=close_btn)
+        ttk.Button(footer, text="Close", command=window.destroy).pack(side=tk.RIGHT)
 
         ttk.Label(
             window,
@@ -2558,7 +2554,11 @@ class PersonalDevelopmentTracker:
 
         footer = ttk.Frame(window, padding=(12, 10))
         footer.pack(side=tk.BOTTOM, fill=tk.X)
-        ttk.Button(footer, text="Close", command=window.destroy).pack(side=tk.RIGHT)
+        close_btn = ttk.Button(footer, text="Close", command=window.destroy)
+        close_btn.pack(side=tk.RIGHT)
+        from ui_accent import wire_escape_cancel
+
+        wire_escape_cancel(window, cancel_btn=close_btn)
 
         text = scrolledtext.ScrolledText(window, wrap=tk.WORD, font=("Consolas", 10))
         style_text_widget(text, self.theme)
@@ -2620,11 +2620,7 @@ class PersonalDevelopmentTracker:
             command=lambda: self._show_ai_insight(default_days=7),
         )
         insight_btn.pack(side=tk.LEFT)
-        close_btn = ttk.Button(footer, text="Close", command=window.destroy)
-        close_btn.pack(side=tk.RIGHT)
-        from ui_accent import wire_dialog_accent_keys
-
-        wire_dialog_accent_keys(window, insight_btn, cancel_btn=close_btn)
+        ttk.Button(footer, text="Close", command=window.destroy).pack(side=tk.RIGHT)
 
         end = datetime.now().date()
         start = end - timedelta(days=6)
@@ -3247,11 +3243,7 @@ class PersonalDevelopmentTracker:
                 command=lambda: (close_details(), self.open_gap_repair_journal()),
             )
             gap_btn.pack(side=tk.LEFT)
-            close_details_btn = ttk.Button(footer, text="Close", command=close_details)
-            close_details_btn.pack(side=tk.RIGHT)
-            from ui_accent import wire_dialog_accent_keys
-
-            wire_dialog_accent_keys(window, gap_btn, cancel_btn=close_details_btn)
+            ttk.Button(footer, text="Close", command=close_details).pack(side=tk.RIGHT)
         else:
             close_details_btn = ttk.Button(footer, text="Close", command=close_details)
             close_details_btn.pack(side=tk.RIGHT)
@@ -3304,7 +3296,11 @@ class PersonalDevelopmentTracker:
 
         footer = ttk.Frame(window, padding=(12, 10))
         footer.pack(side=tk.BOTTOM, fill=tk.X)
-        ttk.Button(footer, text="Close", command=window.destroy).pack(side=tk.RIGHT)
+        close_btn = ttk.Button(footer, text="Close", command=window.destroy)
+        close_btn.pack(side=tk.RIGHT)
+        from ui_accent import wire_escape_cancel
+
+        wire_escape_cancel(window, cancel_btn=close_btn)
 
         search_frame = ttk.Frame(window)
         search_frame.pack(side=tk.TOP, fill=tk.X, padx=10, pady=10)
@@ -3632,7 +3628,11 @@ class PersonalDevelopmentTracker:
         template_btn.pack(side=tk.LEFT, padx=8)
         save_close_btn = ttk.Button(buttons, text="Save & Close")
         save_close_btn.pack(side=tk.RIGHT)
-        ttk.Button(buttons, text="Cancel", command=editor.destroy).pack(side=tk.RIGHT, padx=8)
+        cancel_btn = ttk.Button(buttons, text="Cancel", command=editor.destroy)
+        cancel_btn.pack(side=tk.RIGHT, padx=8)
+        from ui_accent import wire_escape_cancel
+
+        wire_escape_cancel(editor, cancel_btn=cancel_btn)
 
         body = ttk.Frame(editor)
         body.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=12, pady=12)

@@ -29,8 +29,21 @@ def contrast_ratio(fg_hex: str, bg_hex: str) -> float:
 
 
 def secondary_button_border_contrast(theme: dict[str, str]) -> float:
-    """TButton bordercolor on card/surface background (≥ 3:1 required)."""
+    """TButton bordercolor on card/surface background (≥ 3:1 required).
+
+    Uses theme tokens (same values passed to ``style.configure("TButton", …)``).
+    Actual ttk button edges can vary by platform/theme engine; verify with
+    ``ttk_secondary_button_border_contrast`` when a ``ttk.Style`` is available.
+    """
     border = theme.get("button_border", theme["card_border"])
+    return contrast_ratio(border, theme["surface"])
+
+
+def ttk_secondary_button_border_contrast(style: ttk.Style, theme: dict[str, str]) -> float:
+    """Contrast from the configured TButton bordercolor lookup (when supported)."""
+    border = style.lookup("TButton", "bordercolor")
+    if not border:
+        border = theme.get("button_border", theme["card_border"])
     return contrast_ratio(border, theme["surface"])
 
 
@@ -62,6 +75,32 @@ def _return_should_invoke(widget: tk.Misc) -> bool:
     return True
 
 
+def wire_escape_cancel(
+    window: tk.Misc,
+    *,
+    cancel_btn: ttk.Button | None = None,
+    cancel_command=None,
+) -> None:
+    """Esc closes via Cancel/back (for large windows without a single accent primary)."""
+
+    def on_escape(_event: tk.Event) -> str:
+        if cancel_btn is not None:
+            try:
+                cancel_btn.invoke()
+            except tk.TclError:
+                pass
+        elif cancel_command is not None:
+            cancel_command()
+        else:
+            try:
+                window.destroy()
+            except tk.TclError:
+                pass
+        return "break"
+
+    window.bind("<Escape>", on_escape, add="+")
+
+
 def wire_dialog_accent_keys(
     window: tk.Misc,
     accent_btn: ttk.Button,
@@ -80,20 +119,5 @@ def wire_dialog_accent_keys(
             pass
         return "break"
 
-    def on_escape(_event: tk.Event) -> str:
-        if cancel_btn is not None:
-            try:
-                cancel_btn.invoke()
-            except tk.TclError:
-                pass
-        elif cancel_command is not None:
-            cancel_command()
-        else:
-            try:
-                window.destroy()
-            except tk.TclError:
-                pass
-        return "break"
-
     window.bind("<Return>", on_return, add="+")
-    window.bind("<Escape>", on_escape, add="+")
+    wire_escape_cancel(window, cancel_btn=cancel_btn, cancel_command=cancel_command)

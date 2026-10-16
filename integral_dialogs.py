@@ -779,7 +779,11 @@ def show_security_dialog(tracker: PersonalDevelopmentTracker) -> None:
 
     footer = ttk.Frame(window, padding=(15, 8, 15, 12))
     footer.pack(side=tk.BOTTOM, fill=tk.X)
-    ttk.Button(footer, text="Close", command=window.destroy).pack(side=tk.RIGHT)
+    close_btn = ttk.Button(footer, text="Close", command=window.destroy)
+    close_btn.pack(side=tk.RIGHT)
+    from ui_accent import wire_escape_cancel
+
+    wire_escape_cancel(window, cancel_btn=close_btn)
 
 
 def show_youtube_history_dialog(tracker: PersonalDevelopmentTracker) -> None:

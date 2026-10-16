@@ -284,7 +284,8 @@ def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
         new_text.set(prefill)
         tracker._qc_prefill_text = ""
     
-    ttk.Entry(add_frame, textvariable=new_text).pack(fill=tk.X, pady=2)
+    todo_entry = ttk.Entry(add_frame, textvariable=new_text)
+    todo_entry.pack(fill=tk.X, pady=2)
     row = ttk.Frame(add_frame)
     row.pack(fill=tk.X, pady=2)
     ttk.Label(row, text="Work date").pack(side=tk.LEFT)
@@ -382,6 +383,7 @@ def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
     ttk.Button(add_frame, text="Add todo", style="Accent.TButton", command=add_todo).pack(
         anchor="w", pady=(4, 0)
     )
+    todo_entry.bind("<Return>", lambda _event: add_todo())
 
     # Yield to event loop after todo section (allow indicator to animate).
     try:
