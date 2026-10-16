@@ -71,7 +71,10 @@ from todays_log import (
 DATA_FILE = data_file()
 
 # Environment variables for debugging and performance measurement (issue #135)
-DEBUG_DELAY_MS = int(os.environ.get("INTEGRAL_DEBUG_DELAY_MS", "0"))
+try:
+    DEBUG_DELAY_MS = int(os.environ.get("INTEGRAL_DEBUG_DELAY_MS", "0"))
+except ValueError:
+    DEBUG_DELAY_MS = 0
 PERF_LOGGING = os.environ.get("INTEGRAL_PERF", "").lower() in ("1", "true", "yes")
 
 
