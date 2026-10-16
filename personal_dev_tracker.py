@@ -1140,7 +1140,6 @@ class PersonalDevelopmentTracker:
         add_todo_btn = ttk.Button(
             buttons_row,
             text="+ Todo",
-            style="Accent.TButton",
             command=lambda: todo_entry.focus_set()
         )
         add_todo_btn.pack(side=tk.LEFT, padx=(0, 8), ipady=4)
@@ -1149,7 +1148,6 @@ class PersonalDevelopmentTracker:
         log_workout_btn = ttk.Button(
             buttons_row,
             text="Log workout",
-            style="Accent.TButton",
             command=self.show_log_exercise
         )
         log_workout_btn.pack(side=tk.LEFT, padx=(0, 8), ipady=4)
@@ -1162,7 +1160,6 @@ class PersonalDevelopmentTracker:
         reflect_btn = ttk.Button(
             buttons_row,
             text="Reflect",
-            style="Accent.TButton",
             command=reflect_action
         )
         reflect_btn.pack(side=tk.LEFT, ipady=4)
@@ -1190,12 +1187,11 @@ class PersonalDevelopmentTracker:
                 style="OnSurfaceMuted.TLabel",
             ).pack(side=tk.LEFT)
         ttk.Button(
-            actions, text="Journal", style="Accent.TButton", command=self.show_journal
+            actions, text="Journal", command=self.show_journal
         ).pack(side=tk.LEFT, padx=(0, 8))
         ttk.Button(
             actions,
             text="Quick Capture",
-            style="Accent.TButton",
             command=self.toggle_quick_capture,
         ).pack(side=tk.LEFT, padx=(0, 8))
 
@@ -1944,7 +1940,6 @@ class PersonalDevelopmentTracker:
         ttk.Button(
             stats_actions,
             text="AI Insight",
-            style="Accent.TButton",
             command=lambda: self._show_ai_insight(default_days=7),
         ).pack(anchor="e")
 
@@ -1994,7 +1989,6 @@ class PersonalDevelopmentTracker:
         ttk.Button(
             actions,
             text="Get AI Insight",
-            style="Accent.TButton",
             command=lambda: self._show_ai_insight(default_days=7),
         ).pack(side=tk.LEFT, padx=(0, 8))
         ttk.Button(
@@ -2025,7 +2019,6 @@ class PersonalDevelopmentTracker:
             ttk.Button(
                 panel,
                 text="Journal for yesterday",
-                style="Accent.TButton",
                 command=self.open_gap_repair_journal,
             ).pack(anchor="w", pady=(6, 8))
 
@@ -2058,7 +2051,6 @@ class PersonalDevelopmentTracker:
         ttk.Button(
             btn_row,
             text="AI Insight",
-            style="Accent.TButton",
             command=lambda: self._show_ai_insight(default_days=7),
         ).pack(side=tk.LEFT)
 
@@ -2108,7 +2100,6 @@ class PersonalDevelopmentTracker:
         ttk.Button(
             inner,
             text="Log / Update Today",
-            style="Accent.TButton" if not today_entry else "TButton",
             command=lambda name=cat_name: self.open_log_dialog(name),
         ).pack(fill=tk.X, pady=(10, 0))
 
@@ -2433,7 +2424,7 @@ class PersonalDevelopmentTracker:
         date_var.trace_add("write", load_existing)
         load_existing()
 
-        ttk.Button(
+        save_log_btn = ttk.Button(
             footer_btns,
             text="Save Log",
             style="Accent.TButton",
@@ -2447,7 +2438,8 @@ class PersonalDevelopmentTracker:
                 metric_vars,
                 notes_text,
             ),
-        ).pack(side=tk.LEFT, padx=(0, 8))
+        )
+        save_log_btn.pack(side=tk.LEFT, padx=(0, 8))
         if cat_name == creative_projects.CREATIVE_CATEGORY:
             ttk.Button(
                 footer_btns,
@@ -2459,7 +2451,11 @@ class PersonalDevelopmentTracker:
                 text="Log writing session",
                 command=lambda: self.log_writing_session_for_day(date_var.get().strip(), parent=dialog),
             ).pack(side=tk.LEFT, padx=(0, 8))
-        ttk.Button(footer_btns, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT)
+        cancel_log_btn = ttk.Button(footer_btns, text="Cancel", command=dialog.destroy)
+        cancel_log_btn.pack(side=tk.LEFT)
+        from ui_accent import wire_dialog_accent_keys
+
+        wire_dialog_accent_keys(dialog, save_log_btn, cancel_btn=cancel_log_btn)
         ttk.Label(
             footer,
             text="Save stores your rating, checklist, metrics, and notes for this life area.",
@@ -2529,13 +2525,18 @@ class PersonalDevelopmentTracker:
 
         footer = ttk.Frame(window, padding=(12, 10))
         footer.pack(side=tk.BOTTOM, fill=tk.X)
-        ttk.Button(
+        ai_insight_btn = ttk.Button(
             footer,
             text="AI Insight",
             style="Accent.TButton",
             command=lambda: self._show_ai_insight(default_days=7),
-        ).pack(side=tk.LEFT, padx=(0, 8))
-        ttk.Button(footer, text="Close", command=window.destroy).pack(side=tk.RIGHT)
+        )
+        ai_insight_btn.pack(side=tk.LEFT, padx=(0, 8))
+        close_btn = ttk.Button(footer, text="Close", command=window.destroy)
+        close_btn.pack(side=tk.RIGHT)
+        from ui_accent import wire_dialog_accent_keys
+
+        wire_dialog_accent_keys(window, ai_insight_btn, cancel_btn=close_btn)
 
         ttk.Label(
             window,
@@ -2612,13 +2613,18 @@ class PersonalDevelopmentTracker:
 
         footer = ttk.Frame(window, padding=(12, 10))
         footer.pack(side=tk.BOTTOM, fill=tk.X)
-        ttk.Button(
+        insight_btn = ttk.Button(
             footer,
             text="Get AI Insight",
             style="Accent.TButton",
             command=lambda: self._show_ai_insight(default_days=7),
-        ).pack(side=tk.LEFT)
-        ttk.Button(footer, text="Close", command=window.destroy).pack(side=tk.RIGHT)
+        )
+        insight_btn.pack(side=tk.LEFT)
+        close_btn = ttk.Button(footer, text="Close", command=window.destroy)
+        close_btn.pack(side=tk.RIGHT)
+        from ui_accent import wire_dialog_accent_keys
+
+        wire_dialog_accent_keys(window, insight_btn, cancel_btn=close_btn)
 
         end = datetime.now().date()
         start = end - timedelta(days=6)
@@ -2974,9 +2980,7 @@ class PersonalDevelopmentTracker:
                 pass
         if self._deep_work_end_btn is not None:
             try:
-                self._deep_work_end_btn.configure(
-                    style="Accent.TButton" if active else "TButton"
-                )
+                self._deep_work_end_btn.configure(style="TButton")
             except tk.TclError:
                 pass
         if self._deep_work_banner is not None:
@@ -3236,13 +3240,21 @@ class PersonalDevelopmentTracker:
             sessions=self.sessions,
         )
         if gap:
-            ttk.Button(
+            gap_btn = ttk.Button(
                 footer,
                 text="Journal for yesterday",
                 style="Accent.TButton",
                 command=lambda: (close_details(), self.open_gap_repair_journal()),
-            ).pack(side=tk.LEFT)
-        ttk.Button(footer, text="Close", command=close_details).pack(side=tk.RIGHT)
+            )
+            gap_btn.pack(side=tk.LEFT)
+            close_details_btn = ttk.Button(footer, text="Close", command=close_details)
+            close_details_btn.pack(side=tk.RIGHT)
+            from ui_accent import wire_dialog_accent_keys
+
+            wire_dialog_accent_keys(window, gap_btn, cancel_btn=close_details_btn)
+        else:
+            close_details_btn = ttk.Button(footer, text="Close", command=close_details)
+            close_details_btn.pack(side=tk.RIGHT)
 
         header = ttk.Frame(window, padding=(12, 12))
         header.pack(side=tk.TOP, fill=tk.X)

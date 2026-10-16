@@ -114,8 +114,13 @@ def show_deep_work_start_dialog(tracker: PersonalDevelopmentTracker) -> None:
         win.destroy()
         tracker.start_deep_work(minutes, writing_project_id=project_id)
 
-    ttk.Button(footer, text="Start", style="Accent.TButton", command=on_start).pack(side=tk.LEFT)
-    ttk.Button(footer, text="Cancel", command=win.destroy).pack(side=tk.RIGHT)
+    start_btn = ttk.Button(footer, text="Start", style="Accent.TButton", command=on_start)
+    start_btn.pack(side=tk.LEFT)
+    cancel_btn = ttk.Button(footer, text="Cancel", command=win.destroy)
+    cancel_btn.pack(side=tk.RIGHT)
+    from ui_accent import wire_dialog_accent_keys
+
+    wire_dialog_accent_keys(win, start_btn, cancel_btn=cancel_btn)
 
     win.update_idletasks()
     req_w = max(440, win.winfo_reqwidth())

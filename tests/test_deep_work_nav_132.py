@@ -123,12 +123,13 @@ def test_goto_excludes_hidden_destinations_during_deep_work():
     assert any(label.startswith("Log ") for label in labels)
 
 
-def test_deep_work_end_button_is_accent_while_active(tracker):
+def test_deep_work_end_button_stays_secondary_while_active(tracker):
+    """#134: main window keeps at most one accent (Log one → …); End stays secondary."""
     tracker._deep_work_session = MagicMock(running=True)
     tracker._ensure_deep_work_banner()
     tracker._apply_deep_work_chrome()
     assert tracker._deep_work_end_btn is not None
-    assert tracker._deep_work_end_btn.cget("style") == "Accent.TButton"
+    assert tracker._deep_work_end_btn.cget("style") == "TButton"
     tracker._deep_work_session = None
     tracker._apply_deep_work_chrome()
     assert tracker._deep_work_end_btn.cget("style") == "TButton"

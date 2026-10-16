@@ -207,7 +207,7 @@ Period options: **1** (today), **7**, or **30** days. Choosing an insight type a
 **Where to find it**
 
 - **Overview tab** — "Local AI Insight" card and **AI Insight** button on the stats row
-- **Today's Log** bar — **AI Insight** (accent button, top of the main window)
+- **Today's Log** bar — one filled primary action (**Log one → …** when a domain still needs a check-in)
 - **Footer nav** — **AI Insight** next to Weekly Summary
 - **Graphs & Progress → AI Insight** — first tab; pick insight type and time window, then generate
 - **Weekly Summary** / **Guidance** — **Get AI Insight** or **AI Insight** in the footer

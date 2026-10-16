@@ -12,6 +12,7 @@ COLORS = {
     "surface": "#FFFFFF",
     "surface_alt": "#EEF0F3",
     "border": "#D8DCE3",
+    "button_border": "#6B7280",
     "text": "#1A1D21",
     "text_muted": "#5C6370",
     "accent": "#2F7A7B",
@@ -170,7 +171,7 @@ def apply_theme(root: tk.Misc | None = None) -> ttk.Style:
         font=FONTS["button"],
         padding=(12, 6),
         background=COLORS["surface"],
-        bordercolor=COLORS["border"],
+        bordercolor=COLORS.get("button_border", COLORS["border"]),
         focusthickness=0,
     )
     style.map(

@@ -12,7 +12,7 @@ class TestDesignTokens(unittest.TestCase):
         required_keys = [
             "name", "bg", "fg", "muted", "accent", "accent_dark", "accent_soft",
             "on_accent", "streak", "success", "success_bg", "link", "surface",
-            "surface_alt", "sidebar", "card_border", "text_bg", "text_fg",
+            "surface_alt", "sidebar", "card_border", "button_border", "text_bg", "text_fg",
             "field_bg", "select_bg", "warning_bg", "error", "error_bg", "disabled"
         ]
         for key in required_keys:
@@ -24,7 +24,7 @@ class TestDesignTokens(unittest.TestCase):
         required_keys = [
             "name", "bg", "fg", "muted", "accent", "accent_dark", "accent_soft",
             "on_accent", "streak", "success", "success_bg", "link", "surface",
-            "surface_alt", "sidebar", "card_border", "text_bg", "text_fg",
+            "surface_alt", "sidebar", "card_border", "button_border", "text_bg", "text_fg",
             "field_bg", "select_bg", "warning_bg", "error", "error_bg", "disabled"
         ]
         for key in required_keys:

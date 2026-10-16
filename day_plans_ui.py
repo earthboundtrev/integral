@@ -31,7 +31,8 @@ def show_plan_window(tracker: "PersonalDevelopmentTracker", plan_date: str | Non
     ttk.Separator(footer, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=(0, 10))
     save_btn = ttk.Button(footer, text="Save Plan", style="Accent.TButton")
     save_btn.pack(side=tk.RIGHT)
-    ttk.Button(footer, text="Close", command=win.destroy).pack(side=tk.RIGHT, padx=(0, 8))
+    close_btn = ttk.Button(footer, text="Close", command=win.destroy)
+    close_btn.pack(side=tk.RIGHT, padx=(0, 8))
 
     header = ttk.Frame(win, padding=(16, 14, 16, 8))
     header.pack(side=tk.TOP, fill=tk.X)
@@ -152,6 +153,9 @@ def show_plan_window(tracker: "PersonalDevelopmentTracker", plan_date: str | Non
         messagebox.showinfo("Saved", f"Plan saved for {planned_for}.", parent=win)
 
     save_btn.configure(command=save_plan)
+    from ui_accent import wire_dialog_accent_keys
+
+    wire_dialog_accent_keys(win, save_btn, cancel_btn=close_btn)
     date_var.trace_add("write", load_plan_for_date)
     load_plan_for_date()
 

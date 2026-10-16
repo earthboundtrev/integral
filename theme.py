@@ -25,6 +25,7 @@ LIGHT = {
     "surface_alt": "#EEF0F3",
     "sidebar": "#FAFBFC",  # v2: sidebar background
     "card_border": "#D8DCE3",
+    "button_border": "#6B7280",  # ≥3:1 vs surface for secondary TButton outlines (#134)
     "text_bg": "#FFFFFF",
     "text_fg": "#1A1D21",
     "field_bg": "#FFFFFF",  # v2: input field background
@@ -52,6 +53,7 @@ DARK = {
     "surface_alt": "#252B33",
     "sidebar": "#0D0F12",  # v2: sidebar background
     "card_border": "#3E4C59",
+    "button_border": "#9AA5B1",  # ≥3:1 vs dark surface for secondary TButton outlines (#134)
     "text_bg": "#1C2128",
     "text_fg": "#E8ECF1",
     "field_bg": "#1C2128",  # v2: input field background
@@ -247,7 +249,7 @@ def apply_theme(root: tk.Misc, theme: dict) -> None:
         padding=(12, 6),
         font=FONTS["button"],
         background=surface,
-        bordercolor=theme["card_border"],
+        bordercolor=theme["button_border"],
     )
     style.map("TButton", background=[("active", theme["surface_alt"]), ("pressed", theme["card_border"])])
     style.configure(

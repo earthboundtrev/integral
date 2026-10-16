@@ -513,8 +513,8 @@ def mount_insight_panel(
     journal_data: dict | None = None,
     fitness_settings: dict | None = None,
     default_days: int = 7,
-) -> None:
-    """Classic Tkinter panel: options, status, scrollable result."""
+):
+    """Classic Tkinter panel: options, status, scrollable result. Returns primary action button."""
     import tkinter as tk
     from tkinter import scrolledtext, ttk
 
@@ -647,6 +647,7 @@ def mount_insight_panel(
 
     run_btn.config(command=on_click)
     run_btn.pack(side=tk.LEFT)
+    return run_btn
 
 
 def show_insight_dialog(
@@ -671,11 +672,12 @@ def show_insight_dialog(
 
     footer = ttk.Frame(dialog, padding=(12, 10))
     footer.pack(side=tk.BOTTOM, fill=tk.X)
-    ttk.Button(footer, text="Close", command=dialog.destroy).pack(side=tk.RIGHT)
+    close_btn = ttk.Button(footer, text="Close", command=dialog.destroy)
+    close_btn.pack(side=tk.RIGHT)
 
     body = ttk.Frame(dialog)
     body.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
-    mount_insight_panel(
+    run_btn = mount_insight_panel(
         body,
         theme,
         entries=entries,
@@ -684,3 +686,6 @@ def show_insight_dialog(
         fitness_settings=fitness_settings,
         default_days=default_days,
     )
+    from ui_accent import wire_dialog_accent_keys
+
+    wire_dialog_accent_keys(dialog, run_btn, cancel_btn=close_btn)
