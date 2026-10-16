@@ -74,12 +74,12 @@ def more_menu_env():
         pass
 
 
-def test_MORE_GROUPS_has_three_sections_and_fourteen_actions():
+def test_MORE_GROUPS_has_three_sections_and_fifteen_actions():
     assert len(MORE_GROUPS) == 3
     titles = [g["title"] for g in MORE_GROUPS]
     assert titles == ["VIEW", "WORK MODES", "DATA & SETTINGS"]
     action_count = sum(len(g["items"]) for g in MORE_GROUPS)
-    assert action_count == 14
+    assert action_count == 15
 
 
 def test_legacy_footer_and_today_more_reachability():

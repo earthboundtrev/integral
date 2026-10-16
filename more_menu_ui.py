@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 import nav_items
+from keyboard_shortcuts import MORE_ITEM_SHORTCUT_HINTS, show_keyboard_shortcuts
 from theme import FONTS
 
 # Canonical menu structure (labels tested for reachability).
@@ -38,6 +39,7 @@ MORE_GROUPS: tuple[dict[str, Any], ...] = (
             {"id": "backup", "label": "Backup"},
             {"id": "settings", "label": "Edit Categories"},
             {"id": "security", "label": "Data & Security"},
+            {"id": "keyboard_shortcuts", "label": "Keyboard shortcuts"},
             {"id": "toggle_theme", "label": "toggle_theme"},
         ),
     },
@@ -86,11 +88,6 @@ SIDEBAR_NAV_LABELS: tuple[str, ...] = tuple(
 
 THEME_LABEL_ALIASES: frozenset[str] = frozenset({"Dark Mode", "Light Mode"})
 
-# Optional per-row accelerator hints (right-aligned, muted). Empty values are omitted.
-MORE_ITEM_SHORTCUT_HINTS: dict[str, str] = {
-    "quick_capture": "Ctrl+Shift+T",
-}
-
 GOTO_THEME_LABEL = "Toggle Dark / Light Mode"
 
 
@@ -128,6 +125,7 @@ def _action_for_id(tracker: Any, item_id: str) -> Callable[[], None]:
         "plan_tomorrow": tracker.show_plan_tomorrow,
         "log_exercise": tracker.show_log_exercise,
         "fitness_hub": tracker.show_fitness_hub,
+        "keyboard_shortcuts": lambda: show_keyboard_shortcuts(tracker),
     }
     return actions[item_id]
 
@@ -172,7 +170,15 @@ def populate_today_more_menu(menu: tk.Menu, tracker: Any, theme: dict) -> None:
             item = nav_items.nav_item_for_id(item_id)
             if item is None:
                 continue
-            menu.add_command(label=item.label, command=_action_for_id(tracker, item_id))
+            accel = MORE_ITEM_SHORTCUT_HINTS.get(item_id, "").strip()
+            if accel:
+                menu.add_command(
+                    label=item.label,
+                    command=_action_for_id(tracker, item_id),
+                    accelerator=accel,
+                )
+            else:
+                menu.add_command(label=item.label, command=_action_for_id(tracker, item_id))
         added_any = True
     style_menu(menu, theme)
 
@@ -226,6 +232,7 @@ _REACHABILITY: dict[str, frozenset[str]] = {
     "Backup": frozenset({"more", "goto"}),
     "Edit Categories": frozenset({"more", "goto"}),
     "Data & Security": frozenset({"more", "goto"}),
+    "Keyboard shortcuts": frozenset({"more"}),
     "Dark Mode": frozenset({"more", "goto"}),
     "Light Mode": frozenset({"more", "goto"}),
     "AI Insight": frozenset({"more", "today_more", "goto"}),

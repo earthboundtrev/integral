@@ -1151,6 +1151,9 @@ class PersonalDevelopmentTracker:
             command=self.show_log_exercise
         )
         log_workout_btn.pack(side=tk.LEFT, padx=(0, 8), ipady=4)
+        from keyboard_shortcuts import INLINE_BUTTON_SHORTCUTS, attach_shortcut_tooltip
+
+        attach_shortcut_tooltip(log_workout_btn, "Log workout", INLINE_BUTTON_SHORTCUTS["Log workout"])
         
         def reflect_action():
             next_cat = self.first_unlogged_category()
@@ -1163,6 +1166,7 @@ class PersonalDevelopmentTracker:
             command=reflect_action
         )
         reflect_btn.pack(side=tk.LEFT, ipady=4)
+        attach_shortcut_tooltip(reflect_btn, "Reflect", INLINE_BUTTON_SHORTCUTS["Reflect"])
 
         actions_host, actions, _actions_canvas = ui_scroll.make_horizontal_scroll_row(
             log_bar,
@@ -1186,14 +1190,18 @@ class PersonalDevelopmentTracker:
                 text="All listed domains have a check-in — nothing more required.",
                 style="OnSurfaceMuted.TLabel",
             ).pack(side=tk.LEFT)
-        ttk.Button(
-            actions, text="Journal", command=self.show_journal
-        ).pack(side=tk.LEFT, padx=(0, 8))
-        ttk.Button(
+        journal_btn = ttk.Button(actions, text="Journal", command=self.show_journal)
+        journal_btn.pack(side=tk.LEFT, padx=(0, 8))
+        attach_shortcut_tooltip(journal_btn, "Journal", INLINE_BUTTON_SHORTCUTS["Journal"])
+        qc_btn = ttk.Button(
             actions,
             text="Quick Capture",
             command=self.toggle_quick_capture,
-        ).pack(side=tk.LEFT, padx=(0, 8))
+        )
+        qc_btn.pack(side=tk.LEFT, padx=(0, 8))
+        attach_shortcut_tooltip(
+            qc_btn, "Quick Capture", INLINE_BUTTON_SHORTCUTS["Quick Capture"]
+        )
 
         from more_menu_ui import populate_today_more_menu
 
@@ -1584,25 +1592,11 @@ class PersonalDevelopmentTracker:
         self._nav_pack_order = []
         self._ensure_deep_work_banner(self._banner_host)
         self._apply_deep_work_chrome()
-        if not getattr(self, "_goto_shortcut_bound", False):
-            self.root.bind_all("<Control-k>", lambda _e: self.show_goto())
-            self.root.bind_all("<Control-K>", lambda _e: self.show_goto())
-            self.root.bind_all(
-                "<Control-R>", lambda _e: self._run_nav_shortcut("reflect", self.show_reflect)
-            )
-            self.root.bind_all(
-                "<Control-J>",
-                lambda _e: self._run_nav_shortcut("journal", lambda: self._raise_or_open("journal")),
-            )
-            self.root.bind_all(
-                "<Control-G>",
-                lambda _e: self._run_nav_shortcut("graphs", lambda: self._raise_or_open("graphs")),
-            )
-            self.root.bind_all(
-                "<Control-I>",
-                lambda _e: self._run_nav_shortcut("weekly_summary", self.show_weekly_summary),
-            )
-            self._goto_shortcut_bound = True
+        if not getattr(self, "_keyboard_shortcuts_bound", False):
+            from keyboard_shortcuts import apply_sidebar_shortcut_tooltips, install_global_shortcuts
+
+            install_global_shortcuts(self)
+            apply_sidebar_shortcut_tooltips(self)
 
     def _build_sidebar(self) -> None:
         """Build the left sidebar navigation (#131)."""
@@ -3508,10 +3502,21 @@ class PersonalDevelopmentTracker:
     def show_log_exercise(self, date_str: str | None = None) -> None:
         import fitness_ui
 
+        existing = getattr(self, "_log_exercise_dialog", None)
+        if existing is not None:
+            try:
+                if existing.winfo_exists():
+                    existing.lift()
+                    existing.focus_force()
+                    return
+            except tk.TclError:
+                pass
+            self._log_exercise_dialog = None
+
         target = date_str or self.today_str()
         repo = fitness_ui.get_profile_repo(self.settings.get("fitness"))
         fitness_ui.ensure_fitness_seeded(repo, self.settings.get("fitness"))
-        fitness_ui.open_new_session_dialog(
+        dialog = fitness_ui.open_new_session_dialog(
             self.root,
             repo,
             initial_date=target,
@@ -3519,6 +3524,13 @@ class PersonalDevelopmentTracker:
             fitness_settings=self.settings.get("fitness"),
             theme=self.theme,
         )
+        self._log_exercise_dialog = dialog
+
+        def clear_log_dialog_ref(_event: tk.Event | None = None) -> None:
+            if getattr(self, "_log_exercise_dialog", None) is dialog:
+                self._log_exercise_dialog = None
+
+        dialog.bind("<Destroy>", clear_log_dialog_ref, add="+")
 
     def show_fitness_hub(self) -> None:
         if nav_items.deep_work_blocks_action(self, item_id="fitness_hub"):
