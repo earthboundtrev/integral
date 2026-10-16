@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import Callable
 import os
 import sys
 import threading
@@ -35,6 +36,7 @@ import creative_projects
 from creative_ui import show_writing_projects_window
 import deep_work
 from deep_work_ui import open_writing_pair, show_deep_work_start_dialog
+import nav_items
 import quick_capture
 from quick_capture_ui import close_quick_capture_panel, open_quick_capture_panel
 import focus_shield
@@ -134,6 +136,11 @@ class PersonalDevelopmentTracker:
         self._deep_work_after_id: str | None = None
         self._deep_work_banner: ttk.Frame | None = None
         self._deep_work_timer_label: ttk.Label | None = None
+        self._deep_work_extend_btn: ttk.Button | None = None
+        self._deep_work_end_btn: ttk.Button | None = None
+        self._sidebar_nav_frames: dict[str, tk.Frame] = {}
+        self._sidebar_goto_frame: tk.Frame | None = None
+        self._sidebar_deep_work_hint: tk.Label | None = None
         self._quick_capture_win: tk.Toplevel | None = None
         self._focus_shield = focus_shield.FocusShieldSession()
         self._focus_shield_after_id: str | None = None
@@ -1593,10 +1600,21 @@ class PersonalDevelopmentTracker:
         if not getattr(self, "_goto_shortcut_bound", False):
             self.root.bind_all("<Control-k>", lambda _e: self.show_goto())
             self.root.bind_all("<Control-K>", lambda _e: self.show_goto())
-            self.root.bind_all("<Control-R>", lambda _e: self.show_reflect())
-            self.root.bind_all("<Control-J>", lambda _e: self._raise_or_open("journal"))
-            self.root.bind_all("<Control-G>", lambda _e: self._raise_or_open("graphs"))
-            self.root.bind_all("<Control-I>", lambda _e: self.show_weekly_summary())
+            self.root.bind_all(
+                "<Control-R>", lambda _e: self._run_nav_shortcut("reflect", self.show_reflect)
+            )
+            self.root.bind_all(
+                "<Control-J>",
+                lambda _e: self._run_nav_shortcut("journal", lambda: self._raise_or_open("journal")),
+            )
+            self.root.bind_all(
+                "<Control-G>",
+                lambda _e: self._run_nav_shortcut("graphs", lambda: self._raise_or_open("graphs")),
+            )
+            self.root.bind_all(
+                "<Control-I>",
+                lambda _e: self._run_nav_shortcut("weekly_summary", self.show_weekly_summary),
+            )
             self._goto_shortcut_bound = True
 
     def _build_sidebar(self) -> None:
@@ -1629,29 +1647,31 @@ class PersonalDevelopmentTracker:
         )
         tagline.pack(anchor="w")
         
-        nav_items = [
-            {"label": "Today", "action": lambda: self._raise_or_open("today"), "key": None},
-            {"label": "Fitness Hub", "action": lambda: self._raise_or_open("fitness"), "key": None},
-            {"label": "Reflect", "action": lambda: self.show_reflect(), "key": "Ctrl+Shift+R"},
-            {"label": "Journal", "action": lambda: self._raise_or_open("journal"), "key": "Ctrl+Shift+J"},
-            {"label": "Graphs & Progress", "action": lambda: self._raise_or_open("graphs"), "key": "Ctrl+Shift+G"},
-            {"label": "Weekly Summary", "action": lambda: self.show_weekly_summary(), "key": "Ctrl+Shift+I"},
-        ]
-        
         nav_container = tk.Frame(container, bg=sidebar_bg)
         nav_container.pack(fill=tk.BOTH, expand=True, pady=(8, 0))
         
         self._sidebar_nav_buttons = []
+        self._sidebar_nav_frames = {}
         
-        for item in nav_items:
+        sidebar_actions: dict[str, Callable[[], None]] = {
+            "today": lambda: self._raise_or_open("today"),
+            "fitness_hub": lambda: self._raise_or_open("fitness"),
+            "reflect": self.show_reflect,
+            "journal": lambda: self._raise_or_open("journal"),
+            "graphs": lambda: self._raise_or_open("graphs"),
+            "weekly_summary": self.show_weekly_summary,
+        }
+        
+        for spec in nav_items.sidebar_nav_items():
             btn_frame = tk.Frame(nav_container, bg=sidebar_bg, height=36)
             btn_frame.pack(fill=tk.X, padx=8, pady=1)
             btn_frame.pack_propagate(False)
+            self._sidebar_nav_frames[spec.id] = btn_frame
             
             btn = tk.Button(
                 btn_frame,
-                text=item["label"],
-                command=item["action"],
+                text=spec.label,
+                command=sidebar_actions[spec.id],
                 bg=sidebar_bg,
                 fg=theme["fg"],
                 font=FONTS["caption"],
@@ -1673,11 +1693,25 @@ class PersonalDevelopmentTracker:
             btn.bind("<Enter>", on_enter)
             btn.bind("<Leave>", on_leave)
         
+        hint_row = tk.Frame(nav_container, bg=sidebar_bg)
+        hint_row.pack(fill=tk.X, padx=16, pady=(4, 0))
+        self._sidebar_deep_work_hint = tk.Label(
+            hint_row,
+            text=nav_items.DEEP_WORK_HIDDEN_HINT,
+            bg=sidebar_bg,
+            fg=theme["muted"],
+            font=FONTS["hint"],
+            anchor="w",
+        )
+        hint_row.pack_forget()
+        self._sidebar_deep_work_hint_row = hint_row
+        
         goto_frame = tk.Frame(container, bg=sidebar_bg)
         goto_frame.pack(fill=tk.X, padx=16, pady=(16, 8))
+        self._sidebar_goto_frame = goto_frame
         goto_btn = tk.Button(
             goto_frame,
-            text="🔍 Go to…",
+            text=nav_items.SIDEBAR_DISPLAY_LABELS.get("goto_palette", "Go to…"),
             command=self.show_goto,
             bg=theme["field_bg"],
             fg=theme["muted"],
@@ -1733,10 +1767,14 @@ class PersonalDevelopmentTracker:
             if self._content_pane and self._content_pane.winfo_exists():
                 self._content_pane.focus_set()
         elif window_key == "fitness":
+            if nav_items.deep_work_blocks_action(self, item_id="fitness_hub"):
+                return
             self.show_fitness_hub()
         elif window_key == "journal":
             self.show_journal()
         elif window_key == "graphs":
+            if nav_items.deep_work_blocks_action(self, item_id="graphs"):
+                return
             self.show_graphs()
     
     def _track_window(self, window_key: str, window: tk.Toplevel) -> None:
@@ -1756,8 +1794,15 @@ class PersonalDevelopmentTracker:
                 window.destroy()
         window.protocol("WM_DELETE_WINDOW", on_close)
 
+    def _run_nav_shortcut(self, nav_id: str, action: Callable[[], None]) -> None:
+        if nav_items.deep_work_blocks_action(self, item_id=nav_id):
+            return
+        action()
+
     def show_reflect(self) -> None:
         """Open Reflect: first unlogged domain or banner if all logged (#131)."""
+        if nav_items.deep_work_blocks_action(self, item_id="reflect"):
+            return
         first_unlogged = self.first_unlogged_category()
         if first_unlogged:
             self.open_log_dialog(first_unlogged)
@@ -2552,6 +2597,8 @@ class PersonalDevelopmentTracker:
                 text.insert(tk.END, f"{item.get('body', '')}\n")
 
     def show_weekly_summary(self) -> None:
+        if nav_items.deep_work_blocks_action(self, item_id="weekly_summary"):
+            return
         existing = self._open_windows.get("weekly_summary")
         if existing is not None:
             try:
@@ -2855,6 +2902,8 @@ class PersonalDevelopmentTracker:
                 pass
         self._deep_work_banner = None
         self._deep_work_timer_label = None
+        self._deep_work_extend_btn = None
+        self._deep_work_end_btn = None
         # Restore packed nav without tearing down the dashboard (#47).
         self._apply_deep_work_chrome()
         self.sync_quick_capture_panel()
@@ -2898,25 +2947,125 @@ class PersonalDevelopmentTracker:
         self._deep_work_banner = banner
         self._deep_work_timer_label = ttk.Label(banner, text="", style="Subheading.TLabel")
         self._deep_work_timer_label.pack(side=tk.LEFT)
-        ttk.Button(banner, text="+10 min", command=lambda: self.extend_deep_work()).pack(
-            side=tk.LEFT, padx=(12, 6)
+        self._deep_work_extend_btn = ttk.Button(
+            banner, text="+10 min", command=lambda: self.extend_deep_work()
         )
-        ttk.Button(banner, text="End Deep Work", command=lambda: self.end_deep_work(completed=False)).pack(
-            side=tk.LEFT
+        self._deep_work_extend_btn.pack(side=tk.LEFT, padx=(12, 6))
+        self._deep_work_end_btn = ttk.Button(
+            banner,
+            text="End Deep Work",
+            style="TButton",
+            command=lambda: self.end_deep_work(completed=False),
         )
+        self._deep_work_end_btn.pack(side=tk.LEFT)
 
     def _apply_deep_work_chrome(self) -> None:
-        active = bool(self._deep_work_session and self._deep_work_session.running)
+        active = nav_items.deep_work_active(self)
         if active:
             from more_menu_ui import close_more_menu
 
             close_more_menu(self)
+        self._apply_sidebar_deep_work_chrome(active)
+        if self._deep_work_extend_btn is not None:
+            try:
+                self._deep_work_extend_btn.configure(style="TButton")
+            except tk.TclError:
+                pass
+        if self._deep_work_end_btn is not None:
+            try:
+                self._deep_work_end_btn.configure(
+                    style="Accent.TButton" if active else "TButton"
+                )
+            except tk.TclError:
+                pass
         if self._deep_work_banner is not None:
             try:
                 if active:
                     self._deep_work_banner.pack(fill=tk.X, pady=(0, 8))
+                    self._focus_deep_work_end_if_sidebar_hidden()
                 else:
                     self._deep_work_banner.pack_forget()
+            except tk.TclError:
+                pass
+
+    def _apply_sidebar_deep_work_chrome(self, active: bool) -> None:
+        hidden_any = False
+        for spec in nav_items.sidebar_nav_items():
+            frame = self._sidebar_nav_frames.get(spec.id)
+            if frame is None:
+                continue
+            try:
+                if not frame.winfo_exists():
+                    continue
+            except tk.TclError:
+                continue
+            hide = active and spec.hide_in_deep_work
+            if hide:
+                hidden_any = True
+                if frame.winfo_manager():
+                    frame.pack_forget()
+            elif frame.winfo_manager() != "pack":
+                frame.pack(fill=tk.X, padx=8, pady=1)
+        goto = self._sidebar_goto_frame
+        if goto is not None:
+            try:
+                if goto.winfo_exists():
+                    if active and nav_items.is_hidden_during_deep_work(
+                        item_id="goto_palette", tracker=self
+                    ):
+                        hidden_any = True
+                        if goto.winfo_manager():
+                            goto.pack_forget()
+                    elif goto.winfo_manager() != "pack":
+                        goto.pack(fill=tk.X, padx=16, pady=(16, 8))
+            except tk.TclError:
+                pass
+        hint_row = getattr(self, "_sidebar_deep_work_hint_row", None)
+        if hint_row is not None and self._sidebar_deep_work_hint is not None:
+            try:
+                if active and hidden_any:
+                    hint_row.pack(fill=tk.X, padx=0, pady=(4, 0))
+                else:
+                    hint_row.pack_forget()
+            except tk.TclError:
+                pass
+
+    def _widget_inside(self, widget: tk.Misc | None, ancestor: tk.Misc | None) -> bool:
+        if widget is None or ancestor is None:
+            return False
+        current: tk.Misc | None = widget
+        while current is not None:
+            if current is ancestor:
+                return True
+            try:
+                current = current.master
+            except AttributeError:
+                break
+        return False
+
+    def _focus_deep_work_end_if_sidebar_hidden(self) -> None:
+        end_btn = self._deep_work_end_btn
+        if end_btn is None:
+            return
+        try:
+            focus = self.root.focus_get()
+        except (KeyError, tk.TclError):
+            return
+        if focus is None:
+            return
+        for spec in nav_items.sidebar_nav_items():
+            if not spec.hide_in_deep_work:
+                continue
+            frame = self._sidebar_nav_frames.get(spec.id)
+            if self._widget_inside(focus, frame):
+                try:
+                    end_btn.focus_set()
+                except tk.TclError:
+                    pass
+                return
+        if self._widget_inside(focus, self._sidebar_goto_frame):
+            try:
+                end_btn.focus_set()
             except tk.TclError:
                 pass
 

@@ -7,7 +7,7 @@ import tkinter as tk
 from dataclasses import dataclass
 from typing import Any, Callable
 
-import deep_work
+import nav_items
 from theme import FONTS
 
 # Canonical menu structure (labels tested for reachability).
@@ -73,13 +73,8 @@ TODAY_MORE_MENU_LABELS: tuple[str, ...] = (
     "Fitness Hub",
 )
 
-SIDEBAR_NAV_LABELS: tuple[str, ...] = (
-    "Today",
-    "Fitness Hub",
-    "Reflect",
-    "Journal",
-    "Graphs & Progress",
-    "Weekly Summary",
+SIDEBAR_NAV_LABELS: tuple[str, ...] = tuple(
+    item.label for item in nav_items.sidebar_nav_items()
 )
 
 THEME_LABEL_ALIASES: frozenset[str] = frozenset({"Dark Mode", "Light Mode"})
@@ -132,29 +127,21 @@ def _display_label(tracker: Any, item: dict[str, Any]) -> str:
     return str(item["label"])
 
 
-def is_hidden_during_deep_work(label: str) -> bool:
-    if label in deep_work.DEEP_WORK_KEEP_MORE_LABELS:
-        return False
-    if label in deep_work.DEEP_WORK_HIDDEN_MORE_LABELS:
-        return True
-    if label in THEME_LABEL_ALIASES:
-        return "Light Mode" in deep_work.DEEP_WORK_HIDDEN_MORE_LABELS
-    return False
+def is_hidden_during_deep_work(item_id: str, tracker: Any | None = None) -> bool:
+    return nav_items.is_hidden_during_deep_work(item_id=item_id, tracker=tracker)
 
 
 def build_more_menu_rows(tracker: Any) -> list[MoreMenuRow]:
     """Flat selectable rows respecting Deep Work chrome (#132)."""
-    active = bool(
-        getattr(tracker, "_deep_work_session", None)
-        and tracker._deep_work_session.running
-    )
+    active = nav_items.deep_work_active(tracker)
     rows: list[MoreMenuRow] = []
     for group in MORE_GROUPS:
         title = str(group["title"])
         for item in group["items"]:
-            label = _display_label(tracker, item)
-            if active and is_hidden_during_deep_work(label):
+            item_id = str(item["id"])
+            if active and is_hidden_during_deep_work(item_id, tracker):
                 continue
+            label = _display_label(tracker, item)
             rows.append(
                 MoreMenuRow(
                     group=title,
@@ -402,6 +389,18 @@ class MoreMenuPopup:
             self._row_widgets.append(frame)
             self._label_widgets.append(lbl)
 
+        if nav_items.deep_work_active(self.tracker) and nav_items.any_shell_items_hidden_during_deep_work():
+            dw_hint = tk.Label(
+                self._body,
+                text=nav_items.DEEP_WORK_HIDDEN_HINT,
+                anchor="w",
+                bg=self.theme["surface"],
+                fg=self.theme["muted"],
+                font=FONTS["hint"],
+                padx=self._PAD,
+                pady=(4, 0),
+            )
+            dw_hint.pack(fill=tk.X)
         nav_hint = tk.Label(
             self._body,
             text="↑↓ · Enter · Esc",

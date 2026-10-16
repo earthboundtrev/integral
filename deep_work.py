@@ -80,27 +80,19 @@ def apply_deep_work_settings(settings: dict, deep_work: dict) -> dict:
     return settings
 
 
-# Nav button labels hidden during Deep Work (MVP chrome policy)
-DEEP_WORK_HIDDEN_NAV_LABELS = frozenset(
-    {
-        "Go to…",
-        "Guidance",
-        "Weekly Summary",
-        "Full History",
-        "Search Notes",
-        "Graphs & Progress",
-        "Milestones",
-        "Export",
-        "Backup",
-        "Edit Categories",
-        "Data & Security",
-        "Light Mode",
-        "Dark Mode",
-    }
+# Chrome policy is defined on ``nav_items.NAV_ITEMS`` (#132); re-export for tests/callers.
+from nav_items import (
+    NAV_ITEMS,
+    THEME_MENU_LABELS,
+    labels_hidden_during_deep_work,
+    labels_kept_during_deep_work,
 )
 
+DEEP_WORK_HIDDEN_NAV_LABELS = labels_hidden_during_deep_work()
+
 DEEP_WORK_KEEP_NAV_LABELS = frozenset(
-    {
+    labels_kept_during_deep_work()
+    & {
         "Refresh",
         "Journal",
         "Writing Projects",
@@ -109,28 +101,15 @@ DEEP_WORK_KEEP_NAV_LABELS = frozenset(
     }
 )
 
-# Grouped More menu (#130) — hide distractors; keep focus-friendly actions.
-DEEP_WORK_HIDDEN_MORE_LABELS = frozenset(
-    {
-        "Guidance",
-        "Full History",
-        "Search Notes",
-        "Milestones",
-        "Export",
-        "Backup",
-        "Edit Categories",
-        "Data & Security",
-        "Light Mode",
-        "Dark Mode",
-    }
-)
+_hidden_more: set[str] = {
+    item.label
+    for item in NAV_ITEMS
+    if "more" in item.surfaces and item.hide_in_deep_work and item.id != "toggle_theme"
+}
+if any(item.id == "toggle_theme" and item.hide_in_deep_work for item in NAV_ITEMS):
+    _hidden_more.update(THEME_MENU_LABELS)
+DEEP_WORK_HIDDEN_MORE_LABELS = frozenset(_hidden_more)
 
 DEEP_WORK_KEEP_MORE_LABELS = frozenset(
-    {
-        "Refresh",
-        "AI Insight",
-        "Quick Capture",
-        "Writing Projects",
-        "Deep Work",
-    }
+    item.label for item in NAV_ITEMS if "more" in item.surfaces and not item.hide_in_deep_work
 )
