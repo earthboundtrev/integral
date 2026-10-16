@@ -213,6 +213,27 @@ class TestWidgetWalkDarkMode(unittest.TestCase):
                 self.assertTrue(marker.winfo_exists())
         root.destroy()
 
+    def test_theme_toggle_preserves_overview_categories_window(self):
+        root = tk.Tk()
+        root.withdraw()
+        with patch.object(personal_dev_tracker.PersonalDevelopmentTracker, "save_data", lambda *_a, **_k: None):
+            with patch.object(
+                personal_dev_tracker.PersonalDevelopmentTracker,
+                "__init__",
+                _mock_tracker_init,
+            ):
+                tracker = personal_dev_tracker.PersonalDevelopmentTracker(root)
+                tracker.create_dashboard()
+                tracker.show_streak_details()
+                root.update_idletasks()
+                overview_win = tracker._streak_details_window
+                self.assertIsNotNone(overview_win)
+                tracker.toggle_dark_mode()
+                root.update_idletasks()
+                self.assertIsNotNone(tracker._streak_details_window)
+                self.assertTrue(overview_win.winfo_exists())
+        root.destroy()
+
     def test_goto_palette_no_forbidden_after_dark_theme(self):
         root = tk.Tk()
         root.withdraw()

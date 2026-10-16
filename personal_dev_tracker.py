@@ -611,24 +611,19 @@ class PersonalDevelopmentTracker:
         self.refresh_dashboard(full=False, recompute=True)
 
     def toggle_dark_mode(self) -> None:
-        busy = BusyIndicator(self.root, label="Applying theme…", theme=self.theme, delay_ms=50)
-        busy.start()
-        try:
-            self.settings["dark_mode"] = not self.settings.get("dark_mode", False)
-            self.save_data()
-            # Force full shell rebuild for theme changes (chrome colors + mode button label)
-            if self._shell_frame is not None:
-                try:
-                    self._shell_frame.destroy()
-                except tk.TclError:
-                    pass
-                self._shell_frame = None
-            self.create_dashboard()
-            self.sync_quick_capture_panel()
-            self._retheme_open_windows()
-            self._update_theme_reopen_banner()
-        finally:
-            busy.stop()
+        self.settings["dark_mode"] = not self.settings.get("dark_mode", False)
+        self.save_data()
+        # Force full shell rebuild for theme changes (chrome colors + mode button label)
+        if self._shell_frame is not None:
+            try:
+                self._shell_frame.destroy()
+            except tk.TclError:
+                pass
+            self._shell_frame = None
+        self.create_dashboard()
+        self.sync_quick_capture_panel()
+        self._retheme_open_windows()
+        self._update_theme_reopen_banner()
 
     def merge_categories_with_defaults(self, stored: dict | None) -> dict:
         defaults = self.get_default_categories()
@@ -1457,8 +1452,7 @@ class PersonalDevelopmentTracker:
 
     def create_dashboard(self) -> None:
         self._dashboard_ready = False
-        self._close_streak_details_window()
-        
+
         # Check if theme changed (for backup restore with different dark_mode)
         theme_changed = self._theme_dark != self.settings.get("dark_mode", False)
         
