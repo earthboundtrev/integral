@@ -44,6 +44,7 @@ class WorkoutSession:
     notes: str = ""
     duration_minutes: int | None = None
     body_weight_kg: float | None = None
+    created_at: str | None = None
     id: str = field(default_factory=new_id)
 
 
@@ -56,6 +57,8 @@ class WorkoutSet:
     hold_seconds: float | None = None
     weight_kg: float | None = None
     form_quality: int | None = None
+    ordinal: int | None = None
+    created_at: str | None = None
     id: str = field(default_factory=new_id)
 
 

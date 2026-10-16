@@ -1,6 +1,9 @@
 from datetime import date, datetime
 
 import subprocess
+import sys
+
+import pytest
 
 from notifications import (
     due_reminders,
@@ -71,6 +74,7 @@ def test_reminder_copy_is_non_punitive():
     assert "only if you want" in LOGGED_ONCE_MESSAGE.lower() or "you're done" in LOGGED_ONCE_MESSAGE.lower()
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="tests Windows-specific notification behavior")
 def test_show_windows_notification_hides_subprocess_console(monkeypatch):
     calls: list[tuple[list[str], dict]] = []
 

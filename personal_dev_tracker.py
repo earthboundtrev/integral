@@ -124,6 +124,12 @@ class PersonalDevelopmentTracker:
         self._nav_buttons: dict[str, ttk.Widget] = {}
         self._nav_pack_order: list[str] = []
         self._nav_frame: ttk.Frame | None = None
+        self._shell_frame: ttk.Frame | None = None
+        self._shell_header: ttk.Frame | None = None
+        self._content_pane: ttk.Frame | None = None
+        self._shell_footer: ttk.Frame | None = None
+        self._banner_host: ttk.Frame | None = None
+        self._sidebar_slot: ttk.Frame | None = None
 
         if is_encrypted_file(DATA_FILE) and not prompt_vault_unlock(self):
             messagebox.showerror("Locked", "Cannot open encrypted journal without passphrase.")
@@ -515,6 +521,10 @@ class PersonalDevelopmentTracker:
     def toggle_dark_mode(self) -> None:
         self.settings["dark_mode"] = not self.settings.get("dark_mode", False)
         self.save_data()
+        # Force full shell rebuild for theme changes (chrome colors + mode button label)
+        if self._shell_frame is not None:
+            self._shell_frame.destroy()
+            self._shell_frame = None
         self.create_dashboard()
 
     def merge_categories_with_defaults(self, stored: dict | None) -> dict:
@@ -610,6 +620,34 @@ class PersonalDevelopmentTracker:
             self.settings["fitness"] = get_fitness_settings(self.settings)
             self.sessions = migrated.get("sessions", [])
             self._invalidate_session_counts()
+            
+            # Migrate legacy program sessions to fitness.db (with backup)
+            if self.sessions:
+                from legacy_fitness_migration import run_migration
+                from progression.db import get_fitness_db_path
+                try:
+                    # Check if any unmigrated sessions remain
+                    needs_migration = any(
+                        not sess.get("migrated_to_fitness_db")
+                        for sess in self.sessions
+                    )
+                    if needs_migration:
+                        result = run_migration(
+                            data_path=DATA_FILE,
+                            fitness_db_path=get_fitness_db_path(),
+                            mark_migrated=True
+                        )
+                        if result.get("migrated_count", 0) > 0:
+                            print(f"Legacy migration: {result['migrated_count']} sessions migrated")
+                        if result.get("errors"):
+                            print(f"Legacy migration warnings: {len(result['errors'])} issues")
+                except Exception as e:
+                    messagebox.showerror(
+                        "Migration Failed",
+                        f"Legacy fitness session migration failed:\n\n{e}\n\n"
+                        "Your data is safe. Backups were created if migration started."
+                    )
+            
             self.milestones = merge_milestones(migrated.get("milestones"))
             self.journal = journal.normalize_journal(migrated.get("journal"))
             self.creative_projects = creative_projects.normalize_creative_projects(
@@ -858,7 +896,8 @@ class PersonalDevelopmentTracker:
             self.settings = pruned
             self.save_data(flush=True)
 
-        log_bar = ttk.LabelFrame(self.root, text="Today's Log", padding=14, style="Card.TLabelframe")
+        parent = self._content_pane if self._content_pane is not None else self.root
+        log_bar = ttk.LabelFrame(parent, text="Today's Log", padding=14, style="Card.TLabelframe")
         self._log_bar = log_bar
         log_bar.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=16, pady=(0, 10))
 
@@ -872,6 +911,154 @@ class PersonalDevelopmentTracker:
             text="Domains are optional depth — pick any area below, or skip. Rating + Save is enough.",
             style="OnSurfaceMuted.TLabel",
         ).pack(anchor="w", pady=(4, 10))
+
+        # --- Inline todo entry and quick action buttons ---
+        quick_actions_frame = ttk.Frame(log_bar, style="Surface.TFrame")
+        quick_actions_frame.pack(fill=tk.X, pady=(0, 12))
+        
+        # Inline todo field
+        todo_row = ttk.Frame(quick_actions_frame, style="Surface.TFrame")
+        todo_row.pack(fill=tk.X, pady=(0, 8))
+        
+        todo_var = tk.StringVar()
+        todo_entry = ttk.Entry(
+            todo_row,
+            textvariable=todo_var,
+            font=FONTS["body"],
+        )
+        todo_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8))
+        self._inline_todo_entry = todo_entry
+        self._inline_todo_var = todo_var
+        
+        # More options link to open Quick Capture
+        more_link = ttk.Label(
+            todo_row,
+            text="More options…",
+            foreground=self.theme["link"],
+            cursor="hand2",
+            style="OnSurfaceMuted.TLabel"
+        )
+        more_link.pack(side=tk.LEFT, padx=(0, 8))
+        
+        # Workout history button
+        ttk.Button(
+            todo_row,
+            text="Workout history",
+            command=self.show_workout_history,
+        ).pack(side=tk.LEFT, padx=(8, 0))
+        
+        def open_qc_with_text(event=None):
+            text = todo_var.get().strip()
+            if text != "Add a todo… (Enter to save, Ctrl+Shift+T from anywhere)" and text:
+                # Store text for QC to pick up
+                self._qc_prefill_text = text
+            self._qc_should_focus = True
+            self.set_quick_capture_enabled(True)
+            return "break"
+        
+        more_link.bind("<Button-1>", open_qc_with_text)
+        
+        # Placeholder simulation
+        def on_focus_in(event):
+            if todo_var.get() == "Add a todo… (Enter to save, Ctrl+Shift+T from anywhere)":
+                todo_var.set("")
+                todo_entry.config(foreground=self.theme["fg"])
+        
+        def on_focus_out(event):
+            if not todo_var.get():
+                todo_var.set("Add a todo… (Enter to save, Ctrl+Shift+T from anywhere)")
+                todo_entry.config(foreground=self.theme["muted"])
+        
+        todo_var.set("Add a todo… (Enter to save, Ctrl+Shift+T from anywhere)")
+        todo_entry.config(foreground=self.theme["muted"])
+        todo_entry.bind("<FocusIn>", on_focus_in)
+        todo_entry.bind("<FocusOut>", on_focus_out)
+        
+        # Use tk.Label for error messages (ttk ignores foreground color)
+        error_label = tk.Label(todo_row, text="", fg="#DC2626", bg=self.theme["surface"])
+        self._inline_error_label = error_label
+        self._error_timer_id = None
+        
+        def add_inline_todo(event=None):
+            text = todo_var.get().strip()
+            if text == "Add a todo… (Enter to save, Ctrl+Shift+T from anywhere)" or not text:
+                return "break"
+            
+            # Note: IME composition handling not available in standard Tk.
+            # Users completing IME input should press Enter after composition is committed.
+            
+            error = self.add_todo_quick(text)
+            if error:
+                error_label.config(text=error)
+                error_label.pack(side=tk.LEFT, padx=(8, 0))
+                # Cancel previous timer if any
+                if self._error_timer_id:
+                    self.root.after_cancel(self._error_timer_id)
+                self._error_timer_id = self.root.after(5000, lambda: self._clear_error_label())
+                # Keep text in field on error so user can fix it
+            else:
+                # Cancel error timer if any
+                if self._error_timer_id:
+                    self.root.after_cancel(self._error_timer_id)
+                    self._error_timer_id = None
+                error_label.pack_forget()
+                todo_var.set("")
+                on_focus_out(None)
+                self.refresh_dashboard(full=False)
+                # Restore focus after refresh
+                self.root.after(10, lambda: self._restore_inline_todo_focus())
+                self.sync_quick_capture_panel()
+            
+            return "break"
+        
+        def clear_todo(event):
+            if todo_var.get() and todo_var.get() != "Add a todo… (Enter to save, Ctrl+Shift+T from anywhere)":
+                todo_var.set("")
+                on_focus_out(None)
+                error_label.pack_forget()
+                return "break"
+            else:
+                # Second Escape: move focus to + Todo button
+                if hasattr(self, "_add_todo_button"):
+                    self._add_todo_button.focus_set()
+                return "break"
+        
+        todo_entry.bind("<Return>", add_inline_todo)
+        todo_entry.bind("<Escape>", clear_todo)
+        
+        # Quick action buttons
+        buttons_row = ttk.Frame(quick_actions_frame, style="Surface.TFrame")
+        buttons_row.pack(fill=tk.X)
+        
+        add_todo_btn = ttk.Button(
+            buttons_row,
+            text="+ Todo",
+            style="Accent.TButton",
+            command=lambda: todo_entry.focus_set()
+        )
+        add_todo_btn.pack(side=tk.LEFT, padx=(0, 8), ipady=4)
+        self._add_todo_button = add_todo_btn
+        
+        log_workout_btn = ttk.Button(
+            buttons_row,
+            text="Log workout",
+            style="Accent.TButton",
+            command=self.show_log_exercise
+        )
+        log_workout_btn.pack(side=tk.LEFT, padx=(0, 8), ipady=4)
+        
+        def reflect_action():
+            next_cat = self.first_unlogged_category()
+            if next_cat:
+                self.open_log_dialog(next_cat)
+        
+        reflect_btn = ttk.Button(
+            buttons_row,
+            text="Reflect",
+            style="Accent.TButton",
+            command=reflect_action
+        )
+        reflect_btn.pack(side=tk.LEFT, ipady=4)
 
         actions_host, actions, _actions_canvas = ui_scroll.make_horizontal_scroll_row(
             log_bar,
@@ -1077,20 +1264,12 @@ class PersonalDevelopmentTracker:
         if full or not self._dashboard_ready:
             self.create_dashboard()
             return
-
-        if recompute:
-            self._invalidate_caches()
-        self.insights = self._get_insights()
-
-        if self._streak_pill is not None:
-            self._streak_pill.config(text=f"🔥 {self.get_streak()} day streak · details")
-
-        if self._date_label is not None:
-            self._date_label.config(text=f"Today · {datetime.now().strftime('%B %d, %Y')}")
-
-        if self._log_bar is not None:
-            self._log_bar.destroy()
-        self.create_todays_log_bar()
+        
+        # Update header chrome
+        self._refresh_header_chrome()
+        
+        # Rebuild content pane
+        self._build_content(recompute=recompute)
 
         try:
             if self._activity_grid is not None:
@@ -1169,22 +1348,80 @@ class PersonalDevelopmentTracker:
 
     def create_dashboard(self) -> None:
         self._dashboard_ready = False
-        self._deep_work_banner = None
-        self._deep_work_timer_label = None
-        self._nav_buttons = {}
-        self._nav_pack_order = []
-        self._nav_frame = None
         self._close_streak_details_window()
-
-        for widget in self.root.winfo_children():
-            widget.destroy()
-
+        
+        # Check if theme changed (for backup restore with different dark_mode)
+        theme_changed = self._theme_dark != self.settings.get("dark_mode", False)
+        
+        # First-time creation or full rebuild
+        needs_shell = self._shell_frame is None or not self._shell_frame.winfo_exists() or theme_changed
+        
+        # Apply theme before shell creation so colors are correct
         self.apply_current_theme(force=True)
+        
+        if needs_shell:
+            # Full teardown and shell creation
+            for widget in self.root.winfo_children():
+                widget.destroy()
+            self._deep_work_banner = None
+            self._deep_work_timer_label = None
+            self._nav_buttons = {}
+            self._nav_pack_order = []
+            self._nav_frame = None
+            self._ensure_shell()
+        else:
+            # Shell exists, refresh header chrome (for backup restore, etc.)
+            self._refresh_header_chrome()
+        
+        self._build_content(recompute=True)
+        self._dashboard_ready = True
+    
+    def _restore_content_focus(self) -> None:
+        """Set focus to first focusable control in content pane."""
+        if self._content_pane is None or not self._content_pane.winfo_exists():
+            return
+        
+        # Deep search for first focusable widget
+        def find_focusable(widget):
+            """Recursively find first focusable widget."""
+            if widget.winfo_class() in ("TEntry", "Entry", "Text"):
+                return widget
+            for child in widget.winfo_children():
+                result = find_focusable(child)
+                if result:
+                    return result
+            return None
+        
+        focusable = find_focusable(self._content_pane)
+        if focusable:
+            focusable.focus_set()
+    
+    def _refresh_header_chrome(self) -> None:
+        """Update header widgets (streak, date) without rebuilding shell."""
+        if self._streak_pill is not None:
+            try:
+                if self._streak_pill.winfo_exists():
+                    self._streak_pill.config(text=f"🔥 {self.get_streak()} day streak · details")
+            except tk.TclError:
+                pass
+        if self._date_label is not None:
+            try:
+                if self._date_label.winfo_exists():
+                    self._date_label.config(text=f"Today · {datetime.now().strftime('%B %d, %Y')}")
+            except tk.TclError:
+                pass
 
-        header = ttk.Frame(self.root)
-        header.pack(fill=tk.X, padx=16, pady=(16, 10))
-
-        title_block = ttk.Frame(header)
+    def _ensure_shell(self) -> None:
+        """Create the persistent shell frame structure."""
+        # Shell container
+        self._shell_frame = ttk.Frame(self.root)
+        self._shell_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Header (persistent)
+        self._shell_header = ttk.Frame(self._shell_frame)
+        self._shell_header.pack(fill=tk.X, padx=16, pady=(16, 10))
+        
+        title_block = ttk.Frame(self._shell_header)
         title_block.pack(side=tk.LEFT)
         ttk.Label(title_block, text=APP_NAME, style="Title.TLabel").pack(anchor="w")
         ttk.Label(
@@ -1192,8 +1429,8 @@ class PersonalDevelopmentTracker:
             text="Holistic life tracking",
             style="Muted.TLabel",
         ).pack(anchor="w", pady=(2, 0))
-
-        right_header = ttk.Frame(header)
+        
+        right_header = ttk.Frame(self._shell_header)
         right_header.pack(side=tk.RIGHT)
         streak_frame = streak_badge(
             right_header,
@@ -1212,21 +1449,30 @@ class PersonalDevelopmentTracker:
             style="Muted.TLabel",
         )
         self._date_label.pack(side=tk.RIGHT)
-
-        footer = ttk.Frame(self.root)
-        footer.pack(side=tk.BOTTOM, fill=tk.X, padx=16, pady=(4, 12))
-        ttk.Separator(footer, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=(0, 10))
+        
+        # Sidebar slot (empty for now, for #131)
+        self._sidebar_slot = ttk.Frame(self._shell_frame)
+        # Not packed yet - will be used in #131
+        
+        # Banner host (persistent, for Deep Work and future banners)
+        self._banner_host = ttk.Frame(self._shell_frame)
+        self._banner_host.pack(fill=tk.X, padx=16, pady=(0, 0))
+        
+        # Footer (persistent) - pack before content to avoid clipping at minsize/high DPI
+        self._shell_footer = ttk.Frame(self._shell_frame)
+        self._shell_footer.pack(side=tk.BOTTOM, fill=tk.X, padx=16, pady=(4, 12))
+        
+        # Content pane (persistent frame, children rebuilt) - pack after footer
+        self._content_pane = ttk.Frame(self._shell_frame)
+        self._content_pane.pack(fill=tk.BOTH, expand=True)
+        ttk.Separator(self._shell_footer, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=(0, 10))
         nav_host, nav, _nav_canvas = ui_scroll.make_horizontal_scroll_row(
-            footer,
+            self._shell_footer,
             overflow_hint="Scroll for more →",
         )
         nav_host.pack(fill=tk.X)
-
-        self.create_todays_log_bar()
-
-        self._invalidate_caches()
-        self.insights = self._get_insights()
-
+        
+        # Navigation buttons
         ttk.Button(
             nav,
             text="Refresh",
@@ -1264,13 +1510,37 @@ class PersonalDevelopmentTracker:
         ttk.Button(nav, text=mode_label, command=self.toggle_dark_mode).pack(side=tk.RIGHT)
         self._nav_frame = nav
         self._register_nav_buttons(nav)
-        self._ensure_deep_work_banner(footer)
+        self._ensure_deep_work_banner(self._banner_host)
         self._apply_deep_work_chrome()
         if not getattr(self, "_goto_shortcut_bound", False):
             self.root.bind_all("<Control-k>", lambda _e: self.show_goto())
             self.root.bind_all("<Control-K>", lambda _e: self.show_goto())
             self._goto_shortcut_bound = True
-        self._dashboard_ready = True
+    
+    def _build_content(self, *, recompute: bool = True) -> None:
+        """Build or rebuild the content pane (Today's Log and Overview)."""
+        if self._content_pane is None or not self._content_pane.winfo_exists():
+            return
+        
+        # Save focus widget path for restoration
+        focused_widget = self.root.focus_get()
+        focused_path = str(focused_widget) if focused_widget else None
+        
+        # Clear existing content
+        for child in self._content_pane.winfo_children():
+            child.destroy()
+        
+        # Build Today's Log bar
+        self.create_todays_log_bar()
+        
+        # Recompute insights if requested
+        if recompute:
+            self._invalidate_caches()
+            self.insights = self._get_insights()
+        
+        # Restore focus to content's first control if prior focus was in content
+        if focused_path and focused_path.startswith(str(self._content_pane)):
+            self.root.after(10, lambda: self._restore_content_focus())
 
     def _build_overview_tab(self, parent: ttk.Frame) -> None:
         outer, main, canvas = ui_scroll.make_scrollable_frame(parent)
@@ -2079,6 +2349,60 @@ class PersonalDevelopmentTracker:
     def toggle_quick_capture(self) -> None:
         self.set_quick_capture_enabled(not quick_capture.is_quick_capture_enabled(self.settings))
 
+    def add_todo_quick(self, text: str, category: str | None = None) -> str | None:
+        """Add a todo for today with optional category. Return error string or None on success."""
+        from category_picker import resolve_category_name
+
+        cleaned = text.strip()
+        if not cleaned:
+            return None
+        
+        MAX_TODO_LENGTH = 500
+        if len(cleaned) > MAX_TODO_LENGTH:
+            return f"Todo text is too long (max {MAX_TODO_LENGTH} characters)."
+        
+        if category is None:
+            category = self.settings.get("last_todo_category", "")
+        
+        # If the stored category is invalid/missing, fall back to blank
+        resolved = resolve_category_name(
+            category, list(self.categories.keys()), allow_blank=True
+        )
+        if resolved is None:
+            resolved = ""
+        
+        try:
+            self.todos = todos.add_todo(
+                self.todos,
+                text=cleaned,
+                work_date=self.today_str(),
+                category=resolved,
+            )
+            self.settings["last_todo_category"] = resolved
+            self.save_data()
+            return None
+        except ValueError as exc:
+            return str(exc)
+
+    def _restore_inline_todo_focus(self) -> None:
+        """Restore focus to inline todo entry after dashboard refresh."""
+        if hasattr(self, "_inline_todo_entry"):
+            try:
+                if self._inline_todo_entry.winfo_exists():
+                    self._inline_todo_entry.focus_set()
+            except tk.TclError:
+                pass
+    
+    def _clear_error_label(self) -> None:
+        """Safely clear inline todo error label after timeout."""
+        if hasattr(self, "_inline_error_label"):
+            try:
+                if self._inline_error_label.winfo_exists():
+                    self._inline_error_label.pack_forget()
+            except tk.TclError:
+                pass
+        self._error_timer_id = None
+
     def show_writing_projects(self) -> None:
         show_writing_projects_window(self)
 
@@ -2212,17 +2536,17 @@ class PersonalDevelopmentTracker:
                 self._nav_buttons[label] = child
                 self._nav_pack_order.append(label)
 
-    def _ensure_deep_work_banner(self, footer: ttk.Frame | None = None) -> None:
+    def _ensure_deep_work_banner(self, banner_host: ttk.Frame | None = None) -> None:
         if self._deep_work_banner is not None:
             try:
                 if self._deep_work_banner.winfo_exists():
                     return
             except tk.TclError:
                 self._deep_work_banner = None
-        host = footer
+        host = banner_host if banner_host is not None else self._banner_host
         if host is None:
             host = ttk.Frame(self.root)
-            host.pack(side=tk.BOTTOM, fill=tk.X, padx=16, pady=(0, 4))
+            host.pack(side=tk.TOP, fill=tk.X, padx=16, pady=(0, 4))
         banner = ttk.Frame(host)
         self._deep_work_banner = banner
         self._deep_work_timer_label = ttk.Label(banner, text="", style="Subheading.TLabel")
@@ -2594,6 +2918,13 @@ class PersonalDevelopmentTracker:
         self._invalidate_caches()
         self.refresh_dashboard()
         self.save_data(recompute_fitness=True)
+        
+        # Refresh workout history view if open
+        if hasattr(self, '_workout_history_view') and self._workout_history_view:
+            try:
+                self._workout_history_view.refresh()
+            except Exception:
+                pass
 
     def _fitness_session_count_for_date(self, date_str: str) -> int:
         return self._activity_session_counts().get(date_str, 0)
@@ -2658,6 +2989,52 @@ class PersonalDevelopmentTracker:
             on_fitness_settings_changed=on_fitness_settings_changed,
             on_log_practice=self.show_log_practice,
         )
+
+    def show_workout_history(self) -> None:
+        """Show workout history in a modal window."""
+        import fitness_ui
+        from workout_history_ui import WorkoutHistoryView
+        
+        # Check if window already exists
+        if hasattr(self, '_workout_history_window') and self._workout_history_window and self._workout_history_window.winfo_exists():
+            self._workout_history_window.lift()
+            self._workout_history_window.focus_set()
+            return
+        
+        repo = fitness_ui.get_profile_repo(self.settings.get("fitness"))
+        fitness_ui.ensure_fitness_seeded(repo, self.settings.get("fitness"))
+        
+        win = tk.Toplevel(self.root)
+        win.title("Workout History")
+        win.geometry("1000x600")
+        win.minsize(800, 500)
+        win.configure(bg=self.theme["bg"])
+        win.transient(self.root)
+        self._workout_history_window = win
+        
+        def on_log_workout_with_refresh():
+            # Store view reference before opening log
+            view_ref = self._workout_history_view if hasattr(self, '_workout_history_view') else None
+            self.show_log_exercise()
+            # Note: actual refresh happens via _on_fitness_session_saved callback
+        
+        history_view = WorkoutHistoryView(
+            parent=win,
+            repo=repo,
+            theme=self.theme,
+            on_log_workout=on_log_workout_with_refresh,
+        )
+        self._workout_history_view = history_view
+        
+        def on_close():
+            history_view.destroy()
+            win.destroy()
+            self._workout_history_window = None
+            if hasattr(self, '_workout_history_view'):
+                delattr(self, '_workout_history_view')
+        
+        win._on_close_callback = on_close
+        win.protocol("WM_DELETE_WINDOW", on_close)
 
     def show_settings(self) -> None:
         editor = tk.Toplevel(self.root)

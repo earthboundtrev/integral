@@ -35,6 +35,8 @@ def is_encrypted_file(path: str) -> bool:
 
 
 def _derive_key(passphrase: str, salt: bytes) -> bytes:
+    if not CRYPTO_AVAILABLE:
+        raise RuntimeError("Install cryptography: pip install cryptography")
     cache_key = (passphrase, salt)
     cached = _derived_key_cache.get(cache_key)
     if cached is not None:

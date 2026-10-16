@@ -38,7 +38,8 @@ class TestQuickCaptureUi(unittest.TestCase):
             tracker._quick_capture_win = None
 
             win = quick_capture_ui.open_quick_capture_panel(tracker)
-            win.update_idletasks()
+            # Pump the event loop to allow the after(1) build to run.
+            win.update()
 
             texts: list[str] = []
 
@@ -63,7 +64,7 @@ class TestQuickCaptureUi(unittest.TestCase):
     def test_dashboard_wires_quick_capture_on_today_log_and_footer(self):
         """#76 — Today's Log strip + footer both expose Quick Capture."""
         today_src = inspect.getsource(PersonalDevelopmentTracker.create_todays_log_bar)
-        footer_src = inspect.getsource(PersonalDevelopmentTracker.create_dashboard)
+        shell_src = inspect.getsource(PersonalDevelopmentTracker._ensure_shell)
         self.assertIn('text="Quick Capture"', today_src)
         self.assertIn("toggle_quick_capture", today_src)
         journal = today_src.find('text="Journal"')
@@ -72,8 +73,8 @@ class TestQuickCaptureUi(unittest.TestCase):
         self.assertGreater(more, journal)
         between = today_src[journal:more]
         self.assertIn('text="Quick Capture"', between)
-        self.assertIn('text="Quick Capture"', footer_src)
-        self.assertIn("toggle_quick_capture", footer_src)
+        self.assertIn('text="Quick Capture"', shell_src)
+        self.assertIn("toggle_quick_capture", shell_src)
 
     def test_deep_work_shield_dialog_keeps_start_visible_with_long_list(self):
         """#80 — long focus-shield lists still expose a Start control."""
