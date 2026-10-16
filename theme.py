@@ -188,6 +188,10 @@ def apply_tk_option_defaults(root: tk.Misc, theme: dict) -> None:
         "*Entry.foreground": theme["fg"],
         "*Entry.insertBackground": theme["fg"],
         "*Canvas.background": theme["bg"],
+        "*TCombobox*Listbox.background": theme["surface"],
+        "*TCombobox*Listbox.foreground": theme["fg"],
+        "*TCombobox*Listbox.selectBackground": theme["select_bg"],
+        "*TCombobox*Listbox.selectForeground": theme["fg"],
     }
     for pattern, value in options.items():
         root.option_add(pattern, value, priority)
@@ -295,6 +299,14 @@ def apply_theme(root: tk.Misc, theme: dict) -> None:
         selectbackground=[("readonly", theme["select_bg"])],
         selectforeground=[("readonly", fg)],
     )
+    style.configure(
+        "TCombobox.Listbox",
+        background=surface,
+        foreground=fg,
+        selectbackground=theme["select_bg"],
+        selectforeground=fg,
+        borderwidth=0,
+    )
     for orient, name in (("vertical", "Vertical"), ("horizontal", "Horizontal")):
         style.configure(
             f"{name}.TScrollbar",
@@ -399,28 +411,43 @@ def streak_badge(
     return frame
 
 
-def style_text_widget(widget: tk.Text, theme: dict) -> None:
+def reapply_text_widget_colors(widget: tk.Text, theme: dict) -> None:
+    """Update Text colours only — preserves layout from initial style_text_widget."""
     widget.configure(
         bg=theme["text_bg"],
         fg=theme["text_fg"],
         insertbackground=theme["fg"],
         selectbackground=theme["select_bg"],
-        relief=tk.FLAT,
-        highlightthickness=1,
+        selectforeground=theme["fg"],
         highlightbackground=theme["card_border"],
         highlightcolor=theme["accent"],
+    )
+
+
+def style_text_widget(widget: tk.Text, theme: dict) -> None:
+    reapply_text_widget_colors(widget, theme)
+    widget.configure(
+        relief=tk.FLAT,
+        highlightthickness=1,
         font=FONTS["body"],
         padx=8,
         pady=8,
     )
 
 
-def style_listbox(widget: tk.Listbox, theme: dict) -> None:
+def reapply_listbox_colors(widget: tk.Listbox, theme: dict) -> None:
+    """Update Listbox colours only — preserves layout from initial style_listbox."""
     widget.configure(
         bg=theme["text_bg"],
         fg=theme["text_fg"],
         selectbackground=theme["select_bg"],
         selectforeground=theme["fg"],
+    )
+
+
+def style_listbox(widget: tk.Listbox, theme: dict) -> None:
+    reapply_listbox_colors(widget, theme)
+    widget.configure(
         highlightthickness=0,
         borderwidth=1,
         font=FONTS["body"],
@@ -469,9 +496,9 @@ def _reapply_tk_widget(widget: tk.Misc, theme: dict) -> None:
             bg = _remap_chrome_background(current, theme)
             style_canvas(widget, theme, bg=bg)
         elif cls == "Text":
-            style_text_widget(widget, theme)
+            reapply_text_widget_colors(widget, theme)
         elif cls == "Listbox":
-            style_listbox(widget, theme)
+            reapply_listbox_colors(widget, theme)
         elif cls == "Menu":
             style_menu(widget, theme)
         elif cls == "Entry":
@@ -501,9 +528,15 @@ def _reapply_tk_widget(widget: tk.Misc, theme: dict) -> None:
 
 
 def reapply_theme_subtree(root: tk.Misc, theme: dict) -> None:
-    """Live re-theme for plain tk widgets under root (§6.3)."""
+    """Live re-theme for plain tk widgets under root (§6.3).
+
+    Skips ``Toplevel`` children of the main ``Tk`` — Q10 retrhemes those explicitly.
+    """
     _reapply_tk_widget(root, theme)
+    skip_toplevels = isinstance(root, tk.Tk)
     for child in root.winfo_children():
+        if skip_toplevels and isinstance(child, tk.Toplevel):
+            continue
         reapply_theme_subtree(child, theme)
 
 

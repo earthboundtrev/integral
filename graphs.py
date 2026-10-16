@@ -288,7 +288,9 @@ class GraphWindow:
         )
         ttk.Button(controls, text="Reset to auto", command=self._reset_dashboard_panels).pack(side=tk.RIGHT)
 
-        outer, inner, _canvas = ui_scroll.make_scrollable_frame(frame)
+        outer, inner, _canvas = ui_scroll.make_scrollable_frame(
+            frame, theme=self.theme, chrome_bg=self.theme["bg"]
+        )
         outer.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0, 8))
 
         grid_host = ttk.Frame(inner)

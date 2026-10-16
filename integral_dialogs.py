@@ -341,7 +341,9 @@ def show_security_dialog(tracker: PersonalDevelopmentTracker) -> None:
     window.configure(bg=tracker.theme["bg"])
     window.transient(tracker.root)
 
-    outer, inner, _canvas = ui_scroll.make_scrollable_frame(window)
+    outer, inner, _canvas = ui_scroll.make_scrollable_frame(
+        window, theme=tracker.theme, chrome_bg=tracker.theme["bg"]
+    )
     outer.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=8, pady=8)
 
     encrypted = bool(tracker.settings.get("encryption_enabled"))

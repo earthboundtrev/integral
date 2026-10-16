@@ -139,6 +139,7 @@ def show_skill_tree_window(
     win.geometry("900x720")
     win.transient(root)
     win.configure(bg=theme["bg"])
+    app_theme.apply_theme(win, theme)
 
     header = ttk.Frame(win, padding=10)
     header.pack(fill=tk.X)
@@ -216,6 +217,7 @@ def show_skill_tree_window(
                     on_saved=refresh,
                     on_session_saved=on_session_saved,
                     fitness_settings=fitness_settings,
+                    theme=theme,
                 )
                 return
 
