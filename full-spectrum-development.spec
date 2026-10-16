@@ -48,6 +48,7 @@ a = Analysis(
         "fitness_ui",
         "fitness_programs",
         "workout_history_ui",
+        "legacy_fitness_migration",
         "progression",
         "progression.db",
         "progression.engine",
