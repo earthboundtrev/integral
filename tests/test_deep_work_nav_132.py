@@ -10,7 +10,7 @@ import pytest
 import deep_work
 import nav_items
 from goto_ui import build_goto_destinations
-from more_menu_ui import build_more_menu_rows
+from more_menu_ui import build_more_menu_rows, today_more_menu_labels
 from tests.test_sidebar_131 import _mock_tracker_init
 
 import personal_dev_tracker
@@ -57,6 +57,7 @@ def test_sidebar_hides_items_during_deep_work(tracker):
     assert tracker._sidebar_goto_frame is not None
     assert tracker._sidebar_goto_frame.winfo_manager() != "pack"
     assert tracker._sidebar_deep_work_hint_row.winfo_manager() == "pack"
+    assert tracker._sidebar_deep_work_hint.winfo_manager() == "pack"
 
 
 def test_sidebar_restores_after_deep_work(tracker):
@@ -69,6 +70,33 @@ def test_sidebar_restores_after_deep_work(tracker):
         assert tracker._sidebar_nav_frames[spec.id].winfo_manager() == "pack"
     assert tracker._sidebar_goto_frame.winfo_manager() == "pack"
     assert tracker._sidebar_deep_work_hint_row.winfo_manager() != "pack"
+
+
+def test_sidebar_pack_order_matches_nav_items_after_restore(tracker):
+    tracker._deep_work_session = MagicMock(running=True)
+    tracker._apply_deep_work_chrome()
+    tracker._deep_work_session = None
+    tracker._apply_deep_work_chrome()
+    tracker.root.update_idletasks()
+    nav_container = tracker._sidebar_nav_container
+    packed = list(nav_container.pack_slaves())
+    expected = [
+        tracker._sidebar_nav_frames[spec.id]
+        for spec in nav_items.sidebar_nav_items()
+    ]
+    assert packed == expected
+
+
+def test_today_more_filtered_during_deep_work():
+    tracker = MagicMock()
+    tracker.settings = {"dark_mode": False}
+    tracker._deep_work_session = MagicMock(running=True)
+    labels = today_more_menu_labels(tracker)
+    assert "Fitness Hub" not in labels
+    assert "Go to…" not in labels
+    assert "Deep Work" in labels
+    assert "Writing Projects" in labels
+    assert "Log Exercise" in labels
 
 
 def test_more_menu_keeps_work_modes_group_during_deep_work():

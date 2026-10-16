@@ -1199,21 +1199,12 @@ class PersonalDevelopmentTracker:
             command=self.toggle_quick_capture,
         ).pack(side=tk.LEFT, padx=(0, 8))
 
+        from more_menu_ui import populate_today_more_menu
+
         more = ttk.Menubutton(actions, text="More…")
         more_menu = tk.Menu(more, tearoff=0)
-        style_menu(more_menu, self.theme)
-        more_menu.add_command(label="Go to…", command=self.show_goto)
-        more_menu.add_separator()
-        more_menu.add_command(label="Writing Projects", command=self.show_writing_projects)
-        more_menu.add_command(label="Deep Work", command=self.show_deep_work)
-        more_menu.add_command(
-            label="AI Insight",
-            command=lambda: self._show_ai_insight(default_days=7),
-        )
-        more_menu.add_command(label="Plan Tomorrow", command=self.show_plan_tomorrow)
-        more_menu.add_separator()
-        more_menu.add_command(label="Log Exercise", command=self.show_log_exercise)
-        more_menu.add_command(label="Fitness Hub", command=self.show_fitness_hub)
+        self._today_more_menu = more_menu
+        populate_today_more_menu(more_menu, self, self.theme)
         more["menu"] = more_menu
         more.pack(side=tk.LEFT)
 
@@ -1703,8 +1694,10 @@ class PersonalDevelopmentTracker:
             font=FONTS["hint"],
             anchor="w",
         )
+        self._sidebar_deep_work_hint.pack(fill=tk.X, anchor="w")
         hint_row.pack_forget()
         self._sidebar_deep_work_hint_row = hint_row
+        self._sidebar_nav_container = nav_container
         
         goto_frame = tk.Frame(container, bg=sidebar_bg)
         goto_frame.pack(fill=tk.X, padx=16, pady=(16, 8))
@@ -2966,6 +2959,14 @@ class PersonalDevelopmentTracker:
 
             close_more_menu(self)
         self._apply_sidebar_deep_work_chrome(active)
+        today_more = getattr(self, "_today_more_menu", None)
+        if today_more is not None:
+            from more_menu_ui import populate_today_more_menu
+
+            try:
+                populate_today_more_menu(today_more, self, self.theme)
+            except tk.TclError:
+                pass
         if self._deep_work_extend_btn is not None:
             try:
                 self._deep_work_extend_btn.configure(style="TButton")
@@ -2990,22 +2991,62 @@ class PersonalDevelopmentTracker:
 
     def _apply_sidebar_deep_work_chrome(self, active: bool) -> None:
         hidden_any = False
+        visible: dict[str, bool] = {}
         for spec in nav_items.sidebar_nav_items():
-            frame = self._sidebar_nav_frames.get(spec.id)
-            if frame is None:
-                continue
-            try:
-                if not frame.winfo_exists():
-                    continue
-            except tk.TclError:
-                continue
             hide = active and spec.hide_in_deep_work
             if hide:
                 hidden_any = True
-                if frame.winfo_manager():
-                    frame.pack_forget()
-            elif frame.winfo_manager() != "pack":
-                frame.pack(fill=tk.X, padx=8, pady=1)
+            visible[spec.id] = not hide
+
+        nav_container = getattr(self, "_sidebar_nav_container", None)
+        if nav_container is not None:
+            try:
+                if nav_container.winfo_exists():
+                    for spec in nav_items.sidebar_nav_items():
+                        frame = self._sidebar_nav_frames.get(spec.id)
+                        if frame is None:
+                            continue
+                        try:
+                            if frame.winfo_exists():
+                                frame.pack_forget()
+                        except tk.TclError:
+                            continue
+                    hint_row = getattr(self, "_sidebar_deep_work_hint_row", None)
+                    if hint_row is not None:
+                        try:
+                            if hint_row.winfo_exists():
+                                hint_row.pack_forget()
+                        except tk.TclError:
+                            pass
+                    for spec in nav_items.sidebar_nav_items():
+                        if not visible.get(spec.id):
+                            continue
+                        frame = self._sidebar_nav_frames.get(spec.id)
+                        if frame is None:
+                            continue
+                        try:
+                            if frame.winfo_exists():
+                                frame.pack(fill=tk.X, padx=8, pady=1)
+                        except tk.TclError:
+                            continue
+                    if (
+                        hint_row is not None
+                        and self._sidebar_deep_work_hint is not None
+                        and active
+                        and hidden_any
+                    ):
+                        try:
+                            if hint_row.winfo_exists():
+                                hint_row.pack(fill=tk.X, padx=16, pady=(4, 0))
+                                if self._sidebar_deep_work_hint.winfo_manager() != "pack":
+                                    self._sidebar_deep_work_hint.pack(
+                                        fill=tk.X, anchor="w"
+                                    )
+                        except tk.TclError:
+                            pass
+            except tk.TclError:
+                pass
+
         goto = self._sidebar_goto_frame
         if goto is not None:
             try:
@@ -3018,15 +3059,6 @@ class PersonalDevelopmentTracker:
                             goto.pack_forget()
                     elif goto.winfo_manager() != "pack":
                         goto.pack(fill=tk.X, padx=16, pady=(16, 8))
-            except tk.TclError:
-                pass
-        hint_row = getattr(self, "_sidebar_deep_work_hint_row", None)
-        if hint_row is not None and self._sidebar_deep_work_hint is not None:
-            try:
-                if active and hidden_any:
-                    hint_row.pack(fill=tk.X, padx=0, pady=(4, 0))
-                else:
-                    hint_row.pack_forget()
             except tk.TclError:
                 pass
 
@@ -3481,6 +3513,8 @@ class PersonalDevelopmentTracker:
         )
 
     def show_fitness_hub(self) -> None:
+        if nav_items.deep_work_blocks_action(self, item_id="fitness_hub"):
+            return
         existing = self._open_windows.get("fitness")
         if existing is not None:
             try:
