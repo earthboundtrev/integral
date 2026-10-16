@@ -184,8 +184,8 @@ def test_raise_or_open_creates_new_when_none_exists(tracker):
     """raise_or_open creates new window when none exists."""
     tracker.root.update_idletasks()
     
-    with patch.object(tracker, "show_streak_details") as mock_show:
-        tracker._raise_or_open("today")
+    with patch.object(tracker, "show_fitness_hub") as mock_show:
+        tracker._raise_or_open("fitness")
         mock_show.assert_called_once()
 
 
