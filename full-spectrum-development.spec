@@ -75,6 +75,7 @@ a = Analysis(
         "category_picker",
         "goto_ui",
         "more_menu_ui",
+        "nav_items",
         "todos",
         "focus_shield",
         "autostart_windows",

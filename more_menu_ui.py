@@ -7,7 +7,7 @@ import tkinter as tk
 from dataclasses import dataclass
 from typing import Any, Callable
 
-import deep_work
+import nav_items
 from theme import FONTS
 
 # Canonical menu structure (labels tested for reachability).
@@ -73,13 +73,15 @@ TODAY_MORE_MENU_LABELS: tuple[str, ...] = (
     "Fitness Hub",
 )
 
-SIDEBAR_NAV_LABELS: tuple[str, ...] = (
-    "Today",
-    "Fitness Hub",
-    "Reflect",
-    "Journal",
-    "Graphs & Progress",
-    "Weekly Summary",
+# Menu groups separated by a divider (order matches TODAY_MORE_MENU_LABELS).
+TODAY_MORE_MENU_GROUPS: tuple[tuple[str, ...], ...] = (
+    ("goto_palette",),
+    ("writing_projects", "deep_work", "ai_insight", "plan_tomorrow"),
+    ("log_exercise", "fitness_hub"),
+)
+
+SIDEBAR_NAV_LABELS: tuple[str, ...] = tuple(
+    item.label for item in nav_items.sidebar_nav_items()
 )
 
 THEME_LABEL_ALIASES: frozenset[str] = frozenset({"Dark Mode", "Light Mode"})
@@ -122,8 +124,57 @@ def _action_for_id(tracker: Any, item_id: str) -> Callable[[], None]:
         "settings": tracker.show_settings,
         "security": tracker.show_security,
         "toggle_theme": tracker.toggle_dark_mode,
+        "goto_palette": tracker.show_goto,
+        "plan_tomorrow": tracker.show_plan_tomorrow,
+        "log_exercise": tracker.show_log_exercise,
+        "fitness_hub": tracker.show_fitness_hub,
     }
     return actions[item_id]
+
+
+def _today_more_item_visible(item_id: str, tracker: Any) -> bool:
+    if nav_items.deep_work_active(tracker) and nav_items.is_hidden_during_deep_work(
+        item_id=item_id, tracker=tracker
+    ):
+        return False
+    return nav_items.nav_item_for_id(item_id) is not None
+
+
+def today_more_menu_labels(tracker: Any) -> tuple[str, ...]:
+    """Labels for the Today tab More… menu, respecting Deep Work chrome (#132)."""
+    labels: list[str] = []
+    for group in TODAY_MORE_MENU_GROUPS:
+        for item_id in group:
+            if not _today_more_item_visible(item_id, tracker):
+                continue
+            item = nav_items.nav_item_for_id(item_id)
+            if item is not None:
+                labels.append(item.label)
+    return tuple(labels)
+
+
+def populate_today_more_menu(menu: tk.Menu, tracker: Any, theme: dict) -> None:
+    """Rebuild Today More… menu entries from NAV_ITEMS / Deep Work policy."""
+    from theme import style_menu
+
+    try:
+        menu.delete(0, "end")
+    except tk.TclError:
+        return
+    added_any = False
+    for group_index, group in enumerate(TODAY_MORE_MENU_GROUPS):
+        visible_ids = [i for i in group if _today_more_item_visible(i, tracker)]
+        if not visible_ids:
+            continue
+        if added_any:
+            menu.add_separator()
+        for item_id in visible_ids:
+            item = nav_items.nav_item_for_id(item_id)
+            if item is None:
+                continue
+            menu.add_command(label=item.label, command=_action_for_id(tracker, item_id))
+        added_any = True
+    style_menu(menu, theme)
 
 
 def _display_label(tracker: Any, item: dict[str, Any]) -> str:
@@ -132,29 +183,21 @@ def _display_label(tracker: Any, item: dict[str, Any]) -> str:
     return str(item["label"])
 
 
-def is_hidden_during_deep_work(label: str) -> bool:
-    if label in deep_work.DEEP_WORK_KEEP_MORE_LABELS:
-        return False
-    if label in deep_work.DEEP_WORK_HIDDEN_MORE_LABELS:
-        return True
-    if label in THEME_LABEL_ALIASES:
-        return "Light Mode" in deep_work.DEEP_WORK_HIDDEN_MORE_LABELS
-    return False
+def is_hidden_during_deep_work(item_id: str, tracker: Any | None = None) -> bool:
+    return nav_items.is_hidden_during_deep_work(item_id=item_id, tracker=tracker)
 
 
 def build_more_menu_rows(tracker: Any) -> list[MoreMenuRow]:
     """Flat selectable rows respecting Deep Work chrome (#132)."""
-    active = bool(
-        getattr(tracker, "_deep_work_session", None)
-        and tracker._deep_work_session.running
-    )
+    active = nav_items.deep_work_active(tracker)
     rows: list[MoreMenuRow] = []
     for group in MORE_GROUPS:
         title = str(group["title"])
         for item in group["items"]:
-            label = _display_label(tracker, item)
-            if active and is_hidden_during_deep_work(label):
+            item_id = str(item["id"])
+            if active and is_hidden_during_deep_work(item_id, tracker):
                 continue
+            label = _display_label(tracker, item)
             rows.append(
                 MoreMenuRow(
                     group=title,
@@ -223,6 +266,8 @@ def labels_for_surface(surface: str, tracker: Any | None = None) -> set[str]:
     if surface == "sidebar":
         return set(SIDEBAR_NAV_LABELS) | {"Go to…"}
     if surface == "today_more":
+        if tracker is not None:
+            return set(today_more_menu_labels(tracker))
         return set(TODAY_MORE_MENU_LABELS)
     if surface == "goto":
         if tracker is None:
@@ -402,6 +447,18 @@ class MoreMenuPopup:
             self._row_widgets.append(frame)
             self._label_widgets.append(lbl)
 
+        if nav_items.deep_work_active(self.tracker) and nav_items.any_shell_items_hidden_during_deep_work():
+            dw_hint = tk.Label(
+                self._body,
+                text=nav_items.DEEP_WORK_HIDDEN_HINT,
+                anchor="w",
+                bg=self.theme["surface"],
+                fg=self.theme["muted"],
+                font=FONTS["hint"],
+                padx=self._PAD,
+                pady=(4, 0),
+            )
+            dw_hint.pack(fill=tk.X)
         nav_hint = tk.Label(
             self._body,
             text="↑↓ · Enter · Esc",

@@ -6,8 +6,38 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Any, Callable
 
+import nav_items
 from theme import style_listbox
 from todays_log import CATEGORY_SHORT_LABELS
+
+
+def _action_for_nav_item(tracker: Any, item: nav_items.NavItem) -> Callable[[], None]:
+    actions: dict[str, Callable[[], None]] = {
+        "today": lambda: tracker._raise_or_open("today"),
+        "reflect": tracker.show_reflect,
+        "overview_categories": tracker.show_streak_details,
+        "refresh": lambda: tracker.refresh_dashboard(full=False, recompute=False),
+        "guidance": tracker.show_guidance,
+        "weekly_summary": tracker.show_weekly_summary,
+        "ai_insight": lambda: tracker._show_ai_insight(default_days=7),
+        "history": tracker.show_history,
+        "search": tracker.show_search,
+        "graphs": tracker.show_graphs,
+        "journal": tracker.show_journal,
+        "writing_projects": tracker.show_writing_projects,
+        "deep_work": tracker.show_deep_work,
+        "quick_capture": tracker.toggle_quick_capture,
+        "plan_tomorrow": tracker.show_plan_tomorrow,
+        "log_exercise": tracker.show_log_exercise,
+        "fitness_hub": tracker.show_fitness_hub,
+        "milestones": tracker.show_milestones,
+        "export": tracker.show_export,
+        "backup": tracker.show_backup,
+        "settings": tracker.show_settings,
+        "security": tracker.show_security,
+        "toggle_theme": tracker.toggle_dark_mode,
+    }
+    return actions[item.id]
 
 
 def build_goto_destinations(tracker: Any) -> list[dict[str, Any]]:
@@ -16,146 +46,19 @@ def build_goto_destinations(tracker: Any) -> list[dict[str, Any]]:
 
     Each item: {"label": str, "group": str, "keywords": str, "action": callable}
     """
-    destinations: list[dict[str, Any]] = [
-        {
-            "label": "Today",
-            "group": "Nav",
-            "keywords": "today todays log rating domains",
-            "action": lambda: tracker._raise_or_open("today"),
-        },
-        {
-            "label": "Reflect",
-            "group": "Nav",
-            "keywords": "reflect log unlogged domain",
-            "action": tracker.show_reflect,
-        },
-        {
-            "label": "Overview & Categories",
-            "group": "Nav",
-            "keywords": "streak details overview categories activity grid guidance",
-            "action": tracker.show_streak_details,
-        },
-        {
-            "label": "Refresh",
-            "group": "Nav",
-            "keywords": "refresh reload overview",
-            "action": lambda: tracker.refresh_dashboard(full=False, recompute=False),
-        },
-        {
-            "label": "Guidance",
-            "group": "Nav",
-            "keywords": "insights tips",
-            "action": tracker.show_guidance,
-        },
-        {
-            "label": "Weekly Summary",
-            "group": "Nav",
-            "keywords": "week summary report",
-            "action": tracker.show_weekly_summary,
-        },
-        {
-            "label": "AI Insight",
-            "group": "Nav",
-            "keywords": "ollama ai insight",
-            "action": lambda: tracker._show_ai_insight(default_days=7),
-        },
-        {
-            "label": "Full History",
-            "group": "Nav",
-            "keywords": "history past days",
-            "action": tracker.show_history,
-        },
-        {
-            "label": "Search Notes",
-            "group": "Nav",
-            "keywords": "search notes find text",
-            "action": tracker.show_search,
-        },
-        {
-            "label": "Graphs & Progress",
-            "group": "Nav",
-            "keywords": "graphs charts progress",
-            "action": tracker.show_graphs,
-        },
-        {
-            "label": "Journal",
-            "group": "Nav",
-            "keywords": "journal write",
-            "action": tracker.show_journal,
-        },
-        {
-            "label": "Writing Projects",
-            "group": "Nav",
-            "keywords": "writing novel manuscript creative",
-            "action": tracker.show_writing_projects,
-        },
-        {
-            "label": "Deep Work",
-            "group": "Nav",
-            "keywords": "focus timer deep work",
-            "action": tracker.show_deep_work,
-        },
-        {
-            "label": "Quick Capture",
-            "group": "Nav",
-            "keywords": "todos quick capture",
-            "action": tracker.toggle_quick_capture,
-        },
-        {
-            "label": "Plan Tomorrow",
-            "group": "Nav",
-            "keywords": "plan tomorrow day plan",
-            "action": tracker.show_plan_tomorrow,
-        },
-        {
-            "label": "Log Exercise",
-            "group": "Fitness",
-            "keywords": "workout exercise session log",
-            "action": tracker.show_log_exercise,
-        },
-        {
-            "label": "Fitness Hub",
-            "group": "Fitness",
-            "keywords": "fitness hub progression",
-            "action": tracker.show_fitness_hub,
-        },
-        {
-            "label": "Milestones",
-            "group": "Nav",
-            "keywords": "goals milestones",
-            "action": tracker.show_milestones,
-        },
-        {
-            "label": "Export",
-            "group": "Data",
-            "keywords": "export csv",
-            "action": tracker.show_export,
-        },
-        {
-            "label": "Backup",
-            "group": "Data",
-            "keywords": "backup restore zip",
-            "action": tracker.show_backup,
-        },
-        {
-            "label": "Edit Categories",
-            "group": "Settings",
-            "keywords": "categories domains settings edit",
-            "action": tracker.show_settings,
-        },
-        {
-            "label": "Data & Security",
-            "group": "Settings",
-            "keywords": "security vault encryption",
-            "action": tracker.show_security,
-        },
-        {
-            "label": "Toggle Dark / Light Mode",
-            "group": "Settings",
-            "keywords": "theme dark light mode",
-            "action": tracker.toggle_dark_mode,
-        },
-    ]
+    destinations: list[dict[str, Any]] = []
+    for item in nav_items.goto_nav_items():
+        if nav_items.is_hidden_during_deep_work(item_id=item.id, tracker=tracker):
+            continue
+        destinations.append(
+            {
+                "label": item.label,
+                "group": item.goto_group,
+                "keywords": item.goto_keywords,
+                "action": _action_for_nav_item(tracker, item),
+                "nav_id": item.id,
+            }
+        )
 
     for name in tracker.categories.keys():
         short = CATEGORY_SHORT_LABELS.get(name, name)
@@ -165,6 +68,7 @@ def build_goto_destinations(tracker: Any) -> list[dict[str, Any]]:
                 "group": "Log",
                 "keywords": f"{name} {short} domain category log",
                 "action": lambda n=name: tracker.open_log_dialog(n),
+                "nav_id": None,
             }
         )
     return destinations
@@ -259,7 +163,11 @@ def open_goto_palette(tracker: Any) -> None:
         index = int(selection[0])
         if index < 0 or index >= len(visible):
             return
-        action: Callable[[], None] = visible[index]["action"]
+        dest = visible[index]
+        nav_id = dest.get("nav_id")
+        if nav_id and nav_items.deep_work_blocks_action(tracker, item_id=str(nav_id)):
+            return
+        action: Callable[[], None] = dest["action"]
         close_palette()
         action()
 
