@@ -966,6 +966,7 @@ def show_fitness_window(
         footer,
         height=40,
         overflow_hint="Scroll for more →",
+        theme=theme,
     )
     nav_host.pack(fill=tk.X)
 
@@ -1180,6 +1181,7 @@ def show_fitness_window(
             repo,
             on_session_saved=on_session_saved,
             fitness_settings=settings,
+            theme=theme,
         )
 
     def open_fitness_settings():

@@ -6,6 +6,7 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Any, Callable
 
+from theme import style_listbox
 from todays_log import CATEGORY_SHORT_LABELS
 
 
@@ -232,6 +233,7 @@ def open_goto_palette(tracker: Any) -> None:
     list_frame = ttk.Frame(window, padding=(12, 0))
     list_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
     listbox = tk.Listbox(list_frame, activestyle="dotbox", exportselection=False)
+    style_listbox(listbox, theme)
     listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
     scroll = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=listbox.yview)
     scroll.pack(side=tk.RIGHT, fill=tk.Y)

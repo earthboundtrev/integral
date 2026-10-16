@@ -52,9 +52,11 @@ from theme import (
     category_accent,
     get_theme,
     make_card,
+    reapply_theme_subtree,
     streak_badge,
     style_canvas,
     style_listbox,
+    style_menu,
     style_text_widget,
 )
 import ui_scroll
@@ -470,6 +472,35 @@ class PersonalDevelopmentTracker:
         self._theme_dark = dark
         self.theme = get_theme(dark)
         apply_theme(self.root, self.theme)
+        self._retheme_open_windows()
+
+    def _retheme_open_windows(self) -> None:
+        """Re-apply plain tk styling on open Toplevels after a theme change (#133)."""
+        seen: set[str] = set()
+
+        def retheme(win: tk.Toplevel | tk.Misc | None) -> None:
+            if win is None:
+                return
+            try:
+                if not win.winfo_exists():
+                    return
+                path = str(win)
+                if path in seen:
+                    return
+                seen.add(path)
+                win.configure(bg=self.theme["bg"])
+                reapply_theme_subtree(win, self.theme)
+            except tk.TclError:
+                return
+
+        for child in self.root.winfo_children():
+            if isinstance(child, tk.Toplevel):
+                retheme(child)
+        for win in self._open_windows.values():
+            retheme(win)
+        retheme(getattr(self, "_goto_window", None))
+        retheme(getattr(self, "_quick_capture_win", None))
+        retheme(getattr(self, "_streak_details_window", None))
 
     def _invalidate_caches(self) -> None:
         self._insights_cache = None
@@ -543,6 +574,7 @@ class PersonalDevelopmentTracker:
             self._shell_frame.destroy()
             self._shell_frame = None
         self.create_dashboard()
+        self.sync_quick_capture_panel()
 
     def merge_categories_with_defaults(self, stored: dict | None) -> dict:
         defaults = self.get_default_categories()
@@ -1081,6 +1113,7 @@ class PersonalDevelopmentTracker:
             log_bar,
             height=40,
             overflow_hint="Scroll for more →",
+            theme=self.theme,
         )
         actions_host.pack(fill=tk.X, pady=(0, 4))
         next_cat = self.first_unlogged_category()
@@ -1109,6 +1142,7 @@ class PersonalDevelopmentTracker:
 
         more = ttk.Menubutton(actions, text="More…")
         more_menu = tk.Menu(more, tearoff=0)
+        style_menu(more_menu, self.theme)
         more_menu.add_command(label="Go to…", command=self.show_goto)
         more_menu.add_separator()
         more_menu.add_command(label="Writing Projects", command=self.show_writing_projects)
@@ -1180,6 +1214,8 @@ class PersonalDevelopmentTracker:
             cat_scroll_host,
             max_height=252,
             overflow_hint="↓ Scroll for more categories",
+            theme=self.theme,
+            chrome_bg=self.theme["surface"],
         )
         _cat_wrap.pack(fill=tk.X)
         match_hint = ttk.Label(log_bar, text="", style="OnSurfaceMuted.TLabel")
@@ -1212,6 +1248,7 @@ class PersonalDevelopmentTracker:
 
             def pin_menu(event, cat: str) -> None:
                 menu = tk.Menu(btn_row, tearoff=0)
+                style_menu(menu, self.theme)
                 if cat in pin_set:
                     menu.add_command(
                         label="Unpin domain",
@@ -1487,6 +1524,7 @@ class PersonalDevelopmentTracker:
         nav_host, nav, _nav_canvas = ui_scroll.make_horizontal_scroll_row(
             self._shell_footer,
             overflow_hint="Scroll for more →",
+            theme=self.theme,
         )
         nav_host.pack(fill=tk.X)
         
@@ -1797,8 +1835,7 @@ class PersonalDevelopmentTracker:
         self.root.after_idle(chunk_1_setup)
 
     def _build_overview_tab(self, parent: ttk.Frame) -> None:
-        outer, main, canvas = ui_scroll.make_scrollable_frame(parent)
-        style_canvas(canvas, self.theme)
+        outer, main, canvas = ui_scroll.make_scrollable_frame(parent, theme=self.theme, chrome_bg=self.theme["bg"])
         outer.pack(fill=tk.BOTH, expand=True)
 
         main.columnconfigure(0, weight=1)
@@ -1855,8 +1892,7 @@ class PersonalDevelopmentTracker:
         self._render_guidance_panel(main, row=3)
 
     def _build_categories_tab(self, parent: ttk.Frame) -> None:
-        outer, main, canvas = ui_scroll.make_scrollable_frame(parent)
-        style_canvas(canvas, self.theme)
+        outer, main, canvas = ui_scroll.make_scrollable_frame(parent, theme=self.theme, chrome_bg=self.theme["bg"])
         outer.pack(fill=tk.BOTH, expand=True)
 
         main.columnconfigure(0, weight=1)

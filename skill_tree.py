@@ -119,9 +119,15 @@ def show_skill_tree_window(
     *,
     on_session_saved=None,
     fitness_settings: dict | None = None,
+    theme=None,
 ):
     import tkinter as tk
     from tkinter import ttk
+
+    import theme as app_theme
+
+    if theme is None:
+        theme = app_theme.get_theme(False)
 
     repo = repo or get_profile_repo()
     ensure_fitness_seeded(repo)
@@ -132,6 +138,7 @@ def show_skill_tree_window(
     win.title("Fitness Skill Tree")
     win.geometry("900x720")
     win.transient(root)
+    win.configure(bg=theme["bg"])
 
     header = ttk.Frame(win, padding=10)
     header.pack(fill=tk.X)
@@ -169,7 +176,8 @@ def show_skill_tree_window(
 
     body = ttk.Frame(win)
     body.pack(fill=tk.BOTH, expand=True)
-    canvas = tk.Canvas(body, background="white", highlightthickness=0)
+    canvas = tk.Canvas(body, highlightthickness=0)
+    app_theme.style_canvas(canvas, theme)
     scrollbar_y = ttk.Scrollbar(body, orient=tk.VERTICAL, command=canvas.yview)
     scrollbar_x = ttk.Scrollbar(body, orient=tk.HORIZONTAL, command=canvas.xview)
     canvas.configure(yscrollcommand=scrollbar_y.set, xscrollcommand=scrollbar_x.set)
