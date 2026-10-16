@@ -84,6 +84,13 @@ SIDEBAR_NAV_LABELS: tuple[str, ...] = (
 
 THEME_LABEL_ALIASES: frozenset[str] = frozenset({"Dark Mode", "Light Mode"})
 
+# Optional per-row accelerator hints (right-aligned, muted). Empty values are omitted.
+MORE_ITEM_SHORTCUT_HINTS: dict[str, str] = {
+    "quick_capture": "Ctrl+Shift+T",
+}
+
+GOTO_THEME_LABEL = "Toggle Dark / Light Mode"
+
 
 @dataclass(frozen=True)
 class MoreMenuRow:
@@ -195,16 +202,68 @@ def reachable_surfaces_for_label(label: str) -> set[str]:
     return set()
 
 
-def assert_legacy_features_reachable() -> None:
+def more_menu_static_labels() -> set[str]:
+    """All labels that can appear in the grouped More popup (both theme wordings)."""
+    labels: set[str] = set()
+    for group in MORE_GROUPS:
+        for item in group["items"]:
+            if item["id"] == "toggle_theme":
+                labels.update(THEME_LABEL_ALIASES)
+            else:
+                labels.add(str(item["label"]))
+    return labels
+
+
+def labels_for_surface(surface: str, tracker: Any | None = None) -> set[str]:
+    """Labels exposed on a reachability surface (More, sidebar, Today More, Go to…)."""
+    if surface == "more":
+        if tracker is not None:
+            return {row.label for row in build_more_menu_rows(tracker)}
+        return more_menu_static_labels()
+    if surface == "sidebar":
+        return set(SIDEBAR_NAV_LABELS) | {"Go to…"}
+    if surface == "today_more":
+        return set(TODAY_MORE_MENU_LABELS)
+    if surface == "goto":
+        if tracker is None:
+            return set()
+        from goto_ui import build_goto_destinations
+
+        return {d["label"] for d in build_goto_destinations(tracker)}
+    return set()
+
+
+def _label_present_on_surface(label: str, surface: str, tracker: Any | None) -> bool:
+    if surface == "goto" and label == "Go to…":
+        return True
+    if label in THEME_LABEL_ALIASES:
+        if surface == "more":
+            avail = labels_for_surface("more", tracker)
+            return bool(avail & THEME_LABEL_ALIASES)
+        if surface == "goto":
+            return GOTO_THEME_LABEL in labels_for_surface("goto", tracker)
+    avail = labels_for_surface(surface, tracker)
+    return label in avail
+
+
+def assert_legacy_features_reachable(tracker: Any | None = None) -> None:
     """Raise AssertionError if any pre-#130 footer / Today More label lost a path."""
     for label in LEGACY_FOOTER_LABELS:
         surfaces = reachable_surfaces_for_label(label)
         if not surfaces:
             raise AssertionError(f"No reachability path for {label!r}")
+        if not any(_label_present_on_surface(label, s, tracker) for s in surfaces):
+            raise AssertionError(
+                f"{label!r} not present on declared surfaces {sorted(surfaces)!r}"
+            )
     for label in TODAY_MORE_MENU_LABELS:
         surfaces = reachable_surfaces_for_label(label)
         if not surfaces:
             raise AssertionError(f"No reachability path for Today More item {label!r}")
+        if not any(_label_present_on_surface(label, s, tracker) for s in surfaces):
+            raise AssertionError(
+                f"Today More {label!r} not present on declared surfaces {sorted(surfaces)!r}"
+            )
 
 
 def typeahead_advance(
@@ -228,7 +287,6 @@ class MoreMenuPopup:
     """Single-instance grouped menu anchored to a footer/sidebar More control."""
 
     _ROW_HEIGHT = 32
-    _HEADER_HEIGHT = 28
     _PAD = 8
     _WIDTH = 300
 
@@ -241,7 +299,11 @@ class MoreMenuPopup:
         self._focus_index = 0 if self.rows else -1
         self._typeahead = ""
         self._typeahead_after: str | None = None
-        self._outside_bind = None
+        self._outside_click_after_id: str | None = None
+        self._focus_after_id: str | None = None
+        self._binding_funcids: list[tuple[tk.Misc, str, str]] = []
+        self._binding_all_funcids: list[tuple[str, str]] = []
+        self._had_grab = False
 
         self.window = tk.Toplevel(self.root)
         tracker._more_menu_popup = self
@@ -267,13 +329,22 @@ class MoreMenuPopup:
 
         self._row_widgets: list[tk.Frame] = []
         self._label_widgets: list[tk.Label] = []
+        self._hint_widgets: list[tk.Label | None] = []
         self._build_rows()
         self._place_near_anchor()
         self.window.deiconify()
+        try:
+            self.window.grab_set()
+            self._had_grab = True
+        except tk.TclError:
+            self._had_grab = False
         self._bind_events()
         self._highlight_focus()
-        self.window.focus_set()
-        self.window.bind("<FocusOut>", self._on_focus_out, add="+")
+        try:
+            self.window.focus_force()
+        except tk.TclError:
+            pass
+        self._bind_func(self.window, "<FocusOut>", self._on_focus_out)
 
     def _build_rows(self) -> None:
         last_group: str | None = None
@@ -305,7 +376,24 @@ class MoreMenuPopup:
                 padx=self._PAD,
             )
             lbl.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-            for widget in (frame, lbl):
+            hint_text = MORE_ITEM_SHORTCUT_HINTS.get(row.item_id, "").strip()
+            hint_lbl: tk.Label | None = None
+            if hint_text:
+                hint_lbl = tk.Label(
+                    frame,
+                    text=hint_text,
+                    anchor="e",
+                    bg=self.theme["surface"],
+                    fg=self.theme["muted"],
+                    font=FONTS["hint"],
+                    padx=self._PAD,
+                )
+                hint_lbl.pack(side=tk.RIGHT)
+            self._hint_widgets.append(hint_lbl)
+            row_widgets_click = [frame, lbl]
+            if hint_lbl is not None:
+                row_widgets_click.append(hint_lbl)
+            for widget in row_widgets_click:
                 widget.bind(
                     "<Button-1>",
                     lambda _e, i=idx: self._activate(i),
@@ -313,6 +401,26 @@ class MoreMenuPopup:
                 widget.bind("<Enter>", lambda _e, i=idx: self._set_focus(i))
             self._row_widgets.append(frame)
             self._label_widgets.append(lbl)
+
+        nav_hint = tk.Label(
+            self._body,
+            text="↑↓ · Enter · Esc",
+            anchor="e",
+            bg=self.theme["surface"],
+            fg=self.theme["muted"],
+            font=FONTS["hint"],
+            padx=self._PAD,
+            pady=4,
+        )
+        nav_hint.pack(fill=tk.X, padx=0, pady=(4, self._PAD))
+
+    def _bind_func(self, widget: tk.Misc, sequence: str, handler: Any) -> None:
+        funcid = widget.bind(sequence, handler, add="+")
+        self._binding_funcids.append((widget, sequence, funcid))
+
+    def _bind_all_func(self, sequence: str, handler: Any) -> None:
+        funcid = self.root.bind_all(sequence, handler, add="+")
+        self._binding_all_funcids.append((sequence, funcid))
 
     def _place_near_anchor(self) -> None:
         self.anchor.update_idletasks()
@@ -323,29 +431,58 @@ class MoreMenuPopup:
         aw = self.anchor.winfo_width()
         wh = self.window.winfo_reqheight()
         ww = self._WIDTH
-        x = max(0, ax + aw - ww)
+        x = ax + aw - ww
         y = ay + ah + 4
-        sw = self.root.winfo_screenwidth()
-        sh = self.root.winfo_screenheight()
-        if x + ww > sw:
-            x = max(0, sw - ww - 4)
-        if y + wh > sh:
-            y = max(0, ay - wh - 4)
+        try:
+            root_y = self.root.winfo_rooty()
+            root_h = self.root.winfo_height()
+            if y + wh > root_y + root_h:
+                y = ay - wh - 4
+        except tk.TclError:
+            pass
         self.window.geometry(f"{ww}x{wh}+{x}+{y}")
 
     def _bind_events(self) -> None:
-        self.window.bind("<Escape>", self._on_escape)
-        self.window.bind("<Return>", self._on_return)
-        self.window.bind("<Up>", self._on_up)
-        self.window.bind("<Down>", self._on_down)
-        self.window.bind("<Home>", self._on_home)
-        self.window.bind("<End>", self._on_end)
-        self.window.bind("<Key>", self._on_key)
-        self.root.bind("<Unmap>", self._on_root_unmap, add="+")
-        self.root.bind("<Configure>", self._on_root_configure, add="+")
-        self.root.after_idle(
-            lambda: self.root.bind_all("<Button-1>", self._on_global_click, add="+")
+        key_sequences = (
+            "<Escape>",
+            "<Return>",
+            "<Up>",
+            "<Down>",
+            "<Home>",
+            "<End>",
+            "<Key>",
         )
+        for sequence in key_sequences:
+            handler = {
+                "<Escape>": self._on_escape,
+                "<Return>": self._on_return,
+                "<Up>": self._on_up,
+                "<Down>": self._on_down,
+                "<Home>": self._on_home,
+                "<End>": self._on_end,
+                "<Key>": self._on_key,
+            }[sequence]
+            self._bind_func(self.window, sequence, handler)
+            self._bind_func(self.root, sequence, handler)
+        self._bind_func(self.root, "<Unmap>", self._on_root_unmap)
+        self._bind_func(self.root, "<Configure>", self._on_root_configure)
+        if self._outside_click_after_id:
+            try:
+                self.root.after_cancel(self._outside_click_after_id)
+            except tk.TclError:
+                pass
+        self._outside_click_after_id = self.root.after_idle(self._install_outside_click_bind)
+
+    def _install_outside_click_bind(self) -> None:
+        self._outside_click_after_id = None
+        if getattr(self.tracker, "_more_menu_popup", None) is not self:
+            return
+        try:
+            if not self.window.winfo_exists():
+                return
+        except tk.TclError:
+            return
+        self._bind_all_func("<Button-1>", self._on_global_click)
 
     def _on_root_unmap(self, _event: tk.Event) -> None:
         self.close()
@@ -353,10 +490,21 @@ class MoreMenuPopup:
     def _on_focus_out(self, _event: tk.Event) -> None:
         if getattr(self.tracker, "_more_menu_popup", None) is not self:
             return
-        self.root.after_idle(self._close_if_focus_left_popup)
+        if self._focus_after_id:
+            try:
+                self.root.after_cancel(self._focus_after_id)
+            except tk.TclError:
+                pass
+        self._focus_after_id = self.root.after_idle(self._close_if_focus_left_popup)
 
     def _close_if_focus_left_popup(self) -> None:
+        self._focus_after_id = None
         if getattr(self.tracker, "_more_menu_popup", None) is not self:
+            return
+        try:
+            if not self.window.winfo_exists():
+                return
+        except tk.TclError:
             return
         focus = None
         try:
@@ -401,33 +549,53 @@ class MoreMenuPopup:
                 break
         self.close()
 
-    def _on_escape(self, _event: tk.Event) -> None:
+    def _on_escape(self, _event: tk.Event) -> str | None:
+        if getattr(self.tracker, "_more_menu_popup", None) is not self:
+            return None
         self.close(focus_anchor=True)
+        return "break"
 
-    def _on_return(self, _event: tk.Event) -> None:
+    def _on_return(self, _event: tk.Event) -> str | None:
+        if getattr(self.tracker, "_more_menu_popup", None) is not self:
+            return None
         if 0 <= self._focus_index < len(self.rows):
             self._activate(self._focus_index)
+        return "break"
 
-    def _on_up(self, _event: tk.Event) -> None:
+    def _on_up(self, _event: tk.Event) -> str | None:
+        if getattr(self.tracker, "_more_menu_popup", None) is not self:
+            return None
         if not self.rows:
-            return
+            return "break"
         self._set_focus((self._focus_index - 1) % len(self.rows))
+        return "break"
 
-    def _on_down(self, _event: tk.Event) -> None:
+    def _on_down(self, _event: tk.Event) -> str | None:
+        if getattr(self.tracker, "_more_menu_popup", None) is not self:
+            return None
         if not self.rows:
-            return
+            return "break"
         start = self._focus_index if self._focus_index >= 0 else -1
         self._set_focus((start + 1) % len(self.rows))
+        return "break"
 
-    def _on_home(self, _event: tk.Event) -> None:
+    def _on_home(self, _event: tk.Event) -> str | None:
+        if getattr(self.tracker, "_more_menu_popup", None) is not self:
+            return None
         if self.rows:
             self._set_focus(0)
+        return "break"
 
-    def _on_end(self, _event: tk.Event) -> None:
+    def _on_end(self, _event: tk.Event) -> str | None:
+        if getattr(self.tracker, "_more_menu_popup", None) is not self:
+            return None
         if self.rows:
             self._set_focus(len(self.rows) - 1)
+        return "break"
 
-    def _on_key(self, event: tk.Event) -> None:
+    def _on_key(self, event: tk.Event) -> str | None:
+        if getattr(self.tracker, "_more_menu_popup", None) is not self:
+            return None
         if event.keysym in {"Escape", "Return", "Up", "Down", "Home", "End"}:
             return
         if event.state & 0x20000:  # Alt
@@ -442,6 +610,7 @@ class MoreMenuPopup:
         match = typeahead_advance(self.rows, self._focus_index, self._typeahead)
         if match is not None:
             self._set_focus(match)
+        return "break"
 
     def _clear_typeahead(self) -> None:
         self._typeahead = ""
@@ -456,12 +625,17 @@ class MoreMenuPopup:
     def _highlight_focus(self) -> None:
         select_bg = self.theme.get("select_bg", self.theme["accent_soft"])
         for idx, (frame, lbl) in enumerate(zip(self._row_widgets, self._label_widgets)):
+            hint = self._hint_widgets[idx] if idx < len(self._hint_widgets) else None
             if idx == self._focus_index:
                 frame.configure(bg=select_bg)
                 lbl.configure(bg=select_bg)
+                if hint is not None:
+                    hint.configure(bg=select_bg)
             else:
                 frame.configure(bg=self.theme["surface"])
                 lbl.configure(bg=self.theme["surface"])
+                if hint is not None:
+                    hint.configure(bg=self.theme["surface"])
 
     def _activate(self, index: int) -> None:
         if index < 0 or index >= len(self.rows):
@@ -474,21 +648,34 @@ class MoreMenuPopup:
         popup = getattr(self.tracker, "_more_menu_popup", None)
         if popup is self:
             self.tracker._more_menu_popup = None
-        if self._typeahead_after:
+        for after_id in (self._typeahead_after, self._outside_click_after_id, self._focus_after_id):
+            if after_id:
+                try:
+                    self.root.after_cancel(after_id)
+                except tk.TclError:
+                    pass
+        self._typeahead_after = None
+        self._outside_click_after_id = None
+        self._focus_after_id = None
+        for widget, sequence, funcid in self._binding_funcids:
             try:
-                self.root.after_cancel(self._typeahead_after)
+                widget.unbind(sequence, funcid)
             except tk.TclError:
                 pass
-        try:
-            self.root.unbind_all("<Button-1>")
-        except tk.TclError:
-            pass
-        self._outside_bind = None
-        try:
-            self.root.unbind("<Unmap>")
-            self.root.unbind("<Configure>")
-        except tk.TclError:
-            pass
+        self._binding_funcids.clear()
+        for sequence, funcid in self._binding_all_funcids:
+            try:
+                self.root.tk.call("unbind", "all", sequence, funcid)
+            except tk.TclError:
+                pass
+        self._binding_all_funcids.clear()
+        if self._had_grab:
+            try:
+                if self.window.winfo_exists():
+                    self.window.grab_release()
+            except tk.TclError:
+                pass
+            self._had_grab = False
         try:
             if self.window.winfo_exists():
                 self.window.destroy()

@@ -1453,6 +1453,9 @@ class PersonalDevelopmentTracker:
             self._categories_tab_built = True
 
     def create_dashboard(self) -> None:
+        from more_menu_ui import close_more_menu
+
+        close_more_menu(self)
         self._dashboard_ready = False
 
         # Check if theme changed (for backup restore with different dark_mode)
