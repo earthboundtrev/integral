@@ -34,6 +34,8 @@ class TestGotoUi(unittest.TestCase):
             show_security=MagicMock(),
             toggle_dark_mode=MagicMock(),
             open_log_dialog=MagicMock(),
+            show_reflect=MagicMock(),
+            _raise_or_open=MagicMock(),
             categories={"Body & Presence": {}, "Food": {}},
         )
 

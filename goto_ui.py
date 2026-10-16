@@ -17,6 +17,18 @@ def build_goto_destinations(tracker: Any) -> list[dict[str, Any]]:
     """
     destinations: list[dict[str, Any]] = [
         {
+            "label": "Today",
+            "group": "Nav",
+            "keywords": "today todays log rating domains",
+            "action": lambda: tracker._raise_or_open("today"),
+        },
+        {
+            "label": "Reflect",
+            "group": "Nav",
+            "keywords": "reflect log unlogged domain",
+            "action": tracker.show_reflect,
+        },
+        {
             "label": "Overview & Categories",
             "group": "Nav",
             "keywords": "streak details overview categories activity grid guidance",
