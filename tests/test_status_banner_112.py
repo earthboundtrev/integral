@@ -76,6 +76,38 @@ class TestStatusBanner(unittest.TestCase):
         self.root.update()
         self.assertEqual(self.banner._kind, "error")
 
+    def _find_close_button(self, parent: tk.Misc):
+        for child in parent.winfo_children():
+            try:
+                if str(child.cget("text")) == "✕":
+                    return child
+            except tk.TclError:
+                pass
+            found = self._find_close_button(child)
+            if found is not None:
+                return found
+        return None
+
+    def test_dismiss_error_while_hovering_close_allows_deferred_success_auto_hide(self):
+        """Click ✕ with pointer over close — pause depth must reset so success auto-hides."""
+        self.banner.show_error("Save failed.")
+        self.root.update()
+        self.banner.show_success("Saved.")
+        self.root.update()
+        self.assertEqual(self.banner._kind, "error")
+        close_btn = self._find_close_button(self.banner._frame)
+        self.assertIsNotNone(close_btn)
+        close_btn.event_generate("<Enter>")
+        self.root.update()
+        self.assertGreater(self.banner._pause_depth, 0)
+        close_btn.invoke()
+        self.root.update()
+        self.assertEqual(self.banner._kind, "success")
+        self.assertEqual(self.banner._pause_depth, 0)
+        self.root.after(SUCCESS_HIDE_MS + 50, self.root.quit)
+        self.root.mainloop()
+        self.assertIsNone(self.banner._frame)
+
 
 class TestSavedMessageboxRemoved(unittest.TestCase):
     def test_no_saved_messagebox_in_fitness_ui(self):

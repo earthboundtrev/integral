@@ -75,6 +75,7 @@ class StatusBanner:
 
     def _clear_frame(self) -> None:
         self._cancel_hide()
+        self._pause_depth = 0
         if self._frame is not None:
             try:
                 self._frame.destroy()
