@@ -119,6 +119,24 @@ def test_rating_row_toggle_clear(tracker):
     assert row.get_rating() is None
 
 
+def test_clear_rating_with_prefilled_notes_allowed(tracker):
+    host = tk.Frame(tracker.root)
+    canvas = tk.Canvas(host)
+    cat = "Body & Presence"
+    existing = {"rating": 7, "notes": "from earlier"}
+    row = DomainReflectRow(
+        cat,
+        tracker.categories[cat],
+        existing,
+        tracker.theme,
+        host,
+        canvas,
+    )
+    row.rating_row.clear()
+    assert row.validation_error() is None
+    assert row.should_remove_entry() is True
+
+
 def test_notes_without_rating_inline_error(tracker):
     host = tk.Frame(tracker.root)
     canvas = tk.Canvas(host)
@@ -178,6 +196,35 @@ def test_save_reflect_only_rated_domains(tracker):
     assert "Money/Freedom" not in tracker.entries[date_str]
     assert len(save_calls) == 1
     assert save_calls[0].get("flush", False) is False
+
+
+def test_save_reflect_clears_prior_rating(tracker):
+    date_str = tracker.today_str()
+    cat = "Body & Presence"
+    tracker.entries = {date_str: {cat: {"rating": 7, "notes": "keep"}}}
+    host = tk.Frame(tracker.root)
+    canvas = tk.Canvas(host)
+    row = DomainReflectRow(
+        cat,
+        tracker.categories[cat],
+        tracker.entries[date_str][cat],
+        tracker.theme,
+        host,
+        canvas,
+    )
+    row.rating_row.clear()
+    page_error = tk.Label(host, text="")
+
+    tracker.save_data = lambda **kwargs: kwargs.get("on_complete")(True, None) if kwargs.get("on_complete") else None
+    tracker._invalidate_caches = MagicMock()
+    tracker.refresh_dashboard = MagicMock()
+    tracker._get_insights = MagicMock(return_value=[])
+    tracker.ensure_status_banner = MagicMock(
+        return_value=MagicMock(show_success=MagicMock(), show_info=MagicMock())
+    )
+
+    save_reflect_page(tracker, [row], date_str=date_str, page_error=page_error)
+    assert cat not in tracker.entries.get(date_str, {})
 
 
 def test_orphan_notes_block_save(tracker):

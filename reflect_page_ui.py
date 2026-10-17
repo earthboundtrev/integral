@@ -122,6 +122,10 @@ class RatingRow(ttk.Frame):
         self.set_rating(None)
 
     def _pick(self, val: int, *, toggle: bool) -> None:
+        try:
+            self.focus_set()
+        except tk.TclError:
+            pass
         if toggle and self._rating == val:
             self.clear()
         else:
@@ -198,6 +202,8 @@ class DomainReflectRow:
         self.metrics_touched: set[str] = set()
         self.details_frame: ttk.Frame | None = None
         self._existing_entry = existing
+        self._initial_rating: int | None = None
+        self._initial_notes = (existing.get("notes") or "").strip()
         self._full_form_btn: ttk.Button | None = None
 
         header = ttk.Frame(self.frame, style="Card.TFrame")
@@ -211,7 +217,8 @@ class DomainReflectRow:
         existing_rating = existing.get("rating")
         if existing_rating is not None:
             try:
-                self.rating_row.set_rating(int(existing_rating))
+                self._initial_rating = int(existing_rating)
+                self.rating_row.set_rating(self._initial_rating)
             except (TypeError, ValueError):
                 pass
 
@@ -222,19 +229,6 @@ class DomainReflectRow:
         self.notes.pack(fill=tk.X, pady=(2, 4))
         if existing.get("notes"):
             self.notes.insert("1.0", existing["notes"])
-
-        def notes_key_filter(event: tk.Event) -> str | None:
-            if event.char and event.char.isdigit():
-                return "break"
-            return None
-
-        self.notes.bind("<Key>", notes_key_filter, add="+")
-
-        def ctrl_enter_notes(_event: tk.Event) -> str:
-            return "break"
-
-        self.notes.bind("<Control-Return>", ctrl_enter_notes, add="+")
-        self.notes.bind("<Control-s>", ctrl_enter_notes, add="+")
 
         self.domain_error = make_inline_error_label(self.frame, theme)
 
@@ -344,7 +338,10 @@ class DomainReflectRow:
             def mark_metric(_e=None, metric_name=name) -> None:
                 self.metrics_touched.add(metric_name)
 
-            entry.bind("<FocusOut>", mark_metric, add="+")
+            entry.bind("<KeyRelease>", mark_metric, add="+")
+            if mtype != "number":
+                entry.bind("<<Increment>>", mark_metric, add="+")
+                entry.bind("<<Decrement>>", mark_metric, add="+")
 
     def set_full_form_command(self, cmd: Callable[[], None]) -> None:
         if self._full_form_btn is not None:
@@ -353,12 +350,37 @@ class DomainReflectRow:
     def notes_text(self) -> str:
         return self.notes.get("1.0", tk.END).strip()
 
+    def reload_from_entry(self, existing: dict) -> None:
+        """Refresh row from persisted entry (e.g. after Full form save)."""
+        self._existing_entry = existing
+        self._initial_notes = (existing.get("notes") or "").strip()
+        rating_val = existing.get("rating")
+        self._initial_rating = None
+        if rating_val is not None:
+            try:
+                self._initial_rating = int(rating_val)
+            except (TypeError, ValueError):
+                self._initial_rating = None
+        self.rating_row.set_rating(self._initial_rating)
+        self.notes.delete("1.0", tk.END)
+        if existing.get("notes"):
+            self.notes.insert("1.0", existing["notes"])
+        set_field_error(self.domain_error, None)
+
+    def should_remove_entry(self) -> bool:
+        """User cleared a rating that existed when the page opened."""
+        return self._initial_rating is not None and self.rating_row.get_rating() is None
+
     def validation_error(self) -> str | None:
         rating = self.rating_row.get_rating()
         notes = self.notes_text()
-        if rating is None and notes:
-            return "Rate this domain to save its notes"
-        return None
+        if rating is not None or not notes:
+            return None
+        if self._initial_rating is not None:
+            return None
+        if notes == self._initial_notes:
+            return None
+        return "Rate this domain to save its notes"
 
     def build_payload(self) -> dict | None:
         rating = self.rating_row.get_rating()
@@ -390,6 +412,7 @@ def save_reflect_page(
         set_field_error(row.domain_error, None)
 
     rated_any = False
+    clearing_any = False
     errors: list[tuple[DomainReflectRow, str]] = []
     for row in rows:
         err = row.validation_error()
@@ -397,16 +420,22 @@ def save_reflect_page(
             errors.append((row, err))
         elif row.rating_row.get_rating() is not None:
             rated_any = True
+        elif row.should_remove_entry():
+            clearing_any = True
 
     if errors:
         for row, msg in errors:
             set_field_error(row.domain_error, msg)
 
-    if not rated_any:
+    if not rated_any and not clearing_any:
         set_field_error(page_error, "Rate at least one domain")
+        if on_done:
+            on_done(False)
         return
 
     if errors:
+        if on_done:
+            on_done(False)
         return
 
     prior_day = copy.deepcopy(tracker.entries.get(date_str))
@@ -415,6 +444,14 @@ def save_reflect_page(
 
     changed = False
     for row in rows:
+        if row.should_remove_entry():
+            day = tracker.entries.get(date_str)
+            if day and row.cat_name in day:
+                del day[row.cat_name]
+                if not day:
+                    tracker.entries.pop(date_str, None)
+                changed = True
+            continue
         payload = row.build_payload()
         if payload is None:
             continue
@@ -533,18 +570,29 @@ def open_reflect_page(tracker: PersonalDevelopmentTracker) -> tk.Toplevel:
             inner,
             canvas,
         )
-        row.set_full_form_command(lambda c=cat_name: tracker.open_log_dialog(c, date_str=date_str))
         row.frame.pack(fill=tk.X, pady=(0, 10))
         rows.append(row)
 
-    for idx, row in enumerate(rows):
-        def tab_to_next(_event, next_idx=idx + 1) -> str | None:
-            if next_idx < len(rows):
-                rows[next_idx].rating_row.focus_set()
-                rows[next_idx]._scroll_into_view()
-            return "break"
+    def reload_rows_from_storage() -> None:
+        day_entries = tracker.entries.get(date_str, {})
+        for row in rows:
+            row.reload_from_entry(day_entries.get(row.cat_name, {}))
 
-        row.notes.bind("<Tab>", tab_to_next, add="+")
+    storage_snapshot: dict = copy.deepcopy(tracker.entries.get(date_str, {}))
+
+    def sync_storage_snapshot() -> None:
+        nonlocal storage_snapshot
+        storage_snapshot = copy.deepcopy(tracker.entries.get(date_str, {}))
+
+    for row in rows:
+        cat = row.cat_name
+
+        def open_full_form(category: str = cat) -> None:
+            tracker.open_log_dialog(category, date_str=date_str)
+            reload_rows_from_storage()
+            sync_storage_snapshot()
+
+        row.set_full_form_command(lambda c=cat: open_full_form(c))
 
     footer = ttk.Frame(win, padding=(16, 12))
     footer.pack(fill=tk.X)
@@ -556,8 +604,50 @@ def open_reflect_page(tracker: PersonalDevelopmentTracker) -> tk.Toplevel:
     cancel_btn = ttk.Button(btn_row, text="Close", command=win.destroy)
     cancel_btn.pack(side=tk.LEFT)
 
+    for idx, row in enumerate(rows):
+        if idx < len(rows) - 1:
+
+            def tab_to_next(_event, next_idx=idx + 1) -> str | None:
+                rows[next_idx].rating_row.focus_set()
+                rows[next_idx]._scroll_into_view()
+                return "break"
+
+            row.notes.bind("<Tab>", tab_to_next, add="+")
+        else:
+
+            def tab_to_save(_event) -> str:
+                save_btn.focus_set()
+                return "break"
+
+            row.notes.bind("<Tab>", tab_to_save, add="+")
+
     def request_save() -> None:
-        save_reflect_page(tracker, rows, date_str=date_str, page_error=page_error)
+        if getattr(tracker, "_integral_reflect_save_in_progress", False):
+            return
+        tracker._integral_reflect_save_in_progress = True
+        save_btn.config(state=tk.DISABLED)
+
+        def finish_save(ok: bool) -> None:
+            tracker._integral_reflect_save_in_progress = False
+            save_btn.config(state=tk.NORMAL)
+            if ok:
+                sync_storage_snapshot()
+
+        save_reflect_page(
+            tracker,
+            rows,
+            date_str=date_str,
+            page_error=page_error,
+            on_done=finish_save,
+        )
+
+    def notes_save_shortcut(_event: tk.Event) -> str:
+        request_save()
+        return "break"
+
+    for row in rows:
+        row.notes.bind("<Control-Return>", notes_save_shortcut, add="+")
+        row.notes.bind("<Control-s>", notes_save_shortcut, add="+")
 
     save_btn.config(command=request_save)
     wire_dialog_accent_keys(win, save_btn, cancel_btn=cancel_btn)
@@ -569,18 +659,28 @@ def open_reflect_page(tracker: PersonalDevelopmentTracker) -> tk.Toplevel:
     win.bind("<Control-s>", save_shortcut, add="+")
     win.bind("<Control-Return>", save_shortcut, add="+")
 
+    def on_reflect_focus_in(event: tk.Event) -> None:
+        if event.widget is not win:
+            return
+        if tracker.entries.get(date_str, {}) != storage_snapshot:
+            reload_rows_from_storage()
+            sync_storage_snapshot()
+
+    win.bind("<FocusIn>", on_reflect_focus_in, add="+")
+
     def on_close() -> None:
         dirty = False
         for row in rows:
+            if row.should_remove_entry():
+                dirty = True
+                continue
             payload = row.build_payload()
             existing = tracker.entries.get(date_str, {}).get(row.cat_name, {})
             if payload is not None:
                 merged = merge_entry_updates(existing, payload)
                 if merged != existing:
                     dirty = True
-            elif row.notes_text() and row.rating_row.get_rating() is None:
-                dirty = True
-            elif row.rating_row.get_rating() is not None:
+            elif row.validation_error() is not None:
                 dirty = True
         if dirty:
             if not messagebox.askyesno(
