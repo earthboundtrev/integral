@@ -33,12 +33,22 @@ def rating_spinbox_validate(proposed: str) -> bool:
     return 1 <= int(proposed) <= 10
 
 
+def _inline_label_bg(parent: tk.Misc, theme: dict) -> str:
+    surface = theme.get("surface")
+    if surface:
+        return str(surface)
+    try:
+        return parent.cget("background")
+    except tk.TclError:
+        return "#FFFFFF"
+
+
 def make_inline_error_label(parent: tk.Misc, theme: dict) -> tk.Label:
     return tk.Label(
         parent,
         text="",
         fg=theme.get("error", "#DC2626"),
-        bg=theme.get("surface", parent.cget("background") if hasattr(parent, "cget") else "#FFFFFF"),
+        bg=_inline_label_bg(parent, theme),
         wraplength=520,
         justify=tk.LEFT,
         anchor="w",

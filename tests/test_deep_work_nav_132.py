@@ -140,9 +140,7 @@ def test_shortcut_to_hidden_destination_is_blocked(tracker):
     with patch.object(nav_items, "deep_work_blocks_action", return_value=True) as blocked:
         tracker._run_nav_shortcut("reflect", tracker.show_reflect)
         blocked.assert_called_once()
-    with patch.object(tracker, "first_unlogged_category", return_value="Money/Freedom") as first:
-        with patch.object(tracker, "open_log_dialog") as open_log:
-            tracker._deep_work_session = None
-            tracker.show_reflect()
-            first.assert_called_once()
-            open_log.assert_called_once_with("Money/Freedom")
+    with patch("reflect_page_ui.open_reflect_page") as open_page:
+        tracker._deep_work_session = None
+        tracker.show_reflect()
+        open_page.assert_called_once_with(tracker)
