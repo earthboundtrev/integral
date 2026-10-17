@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import copy
+import logging
+import os
 import tkinter as tk
 from tkinter import messagebox, scrolledtext, ttk
 from typing import TYPE_CHECKING, Callable
@@ -16,6 +18,8 @@ from entry_payload import (
 )
 from inline_validation import make_inline_error_label, set_field_error
 from insights.engine import category_insight
+from paths import data_file
+from status_banner import get_status_banner
 from theme import FONTS, style_text_widget
 
 _UI_FONT = FONTS.get("body", ("Segoe UI", 10))
@@ -27,6 +31,10 @@ if TYPE_CHECKING:
 
 REFLECT_WINDOW_KEY = "reflect"
 DOMAIN_COUNT = 18  # stated in PR — default category count at ship time
+
+
+def _reflect_status_banner(page_error: tk.Label, tracker: PersonalDevelopmentTracker):
+    return get_status_banner(page_error, tracker.theme)
 
 
 def ordered_reflect_domains(category_names: list[str], settings: dict | None) -> list[str]:
@@ -503,7 +511,7 @@ def save_reflect_page(
         tracker.entries.pop(date_str, None)
 
     if not changed:
-        banner = tracker.ensure_status_banner()
+        banner = _reflect_status_banner(page_error, tracker)
         banner.show_success("Nothing to save — no changes.")
         if on_done:
             on_done(True)
@@ -512,18 +520,23 @@ def save_reflect_page(
     tracker._invalidate_caches()
     guidance_parts: list[str] = []
 
-    def on_saved(ok: bool, _err: BaseException | None) -> None:
+    def on_saved(ok: bool, err: BaseException | None) -> None:
         if not ok:
             if prior_day is None:
                 tracker.entries.pop(date_str, None)
             else:
                 tracker.entries[date_str] = prior_day
             tracker._invalidate_caches()
+            banner = _reflect_status_banner(page_error, tracker)
+            logging.error("Reflect save failed: %s", err)
+            detail = str(err) if err else "Could not save your data."
+            file_label = os.path.basename(data_file()) or "data.json"
+            banner.show_error(f"Save failed: {detail}", file_name=file_label)
             if on_done:
                 on_done(False)
             return
         tracker.refresh_dashboard()
-        banner = tracker.ensure_status_banner()
+        banner = _reflect_status_banner(page_error, tracker)
         if guidance_parts and not tracker.settings.get("hide_post_log_guidance"):
             text = guidance_parts[0]
             if len(guidance_parts) > 1:
@@ -576,6 +589,8 @@ def open_reflect_page(tracker: PersonalDevelopmentTracker) -> tk.Toplevel:
     win.transient(tracker.root)
 
     tracker._track_window(REFLECT_WINDOW_KEY, win)
+
+    get_status_banner(win, theme)
 
     header = tk.Frame(win, bg=theme["bg"], padx=16, pady=12)
     header.pack(fill=tk.X)

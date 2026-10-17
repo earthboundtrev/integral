@@ -185,17 +185,46 @@ def test_save_reflect_only_rated_domains(tracker):
     tracker._invalidate_caches = MagicMock()
     tracker.refresh_dashboard = MagicMock()
     tracker._get_insights = MagicMock(return_value=[])
-    tracker.ensure_status_banner = MagicMock(
-        return_value=MagicMock(show_success=MagicMock(), show_info=MagicMock())
-    )
-
-    save_reflect_page(tracker, rows, date_str=date_str, page_error=page_error)
+    mock_banner = MagicMock(show_success=MagicMock(), show_info=MagicMock(), show_error=MagicMock())
+    with patch("reflect_page_ui.get_status_banner", return_value=mock_banner):
+        save_reflect_page(tracker, rows, date_str=date_str, page_error=page_error)
 
     assert date_str in tracker.entries
     assert "Body & Presence" in tracker.entries[date_str]
     assert "Money/Freedom" not in tracker.entries[date_str]
     assert len(save_calls) == 1
     assert save_calls[0].get("flush", False) is False
+
+
+def test_save_reflect_failure_shows_error_banner(tracker):
+    date_str = tracker.today_str()
+    cat = "Body & Presence"
+    tracker.entries = {date_str: {cat: {"rating": 5}}}
+    host = tk.Frame(tracker.root)
+    canvas = tk.Canvas(host)
+    row = DomainReflectRow(
+        cat,
+        tracker.categories[cat],
+        tracker.entries[date_str][cat],
+        tracker.theme,
+        host,
+        canvas,
+    )
+    row.rating_row.set_rating(8)
+    page_error = tk.Label(host, text="")
+
+    def fail_save(**kwargs):
+        cb = kwargs.get("on_complete")
+        if cb:
+            cb(False, RuntimeError("disk full"))
+
+    tracker.save_data = fail_save
+    tracker._invalidate_caches = MagicMock()
+    mock_banner = MagicMock(show_success=MagicMock(), show_info=MagicMock(), show_error=MagicMock())
+    with patch("reflect_page_ui.get_status_banner", return_value=mock_banner):
+        save_reflect_page(tracker, [row], date_str=date_str, page_error=page_error)
+    mock_banner.show_error.assert_called_once()
+    assert tracker.entries[date_str][cat]["rating"] == 5
 
 
 def test_save_reflect_clears_prior_rating(tracker):
@@ -219,11 +248,9 @@ def test_save_reflect_clears_prior_rating(tracker):
     tracker._invalidate_caches = MagicMock()
     tracker.refresh_dashboard = MagicMock()
     tracker._get_insights = MagicMock(return_value=[])
-    tracker.ensure_status_banner = MagicMock(
-        return_value=MagicMock(show_success=MagicMock(), show_info=MagicMock())
-    )
-
-    save_reflect_page(tracker, [row], date_str=date_str, page_error=page_error)
+    mock_banner = MagicMock(show_success=MagicMock(), show_info=MagicMock(), show_error=MagicMock())
+    with patch("reflect_page_ui.get_status_banner", return_value=mock_banner):
+        save_reflect_page(tracker, [row], date_str=date_str, page_error=page_error)
     assert cat not in tracker.entries.get(date_str, {})
 
 
@@ -275,11 +302,9 @@ def test_save_reflect_merge_does_not_clobber_checklist(tracker):
     tracker._invalidate_caches = MagicMock()
     tracker.refresh_dashboard = MagicMock()
     tracker._get_insights = MagicMock(return_value=[])
-    tracker.ensure_status_banner = MagicMock(
-        return_value=MagicMock(show_success=MagicMock(), show_info=MagicMock())
-    )
-
-    save_reflect_page(tracker, [row], date_str=date_str, page_error=page_error)
+    mock_banner = MagicMock(show_success=MagicMock(), show_info=MagicMock(), show_error=MagicMock())
+    with patch("reflect_page_ui.get_status_banner", return_value=mock_banner):
+        save_reflect_page(tracker, [row], date_str=date_str, page_error=page_error)
     saved = tracker.entries[date_str][cat]
     assert saved["rating"] == 6
     assert saved["checklist"]["Walked today"] is True
@@ -323,10 +348,9 @@ def test_clear_last_domain_then_rate_another_no_keyerror(tracker):
     tracker._invalidate_caches = MagicMock()
     tracker.refresh_dashboard = MagicMock()
     tracker._get_insights = MagicMock(return_value=[])
-    tracker.ensure_status_banner = MagicMock(
-        return_value=MagicMock(show_success=MagicMock(), show_info=MagicMock())
-    )
-    save_reflect_page(tracker, rows, date_str=date_str, page_error=page_error)
+    mock_banner = MagicMock(show_success=MagicMock(), show_info=MagicMock(), show_error=MagicMock())
+    with patch("reflect_page_ui.get_status_banner", return_value=mock_banner):
+        save_reflect_page(tracker, rows, date_str=date_str, page_error=page_error)
     assert money not in tracker.entries.get(date_str, {})
     assert tracker.entries[date_str][career]["rating"] == 7
 
