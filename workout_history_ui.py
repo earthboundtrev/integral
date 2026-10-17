@@ -20,6 +20,7 @@ from progression.workout_pr import (
 from status_banner import StatusBanner
 from workout_history_sparkline import (
     best_set_metric_for_rows,
+    default_sparkline_height,
     draw_sparkline,
     format_metric_display,
     sparkline_accessibility_summary,
@@ -278,7 +279,10 @@ class WorkoutHistoryView:
 
         spark_frame = ttk.Frame(self.exercise_panel, style="Surface.TFrame")
         spark_frame.pack(side=tk.TOP, fill=tk.X, padx=4, pady=(0, 6))
-        self.sparkline_canvas = tk.Canvas(spark_frame, height=56, bg=self.theme["surface"], highlightthickness=0)
+        spark_h = default_sparkline_height(self.container)
+        self.sparkline_canvas = tk.Canvas(
+            spark_frame, height=spark_h, bg=self.theme["surface"], highlightthickness=0
+        )
         self.sparkline_canvas.pack(fill=tk.X, expand=True)
         self.sparkline_sr = tk.Label(
             spark_frame,
@@ -467,6 +471,27 @@ class WorkoutHistoryView:
 
         messagebox.showerror(prefix, str(error), parent=self.container.winfo_toplevel())
 
+    def _set_detail_readonly(self, readonly: bool) -> None:
+        """Keep session detail readable and keyboard-accessible (Enter on exercise links)."""
+        self.detail_text.config(state=tk.NORMAL)
+        if readonly:
+            self.detail_text.config(cursor="arrow")
+            if not getattr(self, "_detail_readonly_bound", False):
+                self.detail_text.bind("<Key>", self._detail_readonly_key)
+                self._detail_readonly_bound = True
+        else:
+            self.detail_text.config(cursor="xterm")
+
+    def _detail_readonly_key(self, event: tk.Event) -> str | None:
+        sym = event.keysym
+        if sym in ("Return", "Escape", "Shift_L", "Shift_R", "Control_L", "Control_R"):
+            return None
+        if (event.state & 0x4) and sym.lower() in ("c", "a"):
+            return None
+        if sym in ("Left", "Right", "Up", "Down", "Prior", "Next", "Home", "End"):
+            return None
+        return "break"
+
     def _show_loading_indicator(self) -> None:
         """Show loading indicator after a delay."""
         if self.loading_after_id is not None:
@@ -490,9 +515,9 @@ class WorkoutHistoryView:
     def _show_empty_state(self) -> None:
         """Show empty state with Log workout button."""
         self.session_list.delete(0, tk.END)
-        self.detail_text.config(state=tk.NORMAL)
+        self._set_detail_readonly(False)
         self.detail_text.delete("1.0", tk.END)
-        self.detail_text.config(state=tk.DISABLED)
+        self._set_detail_readonly(True)
         
         if not self.empty_label.winfo_ismapped():
             self.empty_label.pack(side=tk.TOP, pady=20)
@@ -576,7 +601,7 @@ class WorkoutHistoryView:
         """Display detail for selected session."""
         if self.detail_mode == "exercise":
             self._close_exercise_view()
-        self.detail_text.config(state=tk.NORMAL)
+        self._set_detail_readonly(False)
         self.detail_text.delete("1.0", tk.END)
         
         date_str = format_date_display(session.date)
@@ -615,7 +640,7 @@ class WorkoutHistoryView:
             self.detail_text.tag_bind(tag, "<Enter>", lambda _e: self.detail_text.config(cursor="hand2"))
             self.detail_text.tag_bind(tag, "<Leave>", lambda _e: self.detail_text.config(cursor=""))
 
-        self.detail_text.config(state=tk.DISABLED)
+        self._set_detail_readonly(True)
     
     def _display_exercises(self, session: WorkoutSession, sets: list[WorkoutSet]) -> None:
         """Display exercises with volume, PR badges, and trends (batched queries)."""
@@ -632,8 +657,10 @@ class WorkoutHistoryView:
                 exercise_ids,
             ).fetchall():
                 exercise_names[row["id"]] = row["name"]
-        except Exception:
-            pass
+        except Exception as exc:
+            if is_fitness_db_lock_error(exc):
+                self._handle_db_error(exc, "Error loading session detail")
+                return
 
         prior_bests = {}
         try:
@@ -643,7 +670,10 @@ class WorkoutHistoryView:
                 session.created_at,
                 session.id,
             )
-        except Exception:
+        except Exception as exc:
+            if is_fitness_db_lock_error(exc):
+                self._handle_db_error(exc, "Error loading session detail")
+                return
             prior_bests = {}
 
         trends = self._batch_fetch_trends(session, exercise_ids)
@@ -828,6 +858,7 @@ class WorkoutHistoryView:
         self._exercise_spark_values = [m[1] for m in metrics]
         self._exercise_spark_dates = [m[0] for m in metrics]
         self.container.update_idletasks()
+        self.sparkline_canvas.configure(height=default_sparkline_height(self.container))
         draw_sparkline(
             self.sparkline_canvas,
             self._exercise_spark_values,
@@ -909,8 +940,9 @@ class WorkoutHistoryView:
                     "trend": trend,
                     "previous_best_display": prev_display,
                 }
-        except Exception:
-            # If batch fetch fails, return empty trends
+        except Exception as exc:
+            if is_fitness_db_lock_error(exc):
+                self._handle_db_error(exc, "Error loading session detail")
             return {}
         
         return trends
@@ -938,9 +970,13 @@ class WorkoutHistoryView:
             self.session_list.see(last_idx)
             self._on_session_selected()
     
-    def _on_enter_key(self) -> None:
-        """Move focus to detail pane."""
+    def _on_enter_key(self) -> str | None:
+        """Open focused exercise or move focus to session detail."""
+        if self.detail_mode == "session" and self._focused_exercise_id:
+            self._open_exercise_view(self._focused_exercise_id)
+            return "break"
         self.detail_text.focus_set()
+        return None
     
     def _on_escape_from_list(self) -> None:
         """Close the history view window."""

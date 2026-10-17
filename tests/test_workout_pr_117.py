@@ -23,6 +23,7 @@ from progression.workout_pr import (
     update_rolling_bests,
 )
 from workout_history_sparkline import (
+    draw_sparkline,
     format_metric_number,
     sparkline_accessibility_summary,
 )
@@ -119,12 +120,53 @@ class TestExerciseHistoryQueries(unittest.TestCase):
             if not statement.strip().upper().startswith("PRAGMA"):
                 query_count += 1
 
-        with self.repo.connect() as conn:
-            conn.set_trace_callback(trace)
-            self.repo.fetch_exercise_history_page("ex1", limit=20)
-            conn.set_trace_callback(None)
+        class _KeepOpen:
+            def __init__(self, connection):
+                self._connection = connection
 
+            def __enter__(self):
+                return self._connection
+
+            def __exit__(self, *_args):
+                return False
+
+        real_connect = self.repo.connect
+        traced_conn: sqlite3.Connection | None = None
+
+        def traced_connect(timeout=5.0):
+            nonlocal traced_conn
+            if traced_conn is None:
+                traced_conn = real_connect(timeout)
+                traced_conn.set_trace_callback(trace)
+            return _KeepOpen(traced_conn)
+
+        self.repo.connect = traced_connect  # type: ignore[method-assign]
+        try:
+            self.repo.fetch_exercise_history_page("ex1", limit=20)
+        finally:
+            self.repo.connect = real_connect  # type: ignore[method-assign]
+            if traced_conn is not None:
+                traced_conn.set_trace_callback(None)
+
+        self.assertGreater(query_count, 0)
         self.assertLessEqual(query_count, 3)
+
+    def test_hard_deleted_exercise_still_has_computed_bests(self):
+        date = datetime.now().strftime("%Y-%m-%d")
+        create_workout_session(
+            self.repo,
+            date=date,
+            sets_data=[{"exercise_id": "ex1", "sets": 1, "reps": 12, "weight_kg": 40.0}],
+        )
+        with self.repo.connect() as conn:
+            conn.execute("PRAGMA foreign_keys = OFF")
+            conn.execute("DELETE FROM exercises WHERE id = ?", ("ex1",))
+            conn.execute("PRAGMA foreign_keys = ON")
+        _sessions, _sets_map, name, stored, computed = self.repo.fetch_exercise_history_page("ex1")
+        self.assertIn("(removed)", name)
+        self.assertEqual(stored.best_weight, None)
+        self.assertEqual(computed.best_weight, 40.0)
+        self.assertEqual(computed.best_reps, 12)
 
     def test_removed_exercise_still_lists_sessions(self):
         date = datetime.now().strftime("%Y-%m-%d")
@@ -209,6 +251,31 @@ class TestRollingBests(unittest.TestCase):
         nxt = update_rolling_bests(prior, _set(weight_kg=45.0, reps=3))
         self.assertEqual(nxt.best_weight, 45.0)
         self.assertEqual(nxt.best_reps, 3)
+
+    def test_reps_at_max_weight_not_global_max(self):
+        history = [
+            _set(weight_kg=20.0, reps=15, ordinal=0),
+            _set(weight_kg=80.0, reps=3, ordinal=1),
+        ]
+        bests = aggregate_bests_from_sets(history)
+        self.assertEqual(bests.best_weight, 80.0)
+        self.assertEqual(bests.best_reps, 3)
+        prior = ExerciseBests(best_weight=80.0, best_reps=3)
+        self.assertEqual(classify_set_pr(_set(weight_kg=80.0, reps=5), prior), "beat")
+
+
+class TestSparklineDraw(unittest.TestCase):
+    @unittest.skipIf(not os.getenv("DISPLAY"), "Requires X display for tkinter")
+    def test_single_point_does_not_raise(self):
+        import tkinter as tk
+
+        root = tk.Tk()
+        root.withdraw()
+        canvas = tk.Canvas(root, width=200, height=80)
+        try:
+            draw_sparkline(canvas, [42.0], theme={"surface": "#fff", "fg": "#000", "accent": "#2F7A7B"})
+        finally:
+            root.destroy()
 
 
 if __name__ == "__main__":

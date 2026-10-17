@@ -71,21 +71,37 @@ def bests_from_row(row) -> ExerciseBests:
     )
 
 
+def _set_sort_key(row: WorkoutSet) -> tuple:
+    return (row.created_at or "", row.ordinal or 0, row.id or "")
+
+
 def aggregate_bests_from_sets(sets: list[WorkoutSet]) -> ExerciseBests:
-    best_reps: int | None = None
-    best_hold: float | None = None
-    best_weight: float | None = None
-    for row in sets:
-        r = _pos_int(row.reps)
-        if r is not None:
-            best_reps = r if best_reps is None else max(best_reps, r)
-        h = _pos_float(row.hold_seconds)
-        if h is not None:
-            best_hold = h if best_hold is None else max(best_hold, h)
-        w = _pos_float(row.weight_kg)
-        if w is not None:
-            best_weight = w if best_weight is None else max(best_weight, w)
-    return ExerciseBests(best_reps=best_reps, best_hold_time=best_hold, best_weight=best_weight)
+    """Rolling bests in log order (reps track max load, not independent MAX(reps))."""
+    rolling = ExerciseBests()
+    for row in sorted(sets, key=_set_sort_key):
+        rolling = update_rolling_bests(rolling, row)
+    return rolling
+
+
+def bests_from_sql_aggregates(
+    *,
+    max_weight,
+    reps_at_max_weight,
+    max_hold,
+    max_reps_unweighted,
+) -> ExerciseBests:
+    """Build bests from SQL aggregates; reps pair with max weight when loads exist."""
+    best_weight = _pos_float(max_weight)
+    best_hold = _pos_float(max_hold)
+    if best_weight is not None:
+        best_reps = _pos_int(reps_at_max_weight)
+    else:
+        best_reps = _pos_int(max_reps_unweighted)
+    return ExerciseBests(
+        best_reps=best_reps,
+        best_hold_time=best_hold,
+        best_weight=best_weight,
+    )
 
 
 def merge_bests(a: ExerciseBests, b: ExerciseBests) -> ExerciseBests:

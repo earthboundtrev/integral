@@ -119,19 +119,33 @@ def draw_sparkline(
         y = padding + inner_h * (1.0 - norm)
         points.extend([x, y])
 
-    canvas.create_line(*points, fill=accent, width=2, smooth=True)
-    # End caps for non-color-only cue
-    canvas.create_oval(points[0] - 3, points[1] - 3, points[0] + 3, points[1] + 3, fill=fg, outline=fg)
-    canvas.create_oval(
-        points[-2] - 3,
-        points[-1] - 3,
-        points[-2] + 3,
-        points[-1] + 3,
-        fill=accent,
-        outline=accent,
-    )
+    if n == 1:
+        x, y = points[0], points[1]
+        canvas.create_oval(x - 4, y - 4, x + 4, y + 4, fill=accent, outline=accent)
+    else:
+        canvas.create_line(*points, fill=accent, width=2, smooth=True)
+        canvas.create_oval(points[0] - 3, points[1] - 3, points[0] + 3, points[1] + 3, fill=fg, outline=fg)
+        canvas.create_oval(
+            points[-2] - 3,
+            points[-1] - 3,
+            points[-2] + 3,
+            points[-1] + 3,
+            fill=accent,
+            outline=accent,
+        )
     canvas.create_text(padding, height - 2, text="older", anchor=tk.SW, fill=muted, font=("Helvetica", 8))
     canvas.create_text(width - padding, height - 2, text="newer", anchor=tk.SE, fill=muted, font=("Helvetica", 8))
 
 
 _EPS = 1e-9
+
+
+def default_sparkline_height(widget: tk.Misc | None = None, *, base: int = 56) -> int:
+    """Scale sparkline height for HiDPI (125–175%+) so the line is not clipped."""
+    dpi = 96.0
+    if widget is not None:
+        try:
+            dpi = float(widget.winfo_fpixels("1i"))
+        except tk.TclError:
+            pass
+    return max(base, int(round(base * dpi / 96.0)))

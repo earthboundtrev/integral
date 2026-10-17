@@ -962,11 +962,40 @@ class FitnessRepository:
             result[row["session_id"]].append(wset)
         return result
 
+    def _aggregate_bests_from_conn(self, conn: sqlite3.Connection, exercise_id: str) -> "ExerciseBests":
+        from progression.workout_pr import ExerciseBests, bests_from_sql_aggregates
+
+        eid = (exercise_id or "").strip()
+        if not eid:
+            return ExerciseBests()
+        row = conn.execute(
+            """
+            SELECT
+                MAX(ws.weight_kg) AS max_weight,
+                MAX(ws.hold_seconds) AS max_hold,
+                MAX(CASE WHEN ws.weight_kg IS NULL THEN ws.reps END) AS max_reps_unweighted,
+                MAX(CASE WHEN ws.weight_kg = (
+                    SELECT MAX(weight_kg) FROM workout_sets WHERE exercise_id = ?
+                ) THEN ws.reps END) AS reps_at_max_weight
+            FROM workout_sets ws
+            WHERE ws.exercise_id = ?
+            """,
+            (eid, eid),
+        ).fetchone()
+        if row is None:
+            return ExerciseBests()
+        return bests_from_sql_aggregates(
+            max_weight=row["max_weight"],
+            reps_at_max_weight=row["reps_at_max_weight"],
+            max_hold=row["max_hold"],
+            max_reps_unweighted=row["max_reps_unweighted"],
+        )
+
     def get_prior_bests_before_session(
         self, exercise_ids: list[str], before_date: str, before_created_at: str | None, before_id: str
     ) -> dict[str, "ExerciseBests"]:
-        """Aggregate max bests from sets in sessions strictly before the cursor session."""
-        from progression.workout_pr import ExerciseBests, aggregate_bests_from_sets
+        """Rolling bests from sets in sessions strictly before the cursor session."""
+        from progression.workout_pr import ExerciseBests, update_rolling_bests
 
         if not exercise_ids:
             return {}
@@ -977,56 +1006,41 @@ class FitnessRepository:
         with self.connect() as conn:
             rows = conn.execute(
                 f"""
-                SELECT ws.exercise_id, ws.sets, ws.reps, ws.hold_seconds, ws.weight_kg
+                SELECT ws.exercise_id, ws.reps, ws.hold_seconds, ws.weight_kg,
+                       ws.ordinal, ws.id, ws.created_at
                 FROM workout_sets ws
                 INNER JOIN workout_sessions s ON s.id = ws.session_id
                 WHERE ws.exercise_id IN ({placeholders})
                   AND (s.date, COALESCE(s.created_at, ''), s.id) < (?, COALESCE(?, ''), ?)
+                ORDER BY s.date ASC, s.created_at ASC, s.id ASC,
+                         ws.ordinal ASC, ws.created_at ASC, ws.id ASC
                 """,
                 params,
             ).fetchall()
-        by_ex: dict[str, list] = {eid: [] for eid in exercise_ids}
         for row in rows:
-            by_ex[row["exercise_id"]].append(
-                WorkoutSet(
-                    id="agg",
-                    session_id="",
-                    exercise_id=row["exercise_id"],
-                    sets=row["sets"],
-                    reps=row["reps"],
-                    hold_seconds=row["hold_seconds"],
-                    weight_kg=row["weight_kg"],
-                )
+            eid = row["exercise_id"]
+            wset = WorkoutSet(
+                id=row["id"],
+                session_id="",
+                exercise_id=eid,
+                reps=row["reps"],
+                hold_seconds=row["hold_seconds"],
+                weight_kg=row["weight_kg"],
+                ordinal=row["ordinal"],
+                created_at=row["created_at"],
             )
-        for eid, wsets in by_ex.items():
-            out[eid] = aggregate_bests_from_sets(wsets)
+            out[eid] = update_rolling_bests(out[eid], wset)
         return out
 
     def get_all_time_bests_for_exercise(self, exercise_id: str) -> "ExerciseBests":
-        from progression.workout_pr import ExerciseBests
-
         eid = (exercise_id or "").strip()
         if not eid:
+            from progression.workout_pr import ExerciseBests
+
             return ExerciseBests()
         self.initialize()
         with self.connect() as conn:
-            row = conn.execute(
-                """
-                SELECT MAX(weight_kg) AS best_weight,
-                       MAX(reps) AS best_reps,
-                       MAX(hold_seconds) AS best_hold_time
-                FROM workout_sets
-                WHERE exercise_id = ?
-                """,
-                (eid,),
-            ).fetchone()
-        if row is None:
-            return ExerciseBests()
-        return ExerciseBests(
-            best_reps=row["best_reps"],
-            best_hold_time=row["best_hold_time"],
-            best_weight=row["best_weight"],
-        )
+            return self._aggregate_bests_from_conn(conn, eid)
 
     def fetch_exercise_history_page(
         self,
@@ -1114,27 +1128,37 @@ class FitnessRepository:
                 """
                 SELECT e.name, e.deleted_at,
                        p.best_reps, p.best_hold_time, p.best_weight,
-                       (SELECT MAX(weight_kg) FROM workout_sets WHERE exercise_id = e.id) AS agg_weight,
-                       (SELECT MAX(reps) FROM workout_sets WHERE exercise_id = e.id) AS agg_reps,
-                       (SELECT MAX(hold_seconds) FROM workout_sets WHERE exercise_id = e.id) AS agg_hold
+                       (SELECT MAX(weight_kg) FROM workout_sets WHERE exercise_id = ?) AS max_weight,
+                       (SELECT MAX(hold_seconds) FROM workout_sets WHERE exercise_id = ?) AS max_hold,
+                       (SELECT MAX(reps) FROM workout_sets
+                        WHERE exercise_id = ? AND weight_kg IS NULL) AS max_reps_unweighted,
+                       (SELECT MAX(reps) FROM workout_sets
+                        WHERE exercise_id = ?
+                          AND weight_kg = (SELECT MAX(weight_kg) FROM workout_sets WHERE exercise_id = ?)
+                       ) AS reps_at_max_weight
                 FROM exercises e
                 LEFT JOIN user_exercise_progress p ON p.exercise_id = e.id
                 WHERE e.id = ?
                 """,
-                (eid,),
+                (eid, eid, eid, eid, eid, eid),
             ).fetchone()
+            if meta is None:
+                computed = self._aggregate_bests_from_conn(conn, eid)
+            else:
+                from progression.workout_pr import bests_from_sql_aggregates
+
+                computed = bests_from_sql_aggregates(
+                    max_weight=meta["max_weight"],
+                    reps_at_max_weight=meta["reps_at_max_weight"],
+                    max_hold=meta["max_hold"],
+                    max_reps_unweighted=meta["max_reps_unweighted"],
+                )
         if meta is None:
             name = f"{eid} (removed)"
             stored = ExerciseBests()
-            computed = ExerciseBests()
         else:
             name = meta["name"] if meta["deleted_at"] is None else f"{eid} (removed)"
             stored = bests_from_row(meta)
-            computed = ExerciseBests(
-                best_reps=meta["agg_reps"],
-                best_hold_time=meta["agg_hold"],
-                best_weight=meta["agg_weight"],
-            )
         return sessions, sets_map, name, stored, computed
 
     def list_workout_sets_batch(self, session_ids: list[str]) -> dict[str, list[WorkoutSet]]:
