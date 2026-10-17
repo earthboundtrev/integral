@@ -354,6 +354,14 @@ class FitnessRepository:
             )
         return progress
 
+    def delete_user_progress(self, exercise_id: str) -> None:
+        self.initialize()
+        with self.connect() as conn:
+            conn.execute(
+                "DELETE FROM user_exercise_progress WHERE exercise_id = ?",
+                (exercise_id,),
+            )
+
     def edge_exists(
         self,
         from_exercise_id: str,
@@ -488,6 +496,13 @@ class FitnessRepository:
                 (session_id,),
             ).fetchone()
         return row is not None
+
+    def delete_workout_session(self, session_id: str) -> None:
+        """Remove a session and its sets (e.g. Undo right after logging)."""
+        self.initialize()
+        with self.connect() as conn:
+            conn.execute("DELETE FROM workout_sets WHERE session_id = ?", (session_id,))
+            conn.execute("DELETE FROM workout_sessions WHERE id = ?", (session_id,))
 
     def has_workout_set(self, session_id: str, exercise_id: str) -> bool:
         self.initialize()

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Callable
 import os
 import sys
@@ -62,6 +63,15 @@ from theme import (
     style_text_widget,
 )
 import ui_scroll
+from inline_validation import (
+    focus_first_invalid,
+    make_inline_error_label,
+    register_rating_spinbox,
+    set_field_error,
+    validate_rating_1_10,
+    wire_focusout_validation,
+)
+from status_banner import StatusBanner, attach_banner_to_main
 from vault import is_encrypted_file, load_data_file, load_data_file_with_recovery, save_data_file
 from todays_log import (
     CATEGORY_SHORT_LABELS,
@@ -115,6 +125,9 @@ class PersonalDevelopmentTracker:
         self._session_counts_cache: dict[str, int] | None = None
         self._save_after_id: str | None = None
         self._pending_save_payload: dict | None = None
+        self._save_after_callbacks: list[Callable[[bool, BaseException | None], None]] = []
+        self._save_write_in_progress = False
+        self._status_banner: StatusBanner | None = None
         self._fitness_state_dirty = False
         self._dashboard_ready = False
         self._categories_tab_built = False
@@ -482,6 +495,9 @@ class PersonalDevelopmentTracker:
         self._theme_dark = dark
         self.theme = get_theme(dark)
         apply_theme(self.root, self.theme)
+        status_banner = getattr(self, "_status_banner", None)
+        if status_banner is not None:
+            status_banner.set_theme(self.theme)
         self._retheme_open_windows()
 
     def _retheme_open_windows(self) -> None:
@@ -835,9 +851,12 @@ class PersonalDevelopmentTracker:
         *,
         recompute_fitness: bool = False,
         flush: bool = False,
+        on_complete: Callable[[bool, BaseException | None], None] | None = None,
     ) -> None:
         if categories is not None:
             self.categories = categories
+        if on_complete is not None:
+            self._save_after_callbacks.append(on_complete)
         payload = self._payload(recompute_fitness=recompute_fitness)
         self._pending_save_payload = payload
         os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
@@ -851,11 +870,58 @@ class PersonalDevelopmentTracker:
             self.root.after_cancel(self._save_after_id)
         self._save_after_id = self.root.after(250, lambda: self._flush_save(sync=False))
 
+    def _invoke_save_callbacks(
+        self,
+        callbacks: list[Callable[[bool, BaseException | None], None]],
+        ok: bool,
+        error: BaseException | None,
+    ) -> None:
+        for cb in callbacks:
+            try:
+                cb(ok, error)
+            except Exception:  # noqa: BLE001
+                logging.exception("Save completion callback failed")
+
+    def _notify_save_complete(self, ok: bool, error: BaseException | None) -> None:
+        """Backward-compatible hook for tests; prefer per-flush callback lists."""
+        callbacks = self._save_after_callbacks
+        self._save_after_callbacks = []
+        self._invoke_save_callbacks(callbacks, ok, error)
+
+    def _show_save_error_banner(self, error: BaseException | None) -> None:
+        logging.error("Save failed: %s", error)
+        banner = self.ensure_status_banner()
+        file_label = os.path.basename(DATA_FILE) or "data.json"
+        detail = str(error) if error else "Could not save your data."
+        banner.show_error(f"Save failed: {detail}", file_name=file_label)
+
+    def _finish_save(self, ok: bool, error: BaseException | None) -> None:
+        if ok:
+            self._notify_save_complete(True, None)
+            return
+        self._show_save_error_banner(error)
+        self._notify_save_complete(False, error)
+
+    def _schedule_chained_flush(self, *, sync: bool) -> None:
+        if self._pending_save_payload is None and not self._save_after_callbacks:
+            return
+        if sync:
+            self._flush_save(sync=True)
+            return
+        if self._save_after_id:
+            return
+        self._save_after_id = self.root.after(0, lambda: self._flush_save(sync=False))
+
     def _flush_save(self, sync: bool = False) -> None:
         self._save_after_id = None
+        if self._save_write_in_progress:
+            return
         payload = self._pending_save_payload
         if payload is None:
             return
+
+        callbacks = self._save_after_callbacks
+        self._save_after_callbacks = []
 
         encrypted = bool(self.settings.get("encryption_enabled"))
         passphrase = self.vault_passphrase
@@ -864,10 +930,52 @@ class PersonalDevelopmentTracker:
         def write() -> None:
             save_data_file(path, payload, encrypted=encrypted, passphrase=passphrase)
 
+        def on_done(ok: bool, error: BaseException | None) -> None:
+            self._save_write_in_progress = False
+            self._invoke_save_callbacks(callbacks, ok, error)
+            if ok:
+                if self._pending_save_payload is payload:
+                    self._pending_save_payload = None
+            else:
+                self._show_save_error_banner(error)
+                if self._pending_save_payload is payload:
+                    self._pending_save_payload = None
+            self._schedule_chained_flush(sync=sync)
+
+        def run_async() -> None:
+            try:
+                write()
+            except Exception as exc:  # noqa: BLE001
+                self.root.after(0, lambda e=exc: on_done(False, e))
+            else:
+                self.root.after(0, lambda: on_done(True, None))
+
+        self._save_write_in_progress = True
         if sync:
-            write()
+            try:
+                write()
+            except Exception as exc:  # noqa: BLE001
+                on_done(False, exc)
+            else:
+                on_done(True, None)
             return
-        threading.Thread(target=write, daemon=True).start()
+        threading.Thread(target=run_async, daemon=True).start()
+
+    def ensure_status_banner(self) -> StatusBanner:
+        if self._status_banner is not None:
+            try:
+                if int(self._status_banner._host.winfo_exists()) == 1:
+                    return self._status_banner
+            except tk.TclError:
+                pass
+        host = self._banner_host
+        if host is None or not host.winfo_exists():
+            host = self.root
+        self._status_banner = StatusBanner(host, self.theme)
+        return self._status_banner
+
+    def show_save_success_banner(self, message: str, **kwargs) -> None:
+        self.ensure_status_banner().show_success(message, **kwargs)
 
     def save_fitness_data(self) -> None:
         self._fitness_state_dirty = True
@@ -2374,14 +2482,33 @@ class PersonalDevelopmentTracker:
         ttk.Label(inner, text="Overall Progress Rating (1-10)", style="Subheading.TLabel").pack(anchor="w", padx=15)
         spin_frame = ttk.Frame(inner)
         spin_frame.pack(padx=15, pady=5, fill=tk.X)
-        ttk.Spinbox(
+        rating_spin = ttk.Spinbox(
             spin_frame,
             from_=1,
             to=10,
             textvariable=rating_var,
             width=6,
             font=("Helvetica", 14),
-        ).pack(side=tk.LEFT)
+        )
+        rating_spin.pack(side=tk.LEFT)
+        register_rating_spinbox(rating_spin, dialog)
+        date_error = make_inline_error_label(date_row, self.theme)
+        backdate_error = make_inline_error_label(backdate_frame, self.theme)
+        rating_error = make_inline_error_label(spin_frame, self.theme)
+
+        def validate_date_field() -> str | None:
+            return journal.validate_backdate(date_var.get().strip(), reason=backdate_var.get().strip())
+
+        def validate_rating_field() -> str | None:
+            try:
+                raw = rating_var.get()
+            except tk.TclError:
+                return validate_rating_1_10("")
+            return validate_rating_1_10(raw)
+
+        wire_focusout_validation(date_row.winfo_children()[0], validate_date_field, date_error)
+        wire_focusout_validation(backdate_entry, validate_date_field, backdate_error)
+        wire_focusout_validation(rating_spin, validate_rating_field, rating_error)
 
         ttk.Label(
             inner,
@@ -2443,6 +2570,16 @@ class PersonalDevelopmentTracker:
                 check_vars,
                 metric_vars,
                 notes_text,
+                date_entry=date_row.winfo_children()[0],
+                backdate_entry=backdate_entry,
+                rating_widget=rating_spin,
+                date_error=date_error,
+                backdate_error=backdate_error,
+                rating_error=rating_error,
+                validate_date=validate_date_field,
+                validate_rating=validate_rating_field,
+                save_log_btn=save_log_btn,
+                cancel_log_btn=cancel_log_btn,
             ),
         )
         save_log_btn.pack(side=tk.LEFT, padx=(0, 8))
@@ -2457,8 +2594,14 @@ class PersonalDevelopmentTracker:
                 text="Log writing session",
                 command=lambda: self.log_writing_session_for_day(date_var.get().strip(), parent=dialog),
             ).pack(side=tk.LEFT, padx=(0, 8))
-        cancel_log_btn = ttk.Button(footer_btns, text="Cancel", command=dialog.destroy)
+        def request_close_log() -> None:
+            if getattr(dialog, "_integral_log_save_in_progress", False):
+                return
+            dialog.destroy()
+
+        cancel_log_btn = ttk.Button(footer_btns, text="Cancel", command=request_close_log)
         cancel_log_btn.pack(side=tk.LEFT)
+        dialog.protocol("WM_DELETE_WINDOW", request_close_log)
         from ui_accent import wire_dialog_accent_keys
 
         wire_dialog_accent_keys(dialog, save_log_btn, cancel_btn=cancel_log_btn)
@@ -2479,13 +2622,47 @@ class PersonalDevelopmentTracker:
         check_vars: dict[str, tk.BooleanVar],
         metric_vars: dict[str, tk.Variable],
         notes_text: scrolledtext.ScrolledText,
+        *,
+        date_entry: tk.Misc | None = None,
+        backdate_entry: tk.Misc | None = None,
+        rating_widget: tk.Misc | None = None,
+        date_error: tk.Label | None = None,
+        backdate_error: tk.Label | None = None,
+        rating_error: tk.Label | None = None,
+        validate_date: Callable[[], str | None] | None = None,
+        validate_rating: Callable[[], str | None] | None = None,
+        save_log_btn: tk.Misc | None = None,
+        cancel_log_btn: tk.Misc | None = None,
     ) -> None:
+        if getattr(dialog, "_integral_log_save_in_progress", False):
+            return
         date_str = date_var.get().strip()
         reason = backdate_var.get().strip()
-        error = journal.validate_backdate(date_str, reason=reason)
-        if error:
-            messagebox.showwarning("Date", error)
+        date_msg = validate_date() if validate_date else journal.validate_backdate(date_str, reason=reason)
+        rating_msg = validate_rating() if validate_rating else validate_rating_1_10(rating_var.get())
+        pairs: list[tuple[tk.Misc, tk.Label | None, str | None]] = []
+        if date_msg:
+            parsed = journal.parse_entry_date(date_str)
+            if (
+                parsed
+                and parsed < datetime.now().date()
+                and backdate_entry is not None
+                and "reason" in date_msg.lower()
+            ):
+                pairs.append((backdate_entry, backdate_error, date_msg))
+            elif date_entry is not None:
+                pairs.append((date_entry, date_error, date_msg))
+        else:
+            set_field_error(date_error, None)
+            set_field_error(backdate_error, None)
+        if rating_widget is not None:
+            pairs.append((rating_widget, rating_error, rating_msg))
+        if focus_first_invalid(pairs):
             return
+
+        import copy
+
+        prior_day = copy.deepcopy(self.entries.get(date_str))
 
         if date_str not in self.entries:
             self.entries[date_str] = {}
@@ -2498,8 +2675,14 @@ class PersonalDevelopmentTracker:
             except (tk.TclError, ValueError):
                 metrics_data[name] = 0
 
+        try:
+            rating_value = rating_var.get()
+        except tk.TclError:
+            focus_first_invalid([(rating_widget or dialog, rating_error, validate_rating_1_10(""))])
+            return
+
         entry_payload = {
-            "rating": rating_var.get(),
+            "rating": rating_value,
             "checklist": checklist_data,
             "metrics": metrics_data,
             "notes": notes_text.get("1.0", tk.END).strip(),
@@ -2510,17 +2693,53 @@ class PersonalDevelopmentTracker:
 
         self.entries[date_str][cat_name] = entry_payload
         self._invalidate_caches()
-        dialog.destroy()
-        if date_str == self.today_str() and self._reminder_scheduler is not None:
-            self._reminder_scheduler.notify_logged_today()
-        self.refresh_dashboard()
-        self.save_data(recompute_fitness=False)
         hint = category_insight(self._get_insights(), cat_name)
-        if hint and hint.suggested_actions:
-            self.root.after(
-                1,
-                lambda: messagebox.showinfo("Guidance", f"{hint.message}\n\nTry: {hint.suggested_actions[0]}"),
-            )
+        guidance_text = None
+        if hint and hint.suggested_actions and not self.settings.get("hide_post_log_guidance"):
+            guidance_text = f"{hint.message}\n\nTry: {hint.suggested_actions[0]}"
+
+        dialog._integral_log_save_in_progress = True
+        if save_log_btn is not None:
+            save_log_btn.config(state=tk.DISABLED)
+        if cancel_log_btn is not None:
+            cancel_log_btn.config(state=tk.DISABLED)
+
+        def on_saved(ok: bool, _err: BaseException | None) -> None:
+            from status_banner import _widget_exists
+
+            dialog._integral_log_save_in_progress = False
+            if not ok:
+                if prior_day is None:
+                    self.entries.pop(date_str, None)
+                else:
+                    self.entries[date_str] = prior_day
+                self._invalidate_caches()
+                if _widget_exists(save_log_btn):
+                    save_log_btn.config(state=tk.NORMAL)
+                if _widget_exists(cancel_log_btn):
+                    cancel_log_btn.config(state=tk.NORMAL)
+                return
+            if _widget_exists(dialog):
+                dialog.destroy()
+            if date_str == self.today_str() and self._reminder_scheduler is not None:
+                self._reminder_scheduler.notify_logged_today()
+            self.refresh_dashboard()
+            banner = self.ensure_status_banner()
+            if guidance_text:
+
+                def hide_guidance_forever() -> None:
+                    self.settings["hide_post_log_guidance"] = True
+                    self.save_data(flush=True)
+                    banner.dismiss()
+
+                banner.show_info(
+                    f"Saved log for {cat_name}. {guidance_text}",
+                    extra_actions=[("Don't show again", hide_guidance_forever)],
+                )
+            else:
+                banner.show_success(f"Saved log for {cat_name} ({date_str}).")
+
+        self.save_data(recompute_fitness=False, flush=True, on_complete=on_saved)
 
     def show_guidance(self) -> None:
         window = tk.Toplevel(self.root)
@@ -3462,16 +3681,22 @@ class PersonalDevelopmentTracker:
             default_days=default_days,
         )
 
-    def _on_fitness_session_saved(self, session_date: str) -> None:
+    def _on_fitness_session_saved(
+        self,
+        session_date: str,
+        *,
+        on_complete: Callable[[bool, BaseException | None], None] | None = None,
+    ) -> None:
         bridge_fitness_to_daily_entries(self.entries, session_date)
         self._fitness_state_dirty = True
         self._invalidate_session_counts()
         self._invalidate_caches()
         self.refresh_dashboard()
-        self.save_data(recompute_fitness=True)
-        
-        # Refresh workout history view if open
-        if hasattr(self, '_workout_history_view') and self._workout_history_view:
+        self.save_data(recompute_fitness=True, flush=True, on_complete=on_complete)
+        self._refresh_workout_history_view()
+
+    def _refresh_workout_history_view(self) -> None:
+        if hasattr(self, "_workout_history_view") and self._workout_history_view:
             try:
                 self._workout_history_view.refresh()
             except Exception:
@@ -3535,6 +3760,7 @@ class PersonalDevelopmentTracker:
             on_session_saved=self._on_fitness_session_saved,
             fitness_settings=self.settings.get("fitness"),
             theme=self.theme,
+            tracker=self,
         )
         self._log_exercise_dialog = dialog
 
@@ -3572,6 +3798,7 @@ class PersonalDevelopmentTracker:
             fitness_settings=self.settings.get("fitness"),
             on_fitness_settings_changed=on_fitness_settings_changed,
             on_log_practice=self.show_log_practice,
+            tracker=self,
         )
         self.root.update_idletasks()
         after_children = set(self.root.winfo_children())

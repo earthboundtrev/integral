@@ -18,7 +18,7 @@ LIGHT = {
     "accent_soft": "#D1E7E7",  # v2: soft accent background
     "on_accent": "#FFFFFF",  # v2: text on accent buttons
     "streak": "#D97706",
-    "success": "#059669",
+    "success": "#047857",
     "success_bg": "#ECFDF5",
     "link": "#2563EB",
     "surface": "#FFFFFF",
@@ -31,7 +31,7 @@ LIGHT = {
     "field_bg": "#FFFFFF",  # v2: input field background
     "select_bg": "#D1E7E7",
     "warning_bg": "#FEF3C7",
-    "error": "#DC2626",  # v2: error text
+    "error": "#B91C1C",  # v2: error text (≥4.5:1 on error_bg)
     "error_bg": "#FEE2E2",  # v2: error background
     "disabled": "#9CA3AF",  # v2: disabled text
 }

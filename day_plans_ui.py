@@ -122,6 +122,9 @@ def show_plan_window(tracker: "PersonalDevelopmentTracker", plan_date: str | Non
             if item.get("rating") is not None:
                 category_vars[cat_name]["rating"].set(str(item["rating"]))
 
+    plan_error = tk.Label(body, text="", fg=theme.get("error", "#DC2626"), bg=theme["bg"], wraplength=860)
+    plan_error.pack(anchor="w", pady=(0, 4))
+
     def save_plan() -> None:
         planned_for = date_var.get().strip()
         categories: dict[str, dict] = {}
@@ -146,11 +149,16 @@ def show_plan_window(tracker: "PersonalDevelopmentTracker", plan_date: str | Non
                 categories=categories,
             )
         except ValueError as exc:
-            messagebox.showwarning("Plan", str(exc), parent=win)
+            plan_error.config(text=str(exc))
             return
-        tracker.save_data(flush=True)
+        plan_error.config(text="")
+
+        def on_saved(ok: bool, _err: BaseException | None) -> None:
+            if ok:
+                tracker.show_save_success_banner(f"Plan saved for {planned_for}.")
+
+        tracker.save_data(flush=True, on_complete=on_saved)
         tracker.refresh_dashboard()
-        messagebox.showinfo("Saved", f"Plan saved for {planned_for}.", parent=win)
 
     save_btn.configure(command=save_plan)
     from ui_accent import wire_dialog_accent_keys

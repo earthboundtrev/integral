@@ -286,8 +286,13 @@ def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
     
     todo_entry = ttk.Entry(add_frame, textvariable=new_text)
     todo_entry.pack(fill=tk.X, pady=2)
+    from inline_validation import focus_first_invalid, make_inline_error_label, set_field_error
+
+    todo_error = make_inline_error_label(add_frame, theme)
+    todo_error.pack(anchor="w")
     row = ttk.Frame(add_frame)
     row.pack(fill=tk.X, pady=2)
+    cat_error = make_inline_error_label(row, theme)
     ttk.Label(row, text="Work date").pack(side=tk.LEFT)
     date_var = tk.StringVar(value=tracker.today_str())
     ttk.Entry(row, textvariable=date_var, width=12).pack(side=tk.LEFT, padx=6)
@@ -337,43 +342,43 @@ def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
 
     def add_todo() -> None:
         text = new_text.get().strip()
-        if not text:
-            messagebox.showinfo("Todos", "Enter a todo.", parent=win)
-            return
-        
-        # Enforce same length limit as inline add
         MAX_TODO_LENGTH = 500
-        if len(text) > MAX_TODO_LENGTH:
-            messagebox.showwarning(
-                "Todos",
-                f"Todo text is too long (max {MAX_TODO_LENGTH} characters).",
-                parent=win,
-            )
-            return
-        
+        text_err = None
+        if not text:
+            text_err = "Enter a todo."
+        elif len(text) > MAX_TODO_LENGTH:
+            text_err = f"Todo text is too long (max {MAX_TODO_LENGTH} characters)."
+
         category = resolve_category_name(
             new_cat.get(), list(tracker.categories.keys()), allow_blank=True
         )
+        cat_err = None
         if category is None:
-            messagebox.showwarning(
-                "Todos",
-                "Pick a category from the list (or leave blank).",
-                parent=win,
-            )
-            return
-        
+            cat_err = "Pick a category from the list (or leave blank)."
+
         work_date = date_var.get().strip() or tracker.today_str()
-        try:
-            tracker.todos = todos.add_todo(
-                tracker.todos,
-                text=text,
-                work_date=work_date,
-                category=category,
-            )
-            tracker.settings["last_todo_category"] = category
-        except ValueError as exc:
-            messagebox.showwarning("Todos", str(exc), parent=win)
+        add_err = None
+        if not text_err and not cat_err:
+            try:
+                tracker.todos = todos.add_todo(
+                    tracker.todos,
+                    text=text,
+                    work_date=work_date,
+                    category=category,
+                )
+                tracker.settings["last_todo_category"] = category
+            except ValueError as exc:
+                add_err = str(exc)
+
+        pairs = [
+            (todo_entry, todo_error, text_err or add_err),
+            (new_cat_combo, cat_error, cat_err if not text_err and not add_err else None),
+        ]
+        if focus_first_invalid(pairs):
             return
+
+        set_field_error(todo_error, None)
+        set_field_error(cat_error, None)
         persist_todos()
         new_text.set("")
         date_var.set(tracker.today_str())

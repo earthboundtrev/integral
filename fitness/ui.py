@@ -801,8 +801,11 @@ class FitnessHub:
                 messagebox.showinfo("Advancement", "\n".join(hints))
 
             else:
+                from status_banner import attach_banner_to_main
 
-                messagebox.showinfo("Saved", "Fitness session logged.")
+                attach_banner_to_main(self.parent, self.theme).show_success(
+                    "Fitness session logged."
+                )
 
             self.window.destroy()
 

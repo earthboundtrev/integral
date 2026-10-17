@@ -18,11 +18,11 @@ COLORS = {
     "accent": "#2F7A7B",
     "accent_dark": "#256264",
     "streak": "#D97706",
-    "success": "#059669",
+    "success": "#047857",
     "success_bg": "#ECFDF5",
     "warning_bg": "#FEF3C7",
     "warning_text": "#92400E",
-    "danger": "#DC2626",
+    "danger": "#B91C1C",
     "link": "#2563EB",
 }
 
