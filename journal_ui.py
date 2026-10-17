@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import tkinter as tk
 from datetime import date, datetime
+from tkinter import font as tkfont
 from tkinter import messagebox, scrolledtext, ttk
 from typing import TYPE_CHECKING, Callable
 
@@ -14,6 +15,29 @@ from theme import FONTS, style_listbox, style_text_widget
 
 if TYPE_CHECKING:
     from personal_dev_tracker import PersonalDevelopmentTracker
+
+JOURNAL_WINDOW_GEOMETRY = "1040x760"
+JOURNAL_WINDOW_MINSIZE = (880, 560)
+_ELLIPSIS = "…"
+_ENTRY_LIST_MIN_DISPLAY_PX = 80
+
+
+def _truncate_text_to_px(text: str, font: tkfont.Font, max_width: int) -> str:
+    """Shorten text with an ellipsis when it would exceed max_width pixels."""
+    if max_width <= 0 or font.measure(text) <= max_width:
+        return text
+    if font.measure(_ELLIPSIS) > max_width:
+        return _ELLIPSIS
+    lo, hi = 0, len(text)
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        candidate = text[:mid].rstrip() + _ELLIPSIS
+        if font.measure(candidate) <= max_width:
+            lo = mid
+        else:
+            hi = mid - 1
+    trimmed = text[:lo].rstrip()
+    return f"{trimmed}{_ELLIPSIS}" if trimmed else _ELLIPSIS
 
 
 def apply_integral_link_tags(
@@ -70,7 +94,8 @@ def show_journal_window(
     theme = tracker.theme
     win = tk.Toplevel(tracker.root)
     win.title("Journal")
-    win.geometry("1040x760")
+    win.geometry(JOURNAL_WINDOW_GEOMETRY)
+    win.minsize(*JOURNAL_WINDOW_MINSIZE)
     win.configure(bg=theme["bg"])
     win.transient(tracker.root)
 
@@ -233,21 +258,84 @@ def show_journal_window(
     refresh_backdate_ui()
 
     indexed_entries: list[dict] = []
+    entry_list_full_labels: list[str] = []
+    list_tooltip: tk.Toplevel | None = None
+    entry_list_last_width: list[int] = [0]
+
+    def _entry_list_display_width_px() -> int:
+        width = entry_list.winfo_width()
+        if width <= 1:
+            width = list_panel.winfo_width()
+        if width <= 1:
+            width = 220
+        return max(width - 12, _ENTRY_LIST_MIN_DISPLAY_PX)
+
+    def _fill_entry_list(select_index: int = 0) -> None:
+        entry_list.delete(0, tk.END)
+        entry_list_full_labels.clear()
+        if not indexed_entries:
+            return
+        font = tkfont.Font(font=entry_list.cget("font"))
+        max_px = _entry_list_display_width_px()
+        for item in indexed_entries:
+            label = item.get("title") or item.get("prompt") or "Journal"
+            suffix = " ↩" if item.get("backdate_reason") else ""
+            full = f"{item['entry_date']}  {label}{suffix}"
+            entry_list_full_labels.append(full)
+            entry_list.insert(tk.END, _truncate_text_to_px(full, font, max_px))
+        entry_list.selection_set(select_index)
+        entry_list.see(select_index)
 
     def refresh_list(select_id: str | None = None) -> None:
         nonlocal indexed_entries
-        entry_list.delete(0, tk.END)
         indexed_entries = journal.list_entries(tracker.journal)
         select_index = 0
         for index, item in enumerate(indexed_entries):
-            label = item.get("title") or item.get("prompt") or "Journal"
-            suffix = " ↩" if item.get("backdate_reason") else ""
-            entry_list.insert(tk.END, f"{item['entry_date']}  {label}{suffix}")
             if select_id and item.get("id") == select_id:
                 select_index = index
-        if indexed_entries:
-            entry_list.selection_set(select_index)
-            entry_list.see(select_index)
+        _fill_entry_list(select_index)
+
+    def hide_entry_list_tooltip() -> None:
+        nonlocal list_tooltip
+        if list_tooltip:
+            list_tooltip.destroy()
+            list_tooltip = None
+
+    def on_entry_list_motion(event: tk.Event) -> None:
+        nonlocal list_tooltip
+        hide_entry_list_tooltip()
+        idx = entry_list.nearest(event.y)
+        if idx < 0 or idx >= len(entry_list_full_labels):
+            return
+        full = entry_list_full_labels[idx]
+        shown = entry_list.get(idx)
+        if full == shown:
+            return
+        list_tooltip = tk.Toplevel(win)
+        list_tooltip.wm_overrideredirect(True)
+        list_tooltip.configure(bg=theme["text_bg"])
+        tk.Label(
+            list_tooltip,
+            text=full,
+            bg=theme["text_bg"],
+            fg=theme["text_fg"],
+            font=FONTS["body"],
+            padx=8,
+            pady=4,
+            justify=tk.LEFT,
+        ).pack()
+        list_tooltip.geometry(f"+{event.x_root + 12}+{event.y_root + 12}")
+
+    def on_entry_list_configure(event: tk.Event | None = None) -> None:
+        if not indexed_entries:
+            return
+        width = entry_list.winfo_width()
+        if event is not None and width == entry_list_last_width[0]:
+            return
+        entry_list_last_width[0] = width
+        cur = entry_list.curselection()
+        select_index = cur[0] if cur else 0
+        _fill_entry_list(select_index)
 
     def abandon_external_edit_ok() -> bool:
         if not external_path["value"]:
@@ -530,6 +618,9 @@ def show_journal_window(
         ttk.Button(fmt_bar, text=label, width=5, command=lambda a=action: fmt(a)).pack(side=tk.LEFT, padx=2)
 
     entry_list.bind("<<ListboxSelect>>", load_selected)
+    entry_list.bind("<Configure>", on_entry_list_configure)
+    entry_list.bind("<Motion>", on_entry_list_motion)
+    entry_list.bind("<Leave>", lambda _e: hide_entry_list_tooltip())
     backlinks_list.bind("<<ListboxSelect>>", on_backlink_select)
     body_text.bind("<KeyRelease>", refresh_decorations)
 
@@ -540,10 +631,19 @@ def show_journal_window(
 
     editor_btns = ttk.Frame(editor)
     editor_btns.grid(row=7, column=0, sticky="ew", pady=(10, 0))
-    ttk.Button(editor_btns, text="Save Entry", style="Accent.TButton", command=save_entry).pack(side=tk.LEFT)
-    ttk.Button(editor_btns, text="Clear", command=clear_editor).pack(side=tk.LEFT, padx=8)
-    ttk.Button(editor_btns, text="Copy link", command=copy_link).pack(side=tk.LEFT, padx=8)
-    ttk.Button(editor_btns, text="Insert link…", command=insert_link).pack(side=tk.LEFT)
+    editor_btns.columnconfigure(0, weight=1)
+
+    primary_btns = ttk.Frame(editor_btns, style="Surface.TFrame")
+    primary_btns.grid(row=0, column=0, sticky="w")
+    secondary_btns = ttk.Frame(editor_btns, style="Surface.TFrame")
+    secondary_btns.grid(row=1, column=0, sticky="w", pady=(6, 0))
+
+    ttk.Button(primary_btns, text="Save Entry", style="Accent.TButton", command=save_entry).pack(
+        side=tk.LEFT
+    )
+    ttk.Button(primary_btns, text="Clear", command=clear_editor).pack(side=tk.LEFT, padx=8)
+    ttk.Button(primary_btns, text="Copy link", command=copy_link).pack(side=tk.LEFT, padx=8)
+    ttk.Button(primary_btns, text="Insert link…", command=insert_link).pack(side=tk.LEFT)
 
     def edit_in_system_editor() -> None:
         import external_edit
@@ -601,12 +701,12 @@ def show_journal_window(
         external_path["value"] = None
         refresh_decorations()
 
-    ttk.Button(editor_btns, text="Edit in system editor…", command=edit_in_system_editor).pack(
-        side=tk.LEFT, padx=8
+    ttk.Button(secondary_btns, text="Edit in system editor…", command=edit_in_system_editor).pack(
+        side=tk.LEFT
     )
     ttk.Button(
-        editor_btns, text="Reload from system editor", command=reload_from_system_editor
-    ).pack(side=tk.LEFT, padx=4)
+        secondary_btns, text="Reload from system editor", command=reload_from_system_editor
+    ).pack(side=tk.LEFT, padx=8)
 
     def request_close() -> None:
         if not abandon_external_edit_ok():
@@ -617,6 +717,7 @@ def show_journal_window(
     win.protocol("WM_DELETE_WINDOW", request_close)
 
     refresh_list(select_id=entry_id)
+    win.after_idle(on_entry_list_configure)
     if entry_id and journal.get_entry(tracker.journal, entry_id):
         load_selected()
     else:
