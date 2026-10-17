@@ -49,12 +49,19 @@ class StatusBanner:
         if self._frame is not None and self._kind is not None:
             bg, fg, _ = _banner_colors(self._kind, theme)
             self._frame.configure(bg=bg)
-            for child in self._frame.winfo_children():
+
+            def _recolor_widget(widget: tk.Misc) -> None:
                 try:
-                    if isinstance(child, tk.Label):
-                        child.configure(bg=bg, fg=fg if child.cget("textvariable") else fg)
+                    if isinstance(widget, tk.Frame):
+                        widget.configure(bg=bg)
+                    elif isinstance(widget, tk.Label):
+                        widget.configure(bg=bg, fg=fg)
                 except tk.TclError:
                     pass
+                for child in widget.winfo_children():
+                    _recolor_widget(child)
+
+            _recolor_widget(self._frame)
 
     def _cancel_hide(self) -> None:
         if self._hide_after_id is not None:
@@ -121,11 +128,6 @@ class StatusBanner:
         extra_actions: list[tuple[str, Callable[[], None]]] | None = None,
         closable: bool = False,
     ) -> None:
-        if kind == _KIND_SUCCESS and self._kind == _KIND_ERROR:
-            return
-        if kind != _KIND_ERROR and self._kind == _KIND_ERROR and kind == _KIND_SUCCESS:
-            return
-
         self._clear_frame()
         self._kind = kind
         bg, fg, accent = _banner_colors(kind, self._theme)
@@ -233,26 +235,28 @@ class StatusBanner:
 _banners: dict[int, StatusBanner] = {}
 
 
+def _widget_exists(widget: tk.Misc | None) -> bool:
+    if widget is None:
+        return False
+    try:
+        return int(widget.winfo_exists()) == 1
+    except tk.TclError:
+        return False
+
+
 def get_status_banner(window: tk.Misc, theme: dict) -> StatusBanner:
     """Return a StatusBanner for this Toplevel or root, creating a host at the top."""
     top = window.winfo_toplevel()
     key = id(top)
     existing = _banners.get(key)
     if existing is not None:
-        try:
-            if existing._host.winfo_exists():
-                existing.set_theme(theme)
-                return existing
-        except tk.TclError:
-            pass
+        if _widget_exists(existing._host):
+            existing.set_theme(theme)
+            return existing
     host_attr = "_integral_status_banner_host"
     host = getattr(top, host_attr, None)
-    if host is None or not str(host):
-        try:
-            if host is not None and not host.winfo_exists():
-                host = None
-        except tk.TclError:
-            host = None
+    if host is not None and not _widget_exists(host):
+        host = None
     if host is None:
         host = ttk.Frame(top)
         host.pack(side=tk.TOP, fill=tk.X, padx=12, pady=(8, 0))

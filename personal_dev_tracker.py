@@ -126,6 +126,7 @@ class PersonalDevelopmentTracker:
         self._save_after_id: str | None = None
         self._pending_save_payload: dict | None = None
         self._save_after_callbacks: list[Callable[[bool, BaseException | None], None]] = []
+        self._save_write_in_progress = False
         self._status_banner: StatusBanner | None = None
         self._fitness_state_dirty = False
         self._dashboard_ready = False
@@ -869,32 +870,58 @@ class PersonalDevelopmentTracker:
             self.root.after_cancel(self._save_after_id)
         self._save_after_id = self.root.after(250, lambda: self._flush_save(sync=False))
 
-    def _notify_save_complete(self, ok: bool, error: BaseException | None) -> None:
-        callbacks = self._save_after_callbacks
-        self._save_after_callbacks = []
+    def _invoke_save_callbacks(
+        self,
+        callbacks: list[Callable[[bool, BaseException | None], None]],
+        ok: bool,
+        error: BaseException | None,
+    ) -> None:
         for cb in callbacks:
             try:
                 cb(ok, error)
             except Exception:  # noqa: BLE001
                 logging.exception("Save completion callback failed")
 
-    def _finish_save(self, ok: bool, error: BaseException | None) -> None:
-        if ok:
-            self._notify_save_complete(True, None)
-            return
+    def _notify_save_complete(self, ok: bool, error: BaseException | None) -> None:
+        """Backward-compatible hook for tests; prefer per-flush callback lists."""
+        callbacks = self._save_after_callbacks
+        self._save_after_callbacks = []
+        self._invoke_save_callbacks(callbacks, ok, error)
+
+    def _show_save_error_banner(self, error: BaseException | None) -> None:
         logging.error("Save failed: %s", error)
-        self._notify_save_complete(False, error)
         banner = self.ensure_status_banner()
         file_label = os.path.basename(DATA_FILE) or "data.json"
         detail = str(error) if error else "Could not save your data."
         banner.show_error(f"Save failed: {detail}", file_name=file_label)
 
-    def _flush_save(self, sync: bool = False) -> None:
-        self._save_after_id = None
-        payload = self._pending_save_payload
-        if payload is None:
+    def _finish_save(self, ok: bool, error: BaseException | None) -> None:
+        if ok:
             self._notify_save_complete(True, None)
             return
+        self._show_save_error_banner(error)
+        self._notify_save_complete(False, error)
+
+    def _schedule_chained_flush(self, *, sync: bool) -> None:
+        if self._pending_save_payload is None and not self._save_after_callbacks:
+            return
+        if sync:
+            self._flush_save(sync=True)
+            return
+        if self._save_after_id:
+            return
+        self._save_after_id = self.root.after(0, lambda: self._flush_save(sync=False))
+
+    def _flush_save(self, sync: bool = False) -> None:
+        self._save_after_id = None
+        if self._save_write_in_progress:
+            return
+        payload = self._pending_save_payload
+        if payload is None:
+            return
+
+        callbacks = self._save_after_callbacks
+        self._save_after_callbacks = []
 
         encrypted = bool(self.settings.get("encryption_enabled"))
         passphrase = self.vault_passphrase
@@ -903,28 +930,39 @@ class PersonalDevelopmentTracker:
         def write() -> None:
             save_data_file(path, payload, encrypted=encrypted, passphrase=passphrase)
 
+        def on_done(ok: bool, error: BaseException | None) -> None:
+            self._save_write_in_progress = False
+            self._invoke_save_callbacks(callbacks, ok, error)
+            if ok:
+                if self._pending_save_payload is payload:
+                    self._pending_save_payload = None
+            else:
+                self._show_save_error_banner(error)
+            self._schedule_chained_flush(sync=sync)
+
         def run_async() -> None:
             try:
                 write()
             except Exception as exc:  # noqa: BLE001
-                self.root.after(0, lambda e=exc: self._finish_save(False, e))
+                self.root.after(0, lambda e=exc: on_done(False, e))
             else:
-                self.root.after(0, lambda: self._finish_save(True, None))
+                self.root.after(0, lambda: on_done(True, None))
 
+        self._save_write_in_progress = True
         if sync:
             try:
                 write()
             except Exception as exc:  # noqa: BLE001
-                self._finish_save(False, exc)
+                on_done(False, exc)
             else:
-                self._finish_save(True, None)
+                on_done(True, None)
             return
         threading.Thread(target=run_async, daemon=True).start()
 
     def ensure_status_banner(self) -> StatusBanner:
         if self._status_banner is not None:
             try:
-                if self._status_banner._host.winfo_exists():
+                if int(self._status_banner._host.winfo_exists()) == 1:
                     return self._status_banner
             except tk.TclError:
                 pass
@@ -2608,6 +2646,10 @@ class PersonalDevelopmentTracker:
         if focus_first_invalid(pairs):
             return
 
+        import copy
+
+        prior_day = copy.deepcopy(self.entries.get(date_str))
+
         if date_str not in self.entries:
             self.entries[date_str] = {}
 
@@ -2637,10 +2679,6 @@ class PersonalDevelopmentTracker:
 
         self.entries[date_str][cat_name] = entry_payload
         self._invalidate_caches()
-        dialog.destroy()
-        if date_str == self.today_str() and self._reminder_scheduler is not None:
-            self._reminder_scheduler.notify_logged_today()
-        self.refresh_dashboard()
         hint = category_insight(self._get_insights(), cat_name)
         guidance_text = None
         if hint and hint.suggested_actions and not self.settings.get("hide_post_log_guidance"):
@@ -2648,7 +2686,16 @@ class PersonalDevelopmentTracker:
 
         def on_saved(ok: bool, _err: BaseException | None) -> None:
             if not ok:
+                if prior_day is None:
+                    self.entries.pop(date_str, None)
+                else:
+                    self.entries[date_str] = prior_day
+                self._invalidate_caches()
                 return
+            dialog.destroy()
+            if date_str == self.today_str() and self._reminder_scheduler is not None:
+                self._reminder_scheduler.notify_logged_today()
+            self.refresh_dashboard()
             banner = self.ensure_status_banner()
             if guidance_text:
 
@@ -2664,7 +2711,7 @@ class PersonalDevelopmentTracker:
             else:
                 banner.show_success(f"Saved log for {cat_name} ({date_str}).")
 
-        self.save_data(recompute_fitness=False, on_complete=on_saved)
+        self.save_data(recompute_fitness=False, flush=True, on_complete=on_saved)
 
     def show_guidance(self) -> None:
         window = tk.Toplevel(self.root)
@@ -3606,16 +3653,22 @@ class PersonalDevelopmentTracker:
             default_days=default_days,
         )
 
-    def _on_fitness_session_saved(self, session_date: str) -> None:
+    def _on_fitness_session_saved(
+        self,
+        session_date: str,
+        *,
+        on_complete: Callable[[bool, BaseException | None], None] | None = None,
+    ) -> None:
         bridge_fitness_to_daily_entries(self.entries, session_date)
         self._fitness_state_dirty = True
         self._invalidate_session_counts()
         self._invalidate_caches()
         self.refresh_dashboard()
-        self.save_data(recompute_fitness=True)
-        
-        # Refresh workout history view if open
-        if hasattr(self, '_workout_history_view') and self._workout_history_view:
+        self.save_data(recompute_fitness=True, flush=True, on_complete=on_complete)
+        self._refresh_workout_history_view()
+
+    def _refresh_workout_history_view(self) -> None:
+        if hasattr(self, "_workout_history_view") and self._workout_history_view:
             try:
                 self._workout_history_view.refresh()
             except Exception:
@@ -3717,6 +3770,7 @@ class PersonalDevelopmentTracker:
             fitness_settings=self.settings.get("fitness"),
             on_fitness_settings_changed=on_fitness_settings_changed,
             on_log_practice=self.show_log_practice,
+            tracker=self,
         )
         self.root.update_idletasks()
         after_children = set(self.root.winfo_children())

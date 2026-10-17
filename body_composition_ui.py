@@ -127,15 +127,25 @@ def show_body_composition_window(root, repo: FitnessRepository | None = None):
                 measurements=measurements,
                 photo_path=photo_var.get().strip() or None,
             )
-            repo.add_body_composition_log(log)
-            dialog.destroy()
-            refresh()
             import theme as app_theme
+            from progression.sessions import fitness_db_file_label, is_fitness_db_lock_error
             from status_banner import attach_banner_to_main
 
-            attach_banner_to_main(root, app_theme.get_theme(False)).show_success(
-                "Body composition logged."
-            )
+            banner = attach_banner_to_main(root, app_theme.get_theme(False))
+            try:
+                repo.add_body_composition_log(log)
+            except Exception as exc:  # noqa: BLE001
+                if is_fitness_db_lock_error(exc):
+                    banner.show_error(
+                        f"Could not save body composition: {exc}",
+                        file_name=fitness_db_file_label(repo),
+                    )
+                else:
+                    messagebox.showerror("Save failed", str(exc), parent=dialog)
+                return
+            dialog.destroy()
+            refresh()
+            banner.show_success("Body composition logged.")
 
 
         ttk.Button(footer, text="Save", command=save).pack(side=tk.LEFT, padx=6)

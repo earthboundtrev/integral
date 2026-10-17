@@ -9,9 +9,14 @@ from progression.seed_loader import seed_all_fitness
 from progression.sessions import (
     bridge_fitness_to_daily_entries,
     create_workout_session,
+    fitness_db_file_label,
     format_session_summary,
+    is_fitness_db_lock_error,
     link_session_to_body_presence,
+    snapshot_body_presence_entry,
+    snapshot_exercise_progress,
     sync_fitness_sessions_to_entries,
+    undo_workout_session_log,
 )
 
 _seeded_db_paths: set[str] = set()
@@ -714,11 +719,10 @@ def open_new_session_dialog(
 
     btn_row = ttk.Frame(dialog, padding=10)
     btn_row.pack(side=tk.BOTTOM, fill=tk.X)
+    save_session_btn = ttk.Button(btn_row, text="Save Session", style="Accent.TButton")
 
     from inline_validation import make_inline_error_label, set_field_error
-    from status_banner import attach_banner_to_main, get_status_banner
-
-    dialog_banner = get_status_banner(dialog, theme)
+    from status_banner import attach_banner_to_main
 
     outer, inner, _canvas = ui_scroll.make_scrollable_frame(
         dialog, theme=theme, chrome_bg=theme["bg"]
@@ -933,41 +937,108 @@ def open_new_session_dialog(
                 pass
             return
         set_field_error(form_error, None)
-        session = create_workout_session(
-            repo,
-            date_var.get().strip(),
-            pending_sets,
-            notes=notes_var.get().strip(),
-            duration_minutes=duration_var.get() or None,
-            body_weight_kg=weight_var.get() if weight_var.get() > 0 else None,
-        )
-        session_id = session.id
-        session_date = session.date
-        if on_session_saved:
-            on_session_saved(session_date)
+        session_date = date_var.get().strip()
+        exercise_ids = list(dict.fromkeys(item["exercise_id"] for item in pending_sets))
+        progress_before = snapshot_exercise_progress(repo, exercise_ids)
+        if tracker is not None:
+            body_before = snapshot_body_presence_entry(tracker.entries, session_date)
         else:
-            data = storage.load()
-            data = link_session_to_body_presence(data, session_date)
-            storage.save(data)
-        dialog.destroy()
-        if on_after_save:
-            on_after_save()
-
+            stored = storage.load()
+            body_before = snapshot_body_presence_entry(stored.get("entries", {}), session_date)
         main_banner = attach_banner_to_main(parent, theme, tracker=tracker)
+        save_session_btn.config(state=tk.DISABLED)
 
-        def undo_session() -> None:
-            repo.delete_workout_session(session_id)
+        try:
+            session = create_workout_session(
+                repo,
+                session_date,
+                pending_sets,
+                notes=notes_var.get().strip(),
+                duration_minutes=duration_var.get() or None,
+                body_weight_kg=weight_var.get() if weight_var.get() > 0 else None,
+            )
+        except Exception as exc:  # noqa: BLE001
+            save_session_btn.config(state=tk.NORMAL)
+            if is_fitness_db_lock_error(exc):
+                main_banner.show_error(
+                    f"Could not save workout: {exc}",
+                    file_name=fitness_db_file_label(repo),
+                )
+            else:
+                set_field_error(form_error, str(exc))
+            return
 
-        main_banner.show_success(
-            f"Workout saved for {session_date}.",
-            undo_label="Undo",
-            undo_callback=undo_session,
-        )
+        session_id = session.id
 
+        def after_persist(ok: bool, err: BaseException | None) -> None:
+            save_session_btn.config(state=tk.NORMAL)
+            if not ok:
+                undo_workout_session_log(
+                    repo,
+                    session_id,
+                    exercise_ids=exercise_ids,
+                    progress_snapshots=progress_before,
+                    entries=tracker.entries if tracker is not None else None,
+                    body_presence_snapshot=body_before,
+                    session_date=session_date,
+                )
+                if tracker is not None:
+                    tracker._invalidate_caches()
+                    tracker.refresh_dashboard()
+                    tracker._refresh_workout_history_view()
+                detail = str(err) if err else "Could not save your data."
+                main_banner.show_error(f"Save failed: {detail}", file_name="data.json")
+                return
+
+            dialog.destroy()
+            if on_after_save:
+                on_after_save()
+            if tracker is not None:
+                tracker._refresh_workout_history_view()
+
+            def undo_session() -> None:
+                undo_workout_session_log(
+                    repo,
+                    session_id,
+                    exercise_ids=exercise_ids,
+                    progress_snapshots=progress_before,
+                    entries=tracker.entries if tracker is not None else None,
+                    body_presence_snapshot=body_before,
+                    session_date=session_date,
+                )
+                if tracker is not None:
+                    tracker._invalidate_caches()
+                    tracker.refresh_dashboard()
+                    tracker._refresh_workout_history_view()
+                    tracker.save_data(recompute_fitness=True, flush=True)
+                elif on_session_saved is None:
+                    from progression.sessions import restore_body_presence_entry
+
+                    data = storage.load()
+                    entries = data.setdefault("entries", {})
+                    restore_body_presence_entry(entries, session_date, body_before)
+                    storage.save(data)
+
+            main_banner.show_success(
+                f"Workout saved for {session_date}.",
+                undo_label="Undo",
+                undo_callback=undo_session,
+            )
+
+        if on_session_saved is not None:
+            on_session_saved(session_date, on_complete=after_persist)
+        else:
+            try:
+                data = storage.load()
+                data = link_session_to_body_presence(data, session_date)
+                storage.save(data)
+            except Exception as exc:  # noqa: BLE001
+                after_persist(False, exc)
+            else:
+                after_persist(True, None)
+
+    save_session_btn.config(command=save_session)
     ttk.Button(btn_row, text="Add Set", command=add_set).pack(side=tk.LEFT)
-    save_session_btn = ttk.Button(
-        btn_row, text="Save Session", style="Accent.TButton", command=save_session
-    )
     save_session_btn.pack(side=tk.LEFT, padx=8)
     cancel_session_btn = ttk.Button(btn_row, text="Cancel", command=dialog.destroy)
     cancel_session_btn.pack(side=tk.LEFT)
@@ -985,6 +1056,7 @@ def show_fitness_window(
     fitness_settings: dict | None = None,
     on_fitness_settings_changed=None,
     on_log_practice=None,
+    tracker=None,
 ):
     import tkinter as tk
     from tkinter import messagebox, scrolledtext, ttk
@@ -1402,6 +1474,7 @@ def show_fitness_window(
             on_after_save=refresh_list,
             fitness_settings=settings,
             theme=theme,
+            tracker=tracker,
         )
 
     _workout_history_window = [None]  # Mutable to capture in closures

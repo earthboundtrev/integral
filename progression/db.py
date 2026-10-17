@@ -354,6 +354,14 @@ class FitnessRepository:
             )
         return progress
 
+    def delete_user_progress(self, exercise_id: str) -> None:
+        self.initialize()
+        with self.connect() as conn:
+            conn.execute(
+                "DELETE FROM user_exercise_progress WHERE exercise_id = ?",
+                (exercise_id,),
+            )
+
     def edge_exists(
         self,
         from_exercise_id: str,

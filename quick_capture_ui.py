@@ -292,6 +292,7 @@ def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
     todo_error.pack(anchor="w")
     row = ttk.Frame(add_frame)
     row.pack(fill=tk.X, pady=2)
+    cat_error = make_inline_error_label(row, theme)
     ttk.Label(row, text="Work date").pack(side=tk.LEFT)
     date_var = tk.StringVar(value=tracker.today_str())
     ttk.Entry(row, textvariable=date_var, width=12).pack(side=tk.LEFT, padx=6)
@@ -371,12 +372,13 @@ def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
 
         pairs = [
             (todo_entry, todo_error, text_err or add_err),
-            (new_cat_combo, todo_error, cat_err if not text_err and not add_err else None),
+            (new_cat_combo, cat_error, cat_err if not text_err and not add_err else None),
         ]
         if focus_first_invalid(pairs):
             return
 
         set_field_error(todo_error, None)
+        set_field_error(cat_error, None)
         persist_todos()
         new_text.set("")
         date_var.set(tracker.today_str())

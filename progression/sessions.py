@@ -1,11 +1,16 @@
 """Workout session helpers — pure logic, no UI."""
 
+from __future__ import annotations
+
+import copy
+import os
+import sqlite3
 from datetime import datetime
 from typing import Any
 
 from progression.db import FitnessRepository
 from progression.engine import record_performance
-from progression.models import WorkoutSession, WorkoutSet
+from progression.models import UserExerciseProgress, WorkoutSession, WorkoutSet
 
 BODY_MOVEMENT_CHECKLIST = "Completed movement or exercise"
 LEGACY_BODY_MOVEMENT_CHECKLIST = "Completed movement/exercise"
@@ -124,3 +129,83 @@ def link_session_to_body_presence(data: dict, session_date: str) -> dict:
     entries = data.setdefault("entries", {})
     bridge_fitness_to_daily_entries(entries, session_date)
     return data
+
+
+BODY_PRESENCE_CATEGORY = "Body & Presence"
+
+
+def is_fitness_db_lock_error(error: BaseException) -> bool:
+    if isinstance(error, PermissionError):
+        return True
+    if isinstance(error, sqlite3.OperationalError):
+        text = str(error).lower()
+        return "locked" in text or "readonly" in text or "unable to open" in text
+    if isinstance(error, OSError):
+        return error.errno in {13, 30}  # EACCES, EROFS
+    return False
+
+
+def fitness_db_file_label(repo: FitnessRepository) -> str:
+    return os.path.basename(getattr(repo, "db_path", "fitness.db")) or "fitness.db"
+
+
+def snapshot_body_presence_entry(entries: dict, session_date: str) -> dict | None:
+    day = entries.get(session_date)
+    if not day:
+        return None
+    body = day.get(BODY_PRESENCE_CATEGORY)
+    if body is None:
+        return None
+    return copy.deepcopy(body)
+
+
+def restore_body_presence_entry(
+    entries: dict,
+    session_date: str,
+    snapshot: dict | None,
+) -> None:
+    if snapshot is None:
+        day = entries.get(session_date)
+        if not day:
+            return
+        day.pop(BODY_PRESENCE_CATEGORY, None)
+        if not day:
+            entries.pop(session_date, None)
+        return
+    day = entries.setdefault(session_date, {})
+    day[BODY_PRESENCE_CATEGORY] = copy.deepcopy(snapshot)
+
+
+def snapshot_exercise_progress(
+    repo: FitnessRepository,
+    exercise_ids: list[str],
+) -> dict[str, UserExerciseProgress | None]:
+    return {exercise_id: repo.get_user_progress(exercise_id) for exercise_id in exercise_ids}
+
+
+def restore_exercise_progress(
+    repo: FitnessRepository,
+    snapshots: dict[str, UserExerciseProgress | None],
+) -> None:
+    for exercise_id, progress in snapshots.items():
+        if progress is None:
+            repo.delete_user_progress(exercise_id)
+        else:
+            repo.upsert_user_progress(progress)
+
+
+def undo_workout_session_log(
+    repo: FitnessRepository,
+    session_id: str,
+    *,
+    exercise_ids: list[str],
+    progress_snapshots: dict[str, UserExerciseProgress | None],
+    entries: dict | None = None,
+    body_presence_snapshot: dict | None = None,
+    session_date: str | None = None,
+) -> None:
+    """Reverse a just-logged workout (SQLite session, progress, optional daily bridge)."""
+    repo.delete_workout_session(session_id)
+    restore_exercise_progress(repo, progress_snapshots)
+    if entries is not None and session_date is not None:
+        restore_body_presence_entry(entries, session_date, body_presence_snapshot)

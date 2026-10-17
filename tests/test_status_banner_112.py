@@ -58,12 +58,12 @@ class TestStatusBanner(unittest.TestCase):
         self.root.mainloop()
         self.assertIsNone(self.banner._frame)
 
-    def test_success_does_not_replace_error(self):
+    def test_success_replaces_error_after_retry(self):
         self.banner.show_error("Save failed.")
         self.root.update()
         self.banner.show_success("Saved.")
         self.root.update()
-        self.assertEqual(self.banner._kind, "error")
+        self.assertEqual(self.banner._kind, "success")
 
     def test_error_replaces_success(self):
         self.banner.show_success("Saved.")
@@ -104,8 +104,13 @@ class TestSaveFailureBanner(unittest.TestCase):
                 theme=theme,
                 _status_banner=banner,
                 _save_after_callbacks=[],
+                _save_write_in_progress=False,
+                _pending_save_payload=None,
                 ensure_status_banner=lambda: banner,
                 _notify_save_complete=lambda ok, err: tracker._save_after_callbacks.clear(),
+            )
+            tracker._show_save_error_banner = lambda err: PersonalDevelopmentTracker._show_save_error_banner(
+                tracker, err
             )
             PersonalDevelopmentTracker._finish_save(tracker, False, PermissionError("denied"))
             root.update()
@@ -131,11 +136,19 @@ class TestSaveFailureBanner(unittest.TestCase):
                 vault_passphrase=None,
                 _status_banner=banner,
                 _save_after_callbacks=[],
+                _save_write_in_progress=False,
+                _save_after_id=None,
                 _pending_save_payload={"entries": {}},
                 ensure_status_banner=lambda: banner,
                 _notify_save_complete=lambda ok, err: tracker._save_after_callbacks.clear(),
             )
-            tracker._finish_save = lambda ok, err: PersonalDevelopmentTracker._finish_save(tracker, ok, err)
+            tracker._show_save_error_banner = lambda err: PersonalDevelopmentTracker._show_save_error_banner(
+                tracker, err
+            )
+            tracker._invoke_save_callbacks = lambda cbs, ok, err: PersonalDevelopmentTracker._invoke_save_callbacks(
+                tracker, cbs, ok, err
+            )
+            tracker._schedule_chained_flush = lambda sync=False: None
             with patch("personal_dev_tracker.save_data_file", side_effect=OSError("locked")):
                 PersonalDevelopmentTracker._flush_save(tracker, sync=True)
             root.update()

@@ -52,10 +52,12 @@ def set_field_error(error_label: tk.Label | None, message: str | None) -> None:
         error_label.config(text=message)
         if not error_label.winfo_ismapped():
             error_label.pack(anchor="w", pady=(2, 0))
+            error_label._dynamic_error_pack = True  # type: ignore[attr-defined]
     else:
         error_label.config(text="")
-        if error_label.winfo_ismapped():
+        if getattr(error_label, "_dynamic_error_pack", False):
             error_label.pack_forget()
+            error_label._dynamic_error_pack = False  # type: ignore[attr-defined]
 
 
 def wire_focusout_validation(
@@ -73,8 +75,14 @@ def focus_first_invalid(pairs: list[tuple[tk.Misc, tk.Label | None, str | None]]
     """Apply inline errors; focus first widget with an error message. Returns True if any error."""
     first_widget: tk.Misc | None = None
     found = False
+    labels_with_errors: set[int] = set()
     for widget, label, message in pairs:
-        set_field_error(label, message)
+        if message:
+            set_field_error(label, message)
+            if label is not None:
+                labels_with_errors.add(id(label))
+        elif label is None or id(label) not in labels_with_errors:
+            set_field_error(label, message)
         if message:
             found = True
             if first_widget is None:
