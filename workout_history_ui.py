@@ -601,6 +601,7 @@ class WorkoutHistoryView:
         """Display detail for selected session."""
         if self.detail_mode == "exercise":
             self._close_exercise_view()
+        self._focused_exercise_id = None
         self._set_detail_readonly(False)
         self.detail_text.delete("1.0", tk.END)
         
@@ -743,6 +744,7 @@ class WorkoutHistoryView:
             tags = self.detail_text.tag_names(index)
         except tk.TclError:
             return
+        self._focused_exercise_id = None
         for tag in tags:
             if tag.startswith("exercise_link_"):
                 self._focused_exercise_id = tag.replace("exercise_link_", "", 1)
@@ -751,22 +753,23 @@ class WorkoutHistoryView:
     def _on_enter_in_session_detail(self) -> str | None:
         if self.detail_mode == "exercise":
             return None
-        ex_id = self._focused_exercise_id
+        ex_id: str | None = None
+        try:
+            index = self.detail_text.index(tk.INSERT)
+            for tag in self.detail_text.tag_names(index):
+                if tag.startswith("exercise_link_"):
+                    ex_id = tag.replace("exercise_link_", "", 1)
+                    break
+        except tk.TclError:
+            pass
         if not ex_id:
-            try:
-                index = self.detail_text.index(tk.INSERT)
-                for tag in self.detail_text.tag_names(index):
-                    if tag.startswith("exercise_link_"):
-                        ex_id = tag.replace("exercise_link_", "", 1)
-                        break
-            except tk.TclError:
-                pass
+            ex_id = self._focused_exercise_id
         if ex_id:
             self._open_exercise_view(ex_id)
-            return "break"
-        return None
+        return "break"
 
     def _open_exercise_view(self, exercise_id: str) -> None:
+        self._focused_exercise_id = None
         self.selected_exercise_id = exercise_id
         self.detail_mode = "exercise"
         self.exercise_sessions = []
@@ -781,6 +784,7 @@ class WorkoutHistoryView:
             return None
         self.detail_mode = "session"
         self.selected_exercise_id = None
+        self._focused_exercise_id = None
         self.exercise_panel.pack_forget()
         if self.exercise_load_more_btn.winfo_ismapped():
             self.exercise_load_more_btn.pack_forget()
