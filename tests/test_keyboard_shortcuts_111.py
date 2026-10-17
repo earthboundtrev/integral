@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 import tkinter as tk
 from unittest.mock import MagicMock, patch
 
@@ -79,6 +80,15 @@ def test_alt_in_state_rejects_shortcut(tracker):
         tracker.root.event_generate("<Control-k>", state=0x20000)
         tracker.root.update()
         show_goto.assert_not_called()
+
+
+def test_alt_in_event_state_platform_masks():
+    assert keyboard_shortcuts.alt_in_event_state(0x20000) is True
+    if sys.platform == "win32":
+        # Num Lock defaults on; Tk maps VK_NUMLOCK to Mod1Mask 0x0008 — must not block shortcuts.
+        assert keyboard_shortcuts.alt_in_event_state(0x0008) is False
+    else:
+        assert keyboard_shortcuts.alt_in_event_state(0x0008) is True
 
 
 def test_effective_control_shift_caps_lock_uppercase_no_shift_bit():

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 import tkinter as tk
 from tkinter import scrolledtext, ttk
 from typing import Any, Callable
@@ -12,7 +13,11 @@ from theme import FONTS, LIGHT, style_text_widget
 # Tk event.state bits (platform quirks: treat Meta/Mod1 as Alt for AltGr rejection).
 _SHIFT_MASK = 0x0001
 _CONTROL_MASK = 0x0004
-_ALT_MASKS = (0x0008, 0x20000, 0x80000)
+# On Windows Tk, 0x0008 is Num Lock (Mod1Mask), not Alt — Alt is 0x20000 only (see more_menu_ui).
+if sys.platform == "win32":
+    _ALT_MASKS = (0x20000, 0x80000)
+else:
+    _ALT_MASKS = (0x0008, 0x20000, 0x80000)
 
 SHORTCUT_ROWS: tuple[tuple[str, str], ...] = (
     ("Quick Capture / Today todo", "Ctrl+Shift+T"),
