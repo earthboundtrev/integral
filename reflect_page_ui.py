@@ -19,7 +19,7 @@ from entry_payload import (
 from inline_validation import make_inline_error_label, set_field_error
 from insights.engine import category_insight
 from paths import data_file
-from status_banner import get_status_banner
+from status_banner import _widget_exists, get_status_banner
 from theme import FONTS, style_text_widget
 
 _UI_FONT = FONTS.get("body", ("Segoe UI", 10))
@@ -511,8 +511,9 @@ def save_reflect_page(
         tracker.entries.pop(date_str, None)
 
     if not changed:
-        banner = _reflect_status_banner(page_error, tracker)
-        banner.show_success("Nothing to save — no changes.")
+        if _widget_exists(page_error):
+            banner = _reflect_status_banner(page_error, tracker)
+            banner.show_success("Nothing to save — no changes.")
         if on_done:
             on_done(True)
         return
@@ -527,32 +528,36 @@ def save_reflect_page(
             else:
                 tracker.entries[date_str] = prior_day
             tracker._invalidate_caches()
-            banner = _reflect_status_banner(page_error, tracker)
-            logging.error("Reflect save failed: %s", err)
-            detail = str(err) if err else "Could not save your data."
-            file_label = os.path.basename(data_file()) or "data.json"
-            banner.show_error(f"Save failed: {detail}", file_name=file_label)
+            if _widget_exists(page_error):
+                banner = _reflect_status_banner(page_error, tracker)
+                logging.error("Reflect save failed: %s", err)
+                detail = str(err) if err else "Could not save your data."
+                file_label = os.path.basename(data_file()) or "data.json"
+                banner.show_error(f"Save failed: {detail}", file_name=file_label)
+            else:
+                logging.error("Reflect save failed after window closed: %s", err)
             if on_done:
                 on_done(False)
             return
         tracker.refresh_dashboard()
-        banner = _reflect_status_banner(page_error, tracker)
-        if guidance_parts and not tracker.settings.get("hide_post_log_guidance"):
-            text = guidance_parts[0]
-            if len(guidance_parts) > 1:
-                text += f" (+{len(guidance_parts) - 1} more)"
+        if _widget_exists(page_error):
+            banner = _reflect_status_banner(page_error, tracker)
+            if guidance_parts and not tracker.settings.get("hide_post_log_guidance"):
+                text = guidance_parts[0]
+                if len(guidance_parts) > 1:
+                    text += f" (+{len(guidance_parts) - 1} more)"
 
-            def hide_guidance_forever() -> None:
-                tracker.settings["hide_post_log_guidance"] = True
-                tracker.save_data(flush=True)
-                banner.dismiss()
+                def hide_guidance_forever() -> None:
+                    tracker.settings["hide_post_log_guidance"] = True
+                    tracker.save_data(flush=True)
+                    banner.dismiss()
 
-            banner.show_info(
-                text,
-                extra_actions=[("Don't show again", hide_guidance_forever)],
-            )
-        else:
-            banner.show_success(f"Saved reflection for {date_str}.")
+                banner.show_info(
+                    text,
+                    extra_actions=[("Don't show again", hide_guidance_forever)],
+                )
+            else:
+                banner.show_success(f"Saved reflection for {date_str}.")
         if date_str == tracker.today_str() and tracker._reminder_scheduler is not None:
             tracker._reminder_scheduler.notify_logged_today()
         if on_done:
@@ -702,10 +707,14 @@ def open_reflect_page(tracker: PersonalDevelopmentTracker) -> tk.Toplevel:
             return
         tracker._integral_reflect_save_in_progress = True
         save_btn.config(state=tk.DISABLED)
+        cancel_btn.config(state=tk.DISABLED)
 
         def finish_save(ok: bool) -> None:
             tracker._integral_reflect_save_in_progress = False
-            save_btn.config(state=tk.NORMAL)
+            if _widget_exists(save_btn):
+                save_btn.config(state=tk.NORMAL)
+            if _widget_exists(cancel_btn):
+                cancel_btn.config(state=tk.NORMAL)
             if ok:
                 day_entries = tracker.entries.get(date_str, {})
                 for r in rows:
@@ -752,6 +761,8 @@ def open_reflect_page(tracker: PersonalDevelopmentTracker) -> tk.Toplevel:
     win.bind("<FocusIn>", on_reflect_focus_in, add="+")
 
     def on_close() -> None:
+        if getattr(tracker, "_integral_reflect_save_in_progress", False):
+            return
         dirty = False
         for row in rows:
             if row.should_remove_entry():

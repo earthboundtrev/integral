@@ -452,6 +452,45 @@ def test_open_log_dialog_returns_toplevel_and_on_closed(tracker):
     assert fired == [False]
 
 
+def test_reflect_save_on_done_after_page_error_destroyed(tracker):
+    """Async save callback must finish even if the reflect window was destroyed (#113)."""
+    date_str = tracker.today_str()
+    cat = "Body & Presence"
+    tracker.entries = {date_str: {cat: {"rating": 5}}}
+    host = tk.Frame(tracker.root)
+    canvas = tk.Canvas(host)
+    row = DomainReflectRow(
+        cat,
+        tracker.categories[cat],
+        tracker.entries[date_str][cat],
+        tracker.theme,
+        host,
+        canvas,
+    )
+    row.rating_row.set_rating(6)
+    page_error = tk.Label(host, text="")
+    done_flags: list[bool] = []
+
+    def fake_save(**kwargs):
+        page_error.destroy()
+        cb = kwargs.get("on_complete")
+        if cb:
+            cb(True, None)
+
+    tracker.save_data = fake_save
+    tracker._invalidate_caches = MagicMock()
+    tracker.refresh_dashboard = MagicMock()
+    tracker._get_insights = MagicMock(return_value=[])
+    save_reflect_page(
+        tracker,
+        [row],
+        date_str=date_str,
+        page_error=page_error,
+        on_done=done_flags.append,
+    )
+    assert done_flags == [True]
+
+
 def test_reflect_page_open_under_one_second(tracker):
     import time
 
