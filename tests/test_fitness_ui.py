@@ -1,6 +1,10 @@
+import sqlite3
+from uuid import uuid4
+
 import pytest
 
 from fitness_ui import (
+    copy_previous_pending_set_item,
     ensure_fitness_seeded,
     format_exercise_picker_label,
     format_pending_set_line,
@@ -10,7 +14,11 @@ from fitness_ui import (
 )
 from progression.db import FitnessRepository
 from progression.seed_loader import seed_all_fitness
-from progression.sessions import create_workout_session, link_session_to_body_presence
+from progression.sessions import (
+    create_workout_session,
+    link_session_to_body_presence,
+    prefill_from_latest_session,
+)
 
 
 def make_repo(tmp_path):
@@ -148,6 +156,119 @@ def test_remove_pending_set_at_mutates_and_guards():
     assert remove_pending_set_at(pending, 99) is False
     assert remove_pending_set_at(pending, -1) is False
     assert len(pending) == 2
+
+
+def test_prefill_from_latest_session_empty_db(tmp_path):
+    repo = make_repo(tmp_path)
+    repo.initialize()
+    items, source_id, notes = prefill_from_latest_session(repo, exclude_date="2026-10-17")
+    assert items == []
+    assert source_id is None
+    assert notes == []
+
+
+def _insert_session_raw(repo, session_id: str, date: str, created_at: str) -> None:
+    with repo.connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO workout_sessions (id, date, notes, duration_minutes, body_weight_kg, created_at)
+            VALUES (?, ?, '', NULL, NULL, ?)
+            """,
+            (session_id, date, created_at),
+        )
+        conn.commit()
+
+
+def _insert_set_raw(
+    repo,
+    session_id: str,
+    exercise_id: str,
+    *,
+    sets: int = 3,
+    reps: int = 10,
+    ordinal: int = 0,
+) -> None:
+    with repo.connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO workout_sets (
+                id, session_id, exercise_id, sets, reps, hold_seconds, weight_kg, form_quality, ordinal, created_at
+            ) VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL, ?, datetime('now'))
+            """,
+            (str(uuid4()), session_id, exercise_id, sets, reps, ordinal),
+        )
+        conn.commit()
+
+
+def test_prefill_uses_save_timestamp_and_excludes_today(tmp_path):
+    repo = make_repo(tmp_path)
+    seed_all_fitness(repo)
+    wall = repo.get_exercise("cc1_push_01")
+    assert wall is not None
+    today = "2026-10-17"
+    _insert_session_raw(repo, "sess-old-date", "2020-01-01", "2026-10-16T18:00:00+00:00")
+    _insert_set_raw(repo, "sess-old-date", wall.id, sets=2, reps=8)
+    _insert_session_raw(repo, "sess-today", today, "2026-10-15T10:00:00+00:00")
+    _insert_set_raw(repo, "sess-today", wall.id, sets=5, reps=5)
+    _insert_session_raw(repo, "sess-mid", "2025-06-01", "2026-10-14T10:00:00+00:00")
+    _insert_set_raw(repo, "sess-mid", wall.id, sets=4, reps=4)
+
+    items, source_id, _notes = prefill_from_latest_session(repo, exclude_date=today)
+    assert source_id == "sess-old-date"
+    assert len(items) == 1
+    assert items[0]["sets"] == 2
+    assert items[0]["reps"] == 8
+    assert items[0]["prefilled"] is True
+
+
+def test_copy_previous_pending_set_item_uses_last_row():
+    pending = [
+        {
+            "exercise_id": "a",
+            "name": "A",
+            "label": "A",
+            "sets": 3,
+            "reps": 12,
+            "weight_kg": 20.0,
+        }
+    ]
+
+    class _Var:
+        def __init__(self, value):
+            self._value = value
+
+        def get(self):
+            return self._value
+
+    item = copy_previous_pending_set_item(
+        pending,
+        picker_row=None,
+        sets_var=_Var(3),
+        reps_var=_Var(10),
+        hold_var=_Var(0.0),
+        set_weight_var=_Var(0.0),
+    )
+    assert item is not None
+    assert item["sets"] == 1
+    assert item["reps"] == 12
+    assert item["weight_kg"] == 20.0
+
+
+def test_create_workout_session_rolls_back_on_set_failure(tmp_path):
+    repo = make_repo(tmp_path)
+    seed_all_fitness(repo)
+    wall = repo.get_exercise("cc1_push_01")
+    assert wall is not None
+    with pytest.raises(sqlite3.IntegrityError):
+        create_workout_session(
+            repo,
+            "2026-07-01",
+            [
+                {"exercise_id": wall.id, "sets": 1, "reps": 5},
+                {"exercise_id": "not_a_real_exercise", "sets": 1, "reps": 5},
+            ],
+        )
+    assert repo.list_workout_sessions(limit=10) == []
 
 
 def test_count_workout_sessions_by_date_aggregates(tmp_path):
