@@ -90,6 +90,8 @@ from todays_log import (
 
 DATA_FILE = data_file()
 
+INLINE_TODO_PLACEHOLDER = "Add a todo… (Enter to save, Ctrl+Shift+T from anywhere)"
+
 # Environment variables for debugging and performance measurement (issue #135)
 try:
     DEBUG_DELAY_MS = int(os.environ.get("INTEGRAL_DEBUG_DELAY_MS", "0"))
@@ -1169,29 +1171,44 @@ class PersonalDevelopmentTracker:
         ).pack(side=tk.LEFT, padx=(8, 0))
         
         def open_qc_with_text(event=None):
-            text = todo_var.get().strip()
-            if text != "Add a todo… (Enter to save, Ctrl+Shift+T from anywhere)" and text:
-                # Store text for QC to pick up
-                self._qc_prefill_text = text
+            if not self._inline_todo_placeholder_shown:
+                text = todo_var.get().strip()
+                if text:
+                    self._qc_prefill_text = text
             self._qc_should_focus = True
             self.set_quick_capture_enabled(True)
             return "break"
         
         more_link.bind("<Button-1>", open_qc_with_text)
         
-        # Placeholder simulation
-        def on_focus_in(event):
-            if todo_var.get() == "Add a todo… (Enter to save, Ctrl+Shift+T from anywhere)":
+        def show_inline_todo_placeholder() -> None:
+            self._inline_todo_placeholder_shown = True
+            todo_var.set(INLINE_TODO_PLACEHOLDER)
+            todo_entry.config(foreground=self.theme["muted"])
+
+        def clear_inline_todo_placeholder_for_edit() -> None:
+            if self._inline_todo_placeholder_shown:
                 todo_var.set("")
-                todo_entry.config(foreground=self.theme["fg"])
+                self._inline_todo_placeholder_shown = False
+            todo_entry.config(foreground=self.theme["fg"])
+
+        def on_focus_in(event):
+            clear_inline_todo_placeholder_for_edit()
         
         def on_focus_out(event):
+            if self._inline_todo_placeholder_shown:
+                return
             if not todo_var.get():
-                todo_var.set("Add a todo… (Enter to save, Ctrl+Shift+T from anywhere)")
-                todo_entry.config(foreground=self.theme["muted"])
+                show_inline_todo_placeholder()
         
-        todo_var.set("Add a todo… (Enter to save, Ctrl+Shift+T from anywhere)")
-        todo_entry.config(foreground=self.theme["muted"])
+        restore_shown, restore_draft = self._consume_inline_todo_restore()
+        if restore_shown:
+            show_inline_todo_placeholder()
+        else:
+            self._inline_todo_placeholder_shown = False
+            todo_var.set(restore_draft)
+            todo_entry.config(foreground=self.theme["fg"])
+
         todo_entry.bind("<FocusIn>", on_focus_in)
         todo_entry.bind("<FocusOut>", on_focus_out)
         
@@ -1201,8 +1218,16 @@ class PersonalDevelopmentTracker:
         self._error_timer_id = None
         
         def add_inline_todo(event=None):
+            if self._inline_todo_placeholder_shown:
+                return "break"
             text = todo_var.get().strip()
-            if text == "Add a todo… (Enter to save, Ctrl+Shift+T from anywhere)" or not text:
+            if not text:
+                todo_var.set("")
+                error_label.pack_forget()
+                if self._error_timer_id:
+                    self.root.after_cancel(self._error_timer_id)
+                    self._error_timer_id = None
+                todo_entry.focus_set()
                 return "break"
             
             # Note: IME composition handling not available in standard Tk.
@@ -1232,10 +1257,10 @@ class PersonalDevelopmentTracker:
             
             return "break"
         
-        def clear_todo(event):
-            if todo_var.get() and todo_var.get() != "Add a todo… (Enter to save, Ctrl+Shift+T from anywhere)":
+        def clear_todo(event=None):
+            if not self._inline_todo_placeholder_shown and todo_var.get():
                 todo_var.set("")
-                on_focus_out(None)
+                show_inline_todo_placeholder()
                 error_label.pack_forget()
                 return "break"
             else:
@@ -1926,6 +1951,8 @@ class PersonalDevelopmentTracker:
         
         focused_widget = self.root.focus_get()
         focused_path = str(focused_widget) if focused_widget else None
+
+        self._snapshot_inline_todo_state()
         
         for child in self._content_pane.winfo_children():
             child.destroy()
@@ -3052,6 +3079,29 @@ class PersonalDevelopmentTracker:
                     self._inline_todo_entry.focus_set()
             except tk.TclError:
                 pass
+
+    def _snapshot_inline_todo_state(self) -> None:
+        """Preserve inline todo draft and placeholder flag across content rebuild (#155 / #128)."""
+        shown = True
+        draft = ""
+        var = getattr(self, "_inline_todo_var", None)
+        entry = getattr(self, "_inline_todo_entry", None)
+        if var is not None and entry is not None:
+            try:
+                if entry.winfo_exists():
+                    shown = bool(getattr(self, "_inline_todo_placeholder_shown", True))
+                    if not shown:
+                        draft = var.get()
+            except tk.TclError:
+                pass
+        self._inline_todo_restore = {"placeholder_shown": shown, "draft": draft}
+
+    def _consume_inline_todo_restore(self) -> tuple[bool, str]:
+        snap = getattr(self, "_inline_todo_restore", None)
+        if snap is None:
+            return True, ""
+        del self._inline_todo_restore
+        return bool(snap.get("placeholder_shown", True)), str(snap.get("draft", ""))
     
     def _clear_error_label(self) -> None:
         """Safely clear inline todo error label after timeout."""
