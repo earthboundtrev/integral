@@ -221,6 +221,40 @@ def test_prefill_uses_save_timestamp_and_excludes_today(tmp_path):
     assert items[0]["prefilled"] is True
 
 
+def test_copy_previous_pending_set_item_from_picker_when_exercise_differs():
+    pending = [
+        {
+            "exercise_id": "a",
+            "name": "A",
+            "label": "A",
+            "sets": 3,
+            "reps": 12,
+        }
+    ]
+    picker_row = {"id": "b", "name": "B", "source_book": "CC1", "family": "push", "step": 2}
+
+    class _Var:
+        def __init__(self, value):
+            self._value = value
+
+        def get(self):
+            return self._value
+
+    item = copy_previous_pending_set_item(
+        pending,
+        picker_row=picker_row,
+        sets_var=_Var(2),
+        reps_var=_Var(15),
+        hold_var=_Var(0.0),
+        set_weight_var=_Var(0.0),
+        copy_previous=False,
+    )
+    assert item is not None
+    assert item["exercise_id"] == "b"
+    assert item["sets"] == 2
+    assert item["reps"] == 15
+
+
 def test_copy_previous_pending_set_item_uses_last_row():
     pending = [
         {
@@ -247,11 +281,74 @@ def test_copy_previous_pending_set_item_uses_last_row():
         reps_var=_Var(10),
         hold_var=_Var(0.0),
         set_weight_var=_Var(0.0),
+        copy_previous=True,
     )
     assert item is not None
     assert item["sets"] == 1
     assert item["reps"] == 12
     assert item["weight_kg"] == 20.0
+
+
+def test_create_workout_session_rolls_back_on_record_performance_failure(tmp_path):
+    repo = make_repo(tmp_path)
+    seed_all_fitness(repo)
+    wall = repo.get_exercise("cc1_push_01")
+    incline = repo.get_exercise("cc1_push_02")
+    assert wall is not None and incline is not None
+    progress_before = repo.get_user_progress(wall.id)
+    with pytest.raises(ValueError, match="earlier steps"):
+        create_workout_session(
+            repo,
+            "2026-07-02",
+            [
+                {"exercise_id": wall.id, "sets": 1, "reps": 5},
+                {"exercise_id": incline.id, "sets": 1, "reps": 5},
+            ],
+        )
+    assert repo.list_workout_sessions(limit=10) == []
+    progress_after = repo.get_user_progress(wall.id)
+    assert (progress_before is None and progress_after is None) or (
+        progress_before is not None
+        and progress_after is not None
+        and progress_before.best_reps == progress_after.best_reps
+        and progress_before.status == progress_after.status
+    )
+
+
+def test_prefill_skips_deleted_only_session_for_earlier_rows(tmp_path):
+    from progression.models import Exercise
+
+    repo = make_repo(tmp_path)
+    seed_all_fitness(repo)
+    wall = repo.get_exercise("cc1_push_01")
+    assert wall is not None
+    removed_id = "removed_exercise_test"
+    repo.add_exercise(
+        Exercise(
+            id=removed_id,
+            name="Removed",
+            source_book="CC1",
+            family="push",
+            mastery_criteria={"sets": 1, "reps": 1},
+            metadata={},
+        )
+    )
+    _insert_session_raw(repo, "sess-deleted-only", "2025-01-01", "2026-10-18T12:00:00+00:00")
+    _insert_set_raw(repo, "sess-deleted-only", removed_id, sets=3, reps=10)
+    with repo.connect() as conn:
+        conn.execute(
+            "UPDATE exercises SET deleted_at = datetime('now') WHERE id = ?",
+            (removed_id,),
+        )
+        conn.commit()
+    _insert_session_raw(repo, "sess-good", "2025-02-01", "2026-10-17T12:00:00+00:00")
+    _insert_set_raw(repo, "sess-good", wall.id, sets=2, reps=6)
+
+    items, source_id, notes = prefill_from_latest_session(repo, exclude_date="2026-10-17")
+    assert source_id == "sess-good"
+    assert len(items) == 1
+    assert items[0]["reps"] == 6
+    assert any("Skipped removed exercise" in n for n in notes)
 
 
 def test_create_workout_session_rolls_back_on_set_failure(tmp_path):

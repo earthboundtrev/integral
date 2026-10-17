@@ -144,9 +144,15 @@ def copy_previous_pending_set_item(
     reps_var,
     hold_var,
     set_weight_var,
+    copy_previous: bool = False,
 ) -> dict | None:
-    """Build the next queued set: copy last row with ``sets``=1, or form values when empty."""
-    if pending_sets:
+    """
+    Build the next queued set.
+
+    With ``copy_previous=True`` (+ Set), duplicate the last row with ``sets``=1.
+    Otherwise queue from the picker and metric fields (Add Set / Enter / double-click).
+    """
+    if copy_previous and pending_sets:
         prev = pending_sets[-1]
         item: dict = {
             "exercise_id": prev["exercise_id"],
@@ -166,7 +172,7 @@ def copy_previous_pending_set_item(
         "exercise_id": picker_row["id"],
         "name": picker_row["name"],
         "label": format_exercise_picker_label(picker_row),
-        "sets": 1,
+        "sets": sets_var.get(),
         "reps": reps_var.get(),
     }
     if hold_var.get() > 0:
@@ -1045,7 +1051,11 @@ def open_new_session_dialog(
             except tk.TclError:
                 pass
 
+    metric_prefill_suppress = {"active": False}
+
     def clear_metric_prefill_style(*_args) -> None:
+        if metric_prefill_suppress["active"]:
+            return
         if metric_prefilled["active"]:
             apply_metric_prefill_style(False)
 
@@ -1098,7 +1108,7 @@ def open_new_session_dialog(
         except tk.TclError:
             pass
 
-    def add_set(*, from_enter: bool = False):
+    def add_set(*, from_enter: bool = False, copy_previous: bool = False):
         row = picker["get_selected_row"]()
         item = copy_previous_pending_set_item(
             pending_sets,
@@ -1107,6 +1117,7 @@ def open_new_session_dialog(
             reps_var=reps_var,
             hold_var=hold_var,
             set_weight_var=set_weight_var,
+            copy_previous=copy_previous,
         )
         if item is None:
             set_field_error(form_error, "Select an exercise from the search list before adding a set.")
@@ -1139,16 +1150,18 @@ def open_new_session_dialog(
             replace_row.pack(fill=tk.X, pady=(0, 6), before=draft_btns)
             return
         replace_row.pack_forget()
-        today = datetime.now().strftime("%Y-%m-%d")
-        items, source_id, notes = prefill_from_latest_session(repo, exclude_date=today)
+        log_date = date_var.get().strip()
+        items, source_id, notes = prefill_from_latest_session(repo, exclude_date=log_date)
         items = enrich_prefill_pending_items(repo, items)
         if not items:
-            set_field_error(form_error, "No prior session to repeat.")
+            if notes:
+                set_field_error(form_error, "; ".join(notes))
+            else:
+                set_field_error(form_error, "No prior session to repeat.")
             return
         pending_sets.clear()
         pending_sets.extend(items)
         compare_session_ref["id"] = source_id
-        date_var.set(today)
         form_edited["value"] = False
         prefill_notes.clear()
         prefill_notes.extend(notes)
@@ -1156,15 +1169,20 @@ def open_new_session_dialog(
             set_field_error(form_error, "; ".join(prefill_notes))
         else:
             set_field_error(form_error, None)
+        metric_prefill_suppress["active"] = True
+        try:
+            if items:
+                first = items[0]
+                sets_var.set(first.get("sets", 1))
+                reps_var.set(first.get("reps", 10))
+                hold_var.set(first.get("hold_seconds") or 0.0)
+                set_weight_var.set(first.get("weight_kg") or 0.0)
+        finally:
+            metric_prefill_suppress["active"] = False
+        form_edited["value"] = False
         apply_metric_prefill_style(any(it.get("prefilled") for it in items))
         rebuild_preview()
         carousel["reload"]()
-        if items:
-            first = items[0]
-            sets_var.set(first.get("sets", 1))
-            reps_var.set(first.get("reps", 10))
-            hold_var.set(first.get("hold_seconds") or 0.0)
-            set_weight_var.set(first.get("weight_kg") or 0.0)
 
     def confirm_replace() -> None:
         replace_row.pack_forget()
@@ -1359,7 +1377,9 @@ def open_new_session_dialog(
 
     cancel_session_btn = ttk.Button(btn_row, text="Cancel", command=request_close)
     save_session_btn.config(command=save_session)
-    add_set_btn = ttk.Button(btn_row, text="+ Set", command=add_set)
+    add_set_btn = ttk.Button(
+        btn_row, text="+ Set", command=lambda: add_set(copy_previous=True)
+    )
     add_set_btn.pack(side=tk.LEFT)
     save_session_btn.pack(side=tk.LEFT, padx=8)
     cancel_session_btn.pack(side=tk.LEFT)
