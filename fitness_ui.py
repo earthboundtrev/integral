@@ -692,6 +692,7 @@ def open_new_session_dialog(
     on_after_save=None,
     fitness_settings: dict | None = None,
     theme=None,
+    tracker=None,
 ):
     """Open the multi-exercise workout session logger (usable outside Fitness Hub)."""
     import tkinter as tk
@@ -714,6 +715,11 @@ def open_new_session_dialog(
     btn_row = ttk.Frame(dialog, padding=10)
     btn_row.pack(side=tk.BOTTOM, fill=tk.X)
 
+    from inline_validation import make_inline_error_label, set_field_error
+    from status_banner import attach_banner_to_main, get_status_banner
+
+    dialog_banner = get_status_banner(dialog, theme)
+
     outer, inner, _canvas = ui_scroll.make_scrollable_frame(
         dialog, theme=theme, chrome_bg=theme["bg"]
     )
@@ -730,6 +736,8 @@ def open_new_session_dialog(
 
     form = ttk.Frame(inner, padding=10)
     form.pack(fill=tk.X)
+    form_error = make_inline_error_label(form, theme)
+    form_error.pack(anchor="w", pady=(0, 4))
     for label, var in [
         ("Date", date_var),
         ("Notes", notes_var),
@@ -867,12 +875,13 @@ def open_new_session_dialog(
     def add_set():
         row = picker["get_selected_row"]()
         if row is None:
-            messagebox.showinfo(
-                "Exercise",
-                "Type to search, then click an exercise in the list to select it.",
-                parent=dialog,
-            )
+            set_field_error(form_error, "Select an exercise from the search list before adding a set.")
+            try:
+                picker["search_entry"].focus_set()
+            except (KeyError, tk.TclError):
+                pass
             return
+        set_field_error(form_error, None)
         item = {
             "exercise_id": row["id"],
             "name": row["name"],
@@ -917,8 +926,13 @@ def open_new_session_dialog(
 
     def save_session():
         if not pending_sets:
-            messagebox.showinfo("Session", "Add at least one set.", parent=dialog)
+            set_field_error(form_error, "Add at least one set before saving the session.")
+            try:
+                preview.focus_set()
+            except tk.TclError:
+                pass
             return
+        set_field_error(form_error, None)
         session = create_workout_session(
             repo,
             date_var.get().strip(),
@@ -927,16 +941,28 @@ def open_new_session_dialog(
             duration_minutes=duration_var.get() or None,
             body_weight_kg=weight_var.get() if weight_var.get() > 0 else None,
         )
+        session_id = session.id
+        session_date = session.date
         if on_session_saved:
-            on_session_saved(session.date)
+            on_session_saved(session_date)
         else:
             data = storage.load()
-            data = link_session_to_body_presence(data, session.date)
+            data = link_session_to_body_presence(data, session_date)
             storage.save(data)
         dialog.destroy()
         if on_after_save:
             on_after_save()
-        messagebox.showinfo("Saved", f"Workout session logged for {session.date}.", parent=parent)
+
+        main_banner = attach_banner_to_main(parent, theme, tracker=tracker)
+
+        def undo_session() -> None:
+            repo.delete_workout_session(session_id)
+
+        main_banner.show_success(
+            f"Workout saved for {session_date}.",
+            undo_label="Undo",
+            undo_callback=undo_session,
+        )
 
     ttk.Button(btn_row, text="Add Set", command=add_set).pack(side=tk.LEFT)
     save_session_btn = ttk.Button(

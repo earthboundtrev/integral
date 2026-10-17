@@ -319,9 +319,14 @@ def show_milestones_dialog(tracker: PersonalDevelopmentTracker) -> None:
         apply_editor()
         tracker.milestones = working
         tracker._invalidate_caches()
-        tracker.save_data()
+        summary = milestone_summary(tracker.milestones)
+
+        def on_saved(ok: bool, _err: BaseException | None) -> None:
+            if ok:
+                tracker.show_save_success_banner(summary)
+
+        tracker.save_data(on_complete=on_saved)
         window.destroy()
-        messagebox.showinfo("Saved", milestone_summary(tracker.milestones))
         tracker.refresh_dashboard()
 
     listbox.bind("<<ListboxSelect>>", load_selected)
@@ -428,6 +433,23 @@ def show_security_dialog(tracker: PersonalDevelopmentTracker) -> None:
     else:
         ttk.Button(enc_buttons, text="Change passphrase…", command=change_passphrase).pack(side=tk.LEFT, padx=4)
         ttk.Button(enc_buttons, text="Disable encryption…", command=disable_encryption).pack(side=tk.LEFT, padx=4)
+
+    ttk.Separator(inner, orient=tk.HORIZONTAL).pack(fill=tk.X, padx=15, pady=8)
+    ttk.Label(inner, text="Life-area logging", font=("Helvetica", 13, "bold")).pack(
+        anchor="w", padx=15, pady=(4, 4)
+    )
+    show_guidance = tk.BooleanVar(value=not bool(tracker.settings.get("hide_post_log_guidance")))
+
+    def on_guidance_toggle() -> None:
+        tracker.settings["hide_post_log_guidance"] = not bool(show_guidance.get())
+        tracker.save_data(flush=True)
+
+    ttk.Checkbutton(
+        inner,
+        text="Show guidance tips after saving a life-area log",
+        variable=show_guidance,
+        command=on_guidance_toggle,
+    ).pack(anchor="w", padx=15, pady=2)
 
     ttk.Separator(inner, orient=tk.HORIZONTAL).pack(fill=tk.X, padx=15, pady=8)
     ttk.Label(inner, text="Reminders & background", font=("Helvetica", 13, "bold")).pack(

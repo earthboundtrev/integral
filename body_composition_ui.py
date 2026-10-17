@@ -130,7 +130,13 @@ def show_body_composition_window(root, repo: FitnessRepository | None = None):
             repo.add_body_composition_log(log)
             dialog.destroy()
             refresh()
-            messagebox.showinfo("Saved", "Body composition logged.")
+            import theme as app_theme
+            from status_banner import attach_banner_to_main
+
+            attach_banner_to_main(root, app_theme.get_theme(False)).show_success(
+                "Body composition logged."
+            )
+
 
         ttk.Button(footer, text="Save", command=save).pack(side=tk.LEFT, padx=6)
         ttk.Button(footer, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT)

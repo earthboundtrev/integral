@@ -489,6 +489,13 @@ class FitnessRepository:
             ).fetchone()
         return row is not None
 
+    def delete_workout_session(self, session_id: str) -> None:
+        """Remove a session and its sets (e.g. Undo right after logging)."""
+        self.initialize()
+        with self.connect() as conn:
+            conn.execute("DELETE FROM workout_sets WHERE session_id = ?", (session_id,))
+            conn.execute("DELETE FROM workout_sessions WHERE id = ?", (session_id,))
+
     def has_workout_set(self, session_id: str, exercise_id: str) -> bool:
         self.initialize()
         with self.connect() as conn:

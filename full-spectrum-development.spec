@@ -38,6 +38,8 @@ a = Analysis(
         "activity_grid",
         "paths",
         "theme",
+        "status_banner",
+        "inline_validation",
         "mpl_tk",
         "graphs",
         "fitness_graphs",
