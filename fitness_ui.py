@@ -504,6 +504,7 @@ def open_log_dialog_for_exercise(
     session_date: str | None = None,
     fitness_settings: dict | None = None,
     theme=None,
+    tracker=None,
 ):
     import tkinter as tk
     from tkinter import messagebox, scrolledtext, ttk
@@ -514,7 +515,7 @@ def open_log_dialog_for_exercise(
     from progression.engine import exercise_log_allowed
     from progression.sessions import create_workout_session
     from progression.video_catalog import get_exercise_video, open_exercise_video
-    from status_banner import attach_banner_to_main
+    from status_banner import _widget_exists, attach_banner_to_main
 
     exercise = repo.get_exercise(exercise_id)
     if exercise is None:
@@ -646,7 +647,14 @@ def open_log_dialog_for_exercise(
     notes_text = scrolledtext.ScrolledText(inner, height=6, wrap=tk.WORD, font=("Helvetica", 10))
     notes_text.pack(fill=tk.X, padx=12, pady=(0, 12))
 
+    def request_close() -> None:
+        if getattr(dialog, "_integral_log_save_in_progress", False):
+            return
+        dialog.destroy()
+
     def save():
+        if getattr(dialog, "_integral_log_save_in_progress", False):
+            return
         item: dict = {
             "exercise_id": exercise_id,
             "sets": sets_var.get(),
@@ -658,34 +666,94 @@ def open_log_dialog_for_exercise(
             item["weight_kg"] = weight_var.get()
         item["form_quality"] = form_var.get()
         notes = notes_text.get("1.0", tk.END).strip()
+        session_date = date_var.get().strip()
+        exercise_ids = [exercise_id]
+        progress_before = snapshot_exercise_progress_for_session(repo, exercise_ids)
+        if tracker is not None:
+            body_before = snapshot_body_presence_entry(tracker.entries, session_date)
+        else:
+            stored = storage.load()
+            body_before = snapshot_body_presence_entry(stored.get("entries", {}), session_date)
+        main_banner = attach_banner_to_main(parent, theme, tracker=tracker)
+        save_btn.config(state=tk.DISABLED)
+        cancel_btn.config(state=tk.DISABLED)
         try:
             session = create_workout_session(
                 repo,
-                date_var.get().strip(),
+                session_date,
                 [item],
                 notes=notes,
             )
         except ValueError as exc:
+            if _widget_exists(dialog):
+                save_btn.config(state=tk.NORMAL)
+                cancel_btn.config(state=tk.NORMAL)
             messagebox.showwarning("Cannot log", str(exc), parent=dialog)
             return
-        session_date = date_var.get().strip()
-        if on_session_saved:
-            on_session_saved(session_date)
+        except Exception as exc:  # noqa: BLE001
+            if _widget_exists(dialog):
+                save_btn.config(state=tk.NORMAL)
+                cancel_btn.config(state=tk.NORMAL)
+            if is_fitness_db_lock_error(exc):
+                main_banner.show_error(
+                    f"Could not save workout: {exc}",
+                    file_name=fitness_db_file_label(repo),
+                )
+            else:
+                messagebox.showwarning("Cannot log", str(exc), parent=dialog)
+            return
+
+        session_id = session.id
+        dialog._integral_log_save_in_progress = True
+
+        def after_persist(ok: bool, err: BaseException | None) -> None:
+            dialog._integral_log_save_in_progress = False
+            if not ok:
+                undo_workout_session_log(
+                    repo,
+                    session_id,
+                    exercise_ids=exercise_ids,
+                    progress_snapshots=progress_before,
+                    entries=tracker.entries if tracker is not None else None,
+                    body_presence_snapshot=body_before,
+                    session_date=session_date,
+                )
+                if tracker is not None:
+                    tracker._invalidate_caches()
+                    tracker.refresh_dashboard()
+                    tracker._refresh_workout_history_view()
+                if _widget_exists(dialog):
+                    save_btn.config(state=tk.NORMAL)
+                    cancel_btn.config(state=tk.NORMAL)
+                detail = str(err) if err else "Could not save your data."
+                main_banner.show_error(f"Save failed: {detail}", file_name="data.json")
+                return
+
+            if _widget_exists(dialog):
+                dialog.destroy()
+            if on_saved:
+                on_saved()
+            progress = repo.get_user_progress(exercise_id)
+            status = progress.status if progress else "logged"
+            main_banner.show_success(f"{exercise.name}: {status}")
+
+        if on_session_saved is not None:
+            on_session_saved(session_date, on_complete=after_persist)
         else:
-            data = storage.load()
-            data = link_session_to_body_presence(data, session_date)
-            storage.save(data)
-        if on_saved:
-            on_saved()
-        progress = repo.get_user_progress(exercise_id)
-        status = progress.status if progress else "logged"
-        dialog.destroy()
-        attach_banner_to_main(parent, theme).show_success(f"{exercise.name}: {status}")
+            try:
+                data = storage.load()
+                data = link_session_to_body_presence(data, session_date)
+                storage.save(data)
+            except Exception as exc:  # noqa: BLE001
+                after_persist(False, exc)
+            else:
+                after_persist(True, None)
 
     save_btn = ttk.Button(footer_btns, text="Save Log", style="Accent.TButton", command=save)
     save_btn.pack(side=tk.LEFT, padx=(0, 8))
-    cancel_btn = ttk.Button(footer_btns, text="Cancel", command=dialog.destroy)
+    cancel_btn = ttk.Button(footer_btns, text="Cancel", command=request_close)
     cancel_btn.pack(side=tk.LEFT)
+    dialog.protocol("WM_DELETE_WINDOW", request_close)
     from ui_accent import wire_dialog_accent_keys
 
     wire_dialog_accent_keys(dialog, save_btn, cancel_btn=cancel_btn)
@@ -725,7 +793,14 @@ def open_new_session_dialog(
     save_session_btn = ttk.Button(btn_row, text="Save Session", style="Accent.TButton")
 
     from inline_validation import make_inline_error_label, set_field_error
-    from status_banner import attach_banner_to_main
+    from status_banner import _widget_exists, attach_banner_to_main
+
+    def request_close() -> None:
+        if getattr(dialog, "_integral_log_save_in_progress", False):
+            return
+        dialog.destroy()
+
+    dialog.protocol("WM_DELETE_WINDOW", request_close)
 
     outer, inner, _canvas = ui_scroll.make_scrollable_frame(
         dialog, theme=theme, chrome_bg=theme["bg"]
@@ -932,6 +1007,8 @@ def open_new_session_dialog(
     ).pack(side=tk.LEFT, padx=6)
 
     def save_session():
+        if getattr(dialog, "_integral_log_save_in_progress", False):
+            return
         if not pending_sets:
             set_field_error(form_error, "Add at least one set before saving the session.")
             try:
@@ -962,8 +1039,9 @@ def open_new_session_dialog(
                 body_weight_kg=weight_var.get() if weight_var.get() > 0 else None,
             )
         except Exception as exc:  # noqa: BLE001
-            save_session_btn.config(state=tk.NORMAL)
-            cancel_session_btn.config(state=tk.NORMAL)
+            if _widget_exists(dialog):
+                save_session_btn.config(state=tk.NORMAL)
+                cancel_session_btn.config(state=tk.NORMAL)
             if is_fitness_db_lock_error(exc):
                 main_banner.show_error(
                     f"Could not save workout: {exc}",
@@ -974,10 +1052,10 @@ def open_new_session_dialog(
             return
 
         session_id = session.id
+        dialog._integral_log_save_in_progress = True
 
         def after_persist(ok: bool, err: BaseException | None) -> None:
-            save_session_btn.config(state=tk.NORMAL)
-            cancel_session_btn.config(state=tk.NORMAL)
+            dialog._integral_log_save_in_progress = False
             if not ok:
                 undo_workout_session_log(
                     repo,
@@ -992,11 +1070,15 @@ def open_new_session_dialog(
                     tracker._invalidate_caches()
                     tracker.refresh_dashboard()
                     tracker._refresh_workout_history_view()
+                if _widget_exists(dialog):
+                    save_session_btn.config(state=tk.NORMAL)
+                    cancel_session_btn.config(state=tk.NORMAL)
                 detail = str(err) if err else "Could not save your data."
                 main_banner.show_error(f"Save failed: {detail}", file_name="data.json")
                 return
 
-            dialog.destroy()
+            if _widget_exists(dialog):
+                dialog.destroy()
             if on_after_save:
                 on_after_save()
             if tracker is not None:
@@ -1043,7 +1125,7 @@ def open_new_session_dialog(
             else:
                 after_persist(True, None)
 
-    cancel_session_btn = ttk.Button(btn_row, text="Cancel", command=dialog.destroy)
+    cancel_session_btn = ttk.Button(btn_row, text="Cancel", command=request_close)
     save_session_btn.config(command=save_session)
     ttk.Button(btn_row, text="Add Set", command=add_set).pack(side=tk.LEFT)
     save_session_btn.pack(side=tk.LEFT, padx=8)
@@ -1300,6 +1382,7 @@ def show_fitness_window(
             on_session_saved=on_session_saved,
             fitness_settings=settings,
             theme=theme,
+            tracker=tracker,
         )
 
     def open_selected_video():
@@ -1321,6 +1404,7 @@ def show_fitness_window(
             on_session_saved=on_session_saved,
             fitness_settings=settings,
             theme=theme,
+            tracker=tracker,
         )
 
     def open_fitness_settings():

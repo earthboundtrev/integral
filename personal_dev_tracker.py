@@ -2594,8 +2594,14 @@ class PersonalDevelopmentTracker:
                 text="Log writing session",
                 command=lambda: self.log_writing_session_for_day(date_var.get().strip(), parent=dialog),
             ).pack(side=tk.LEFT, padx=(0, 8))
-        cancel_log_btn = ttk.Button(footer_btns, text="Cancel", command=dialog.destroy)
+        def request_close_log() -> None:
+            if getattr(dialog, "_integral_log_save_in_progress", False):
+                return
+            dialog.destroy()
+
+        cancel_log_btn = ttk.Button(footer_btns, text="Cancel", command=request_close_log)
         cancel_log_btn.pack(side=tk.LEFT)
+        dialog.protocol("WM_DELETE_WINDOW", request_close_log)
         from ui_accent import wire_dialog_accent_keys
 
         wire_dialog_accent_keys(dialog, save_log_btn, cancel_btn=cancel_log_btn)
@@ -2699,6 +2705,8 @@ class PersonalDevelopmentTracker:
             cancel_log_btn.config(state=tk.DISABLED)
 
         def on_saved(ok: bool, _err: BaseException | None) -> None:
+            from status_banner import _widget_exists
+
             dialog._integral_log_save_in_progress = False
             if not ok:
                 if prior_day is None:
@@ -2706,12 +2714,13 @@ class PersonalDevelopmentTracker:
                 else:
                     self.entries[date_str] = prior_day
                 self._invalidate_caches()
-                if save_log_btn is not None:
+                if _widget_exists(save_log_btn):
                     save_log_btn.config(state=tk.NORMAL)
-                if cancel_log_btn is not None:
+                if _widget_exists(cancel_log_btn):
                     cancel_log_btn.config(state=tk.NORMAL)
                 return
-            dialog.destroy()
+            if _widget_exists(dialog):
+                dialog.destroy()
             if date_str == self.today_str() and self._reminder_scheduler is not None:
                 self._reminder_scheduler.notify_logged_today()
             self.refresh_dashboard()

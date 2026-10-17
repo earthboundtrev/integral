@@ -120,6 +120,7 @@ def show_skill_tree_window(
     on_session_saved=None,
     fitness_settings: dict | None = None,
     theme=None,
+    tracker=None,
 ):
     import tkinter as tk
     from tkinter import ttk
@@ -218,6 +219,7 @@ def show_skill_tree_window(
                     on_session_saved=on_session_saved,
                     fitness_settings=fitness_settings,
                     theme=theme,
+                    tracker=tracker,
                 )
                 return
 
