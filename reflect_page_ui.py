@@ -537,6 +537,15 @@ def open_reflect_page(tracker: PersonalDevelopmentTracker) -> tk.Toplevel:
         row.frame.pack(fill=tk.X, pady=(0, 10))
         rows.append(row)
 
+    for idx, row in enumerate(rows):
+        def tab_to_next(_event, next_idx=idx + 1) -> str | None:
+            if next_idx < len(rows):
+                rows[next_idx].rating_row.focus_set()
+                rows[next_idx]._scroll_into_view()
+            return "break"
+
+        row.notes.bind("<Tab>", tab_to_next, add="+")
+
     footer = ttk.Frame(win, padding=(16, 12))
     footer.pack(fill=tk.X)
     ttk.Separator(footer, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=(0, 8))
