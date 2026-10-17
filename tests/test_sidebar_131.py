@@ -189,27 +189,11 @@ def test_raise_or_open_creates_new_when_none_exists(tracker):
         mock_show.assert_called_once()
 
 
-def test_show_reflect_opens_unlogged_category(tracker):
-    """AC: Reflect opens the first unlogged domain."""
-    tracker.entries = {"2026-10-16": {"Money/Freedom": 3}}
-    
-    with patch.object(tracker, "open_log_dialog") as mock_log:
+def test_show_reflect_opens_reflect_page(tracker):
+    """AC: Reflect opens the one-screen daily reflection page (#113)."""
+    with patch("reflect_page_ui.open_reflect_page") as mock_page:
         tracker.show_reflect()
-        mock_log.assert_called_once()
-        called_category = mock_log.call_args[0][0]
-        assert called_category in ["Career & Vocation", "Body & Presence"]
-
-
-def test_show_reflect_shows_banner_when_all_logged(tracker):
-    """AC: Reflect shows banner when all domains logged."""
-    # Mock first_unlogged_category to return None (all logged)
-    with patch.object(tracker, "first_unlogged_category", return_value=None):
-        import tkinter.messagebox
-        with patch.object(tkinter.messagebox, "showinfo") as mock_info:
-            tracker.show_reflect()
-            mock_info.assert_called_once()
-            call_args = mock_info.call_args[0]
-            assert "All domains logged" in call_args[0]
+        mock_page.assert_called_once_with(tracker)
 
 
 def test_goto_destinations_includes_today_and_reflect(tracker):

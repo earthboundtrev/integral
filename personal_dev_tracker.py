@@ -73,6 +73,12 @@ from inline_validation import (
 )
 from status_banner import StatusBanner, attach_banner_to_main
 from vault import is_encrypted_file, load_data_file, load_data_file_with_recovery, save_data_file
+from entry_payload import (
+    build_entry_payload,
+    collect_touched_checklist,
+    collect_touched_metrics,
+    merge_entry_updates,
+)
 from todays_log import (
     CATEGORY_SHORT_LABELS,
     apply_todays_log_settings,
@@ -1903,19 +1909,12 @@ class PersonalDevelopmentTracker:
         action()
 
     def show_reflect(self) -> None:
-        """Open Reflect: first unlogged domain or banner if all logged (#131)."""
+        """Open one-screen daily reflection for today (#113)."""
         if nav_items.deep_work_blocks_action(self, item_id="reflect"):
             return
-        first_unlogged = self.first_unlogged_category()
-        if first_unlogged:
-            self.open_log_dialog(first_unlogged)
-        else:
-            from tkinter import messagebox
-            messagebox.showinfo(
-                "All domains logged today",
-                "You've logged all life domains for today — great work!",
-                parent=self.root,
-            )
+        from reflect_page_ui import open_reflect_page
+
+        open_reflect_page(self)
     
     def _build_content(self, *, recompute: bool = True) -> None:
         """Build or rebuild the content pane (Today's Log and Overview).
@@ -2411,6 +2410,8 @@ class PersonalDevelopmentTracker:
         rating_var = tk.IntVar(value=5)
         check_vars: dict[str, tk.BooleanVar] = {}
         metric_vars: dict[str, tk.Variable] = {}
+        checklist_touched: set[str] = set()
+        metrics_touched: set[str] = set()
 
         footer = ttk.Frame(dialog, padding=(15, 12))
         footer.pack(side=tk.BOTTOM, fill=tk.X)
@@ -2518,7 +2519,16 @@ class PersonalDevelopmentTracker:
         for item in cat_data["checklist"]:
             var = tk.BooleanVar(value=False)
             check_vars[item] = var
-            ttk.Checkbutton(inner, text=item, variable=var).pack(anchor="w", padx=25, pady=2)
+
+            def mark_checklist(name=item) -> None:
+                checklist_touched.add(name)
+
+            ttk.Checkbutton(
+                inner,
+                text=item,
+                variable=var,
+                command=mark_checklist,
+            ).pack(anchor="w", padx=25, pady=2)
 
         ttk.Label(inner, text="Specific Measures", font=("Helvetica", 11, "bold")).pack(anchor="w", padx=15, pady=(12, 4))
         for metric in cat_data["metrics"]:
@@ -2533,19 +2543,26 @@ class PersonalDevelopmentTracker:
 
             if metric_type == "number":
                 var: tk.Variable = tk.DoubleVar(value=float(existing_val))
-                ttk.Entry(row, textvariable=var, width=12).pack(side=tk.LEFT, padx=6)
+                metric_widget = ttk.Entry(row, textvariable=var, width=12)
+                metric_widget.pack(side=tk.LEFT, padx=6)
                 if metric_unit:
                     ttk.Label(row, text=metric_unit).pack(side=tk.LEFT)
             else:
                 var = tk.IntVar(value=int(existing_val))
-                ttk.Spinbox(
+                metric_widget = ttk.Spinbox(
                     row,
                     from_=metric.get("min", 1),
                     to=metric.get("max", 10),
                     textvariable=var,
                     width=6,
-                ).pack(side=tk.LEFT, padx=6)
+                )
+                metric_widget.pack(side=tk.LEFT, padx=6)
             metric_vars[metric_name] = var
+
+            def mark_metric(_event=None, name=metric_name) -> None:
+                metrics_touched.add(name)
+
+            metric_widget.bind("<FocusOut>", mark_metric, add="+")
 
         ttk.Label(
             inner,
@@ -2580,6 +2597,9 @@ class PersonalDevelopmentTracker:
                 validate_rating=validate_rating_field,
                 save_log_btn=save_log_btn,
                 cancel_log_btn=cancel_log_btn,
+                checklist_touched=checklist_touched,
+                metrics_touched=metrics_touched,
+                cat_data=cat_data,
             ),
         )
         save_log_btn.pack(side=tk.LEFT, padx=(0, 8))
@@ -2633,6 +2653,9 @@ class PersonalDevelopmentTracker:
         validate_rating: Callable[[], str | None] | None = None,
         save_log_btn: tk.Misc | None = None,
         cancel_log_btn: tk.Misc | None = None,
+        checklist_touched: set[str] | None = None,
+        metrics_touched: set[str] | None = None,
+        cat_data: dict | None = None,
     ) -> None:
         if getattr(dialog, "_integral_log_save_in_progress", False):
             return
@@ -2667,31 +2690,34 @@ class PersonalDevelopmentTracker:
         if date_str not in self.entries:
             self.entries[date_str] = {}
 
-        checklist_data = {item: var.get() for item, var in check_vars.items()}
-        metrics_data: dict[str, float | int] = {}
-        for name, var in metric_vars.items():
-            try:
-                metrics_data[name] = var.get()
-            except (tk.TclError, ValueError):
-                metrics_data[name] = 0
-
         try:
             rating_value = rating_var.get()
         except tk.TclError:
             focus_first_invalid([(rating_widget or dialog, rating_error, validate_rating_1_10(""))])
             return
 
-        entry_payload = {
-            "rating": rating_value,
-            "checklist": checklist_data,
-            "metrics": metrics_data,
-            "notes": notes_text.get("1.0", tk.END).strip(),
-        }
+        cat_def = cat_data if cat_data is not None else self.categories.get(cat_name, {})
+        cl_touched = checklist_touched or set()
+        m_touched = metrics_touched or set()
+        checklist_data = collect_touched_checklist(check_vars, touched=cl_touched)
+        metrics_data = collect_touched_metrics(metric_vars, cat_def, touched=m_touched)
+
+        entry_payload = build_entry_payload(
+            cat_def,
+            rating_value,
+            checklist=checklist_data,
+            metrics=metrics_data,
+            notes=notes_text.get("1.0", tk.END).strip(),
+        )
+        if entry_payload is None:
+            focus_first_invalid([(rating_widget or dialog, rating_error, validate_rating_1_10(""))])
+            return
         parsed = journal.parse_entry_date(date_str)
         if parsed and parsed < datetime.now().date():
             entry_payload["backdate_reason"] = reason
 
-        self.entries[date_str][cat_name] = entry_payload
+        existing = self.entries.get(date_str, {}).get(cat_name, {})
+        self.entries[date_str][cat_name] = merge_entry_updates(existing, entry_payload)
         self._invalidate_caches()
         hint = category_insight(self._get_insights(), cat_name)
         guidance_text = None
