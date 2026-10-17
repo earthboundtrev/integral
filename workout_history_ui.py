@@ -1,5 +1,7 @@
 """Workout history UI - embedded two-pane view with keyset paging."""
 
+from __future__ import annotations
+
 import tkinter as tk
 from tkinter import ttk
 from datetime import datetime
@@ -7,6 +9,21 @@ from typing import Callable
 
 from progression.db import FitnessRepository, WorkoutSession, WorkoutSet
 from progression.recent_compare import compare_to_previous_session
+from progression.sessions import fitness_db_file_label, is_fitness_db_lock_error
+from progression.workout_pr import (
+    ExerciseBests,
+    format_best_display,
+    pr_badge_label,
+    pr_badges_for_sets,
+    resolve_display_bests,
+)
+from status_banner import StatusBanner
+from workout_history_sparkline import (
+    best_set_metric_for_rows,
+    draw_sparkline,
+    format_metric_display,
+    sparkline_accessibility_summary,
+)
 
 
 def format_date_display(iso_date: str) -> str:
@@ -159,6 +176,15 @@ class WorkoutHistoryView:
         self.is_loading = False
         self.loading_after_id: str | None = None
         self._conn = self.repo.connect(timeout=10.0)  # Reused connection
+        self.detail_mode = "session"
+        self.selected_exercise_id: str | None = None
+        self._focused_exercise_id: str | None = None
+        self.exercise_sessions: list[WorkoutSession] = []
+        self.exercise_sets_by_session: dict[str, list[WorkoutSet]] = {}
+        self.exercise_has_more = True
+        self._exercise_spark_values: list[float] = []
+        self._exercise_spark_dates: list[str] = []
+        self._exercise_spark_kind = ""
         
         self._build_ui()
         self._load_first_page()
@@ -220,10 +246,15 @@ class WorkoutHistoryView:
         
         detail_frame = ttk.Frame(paned, style="Surface.TFrame")
         paned.add(detail_frame, weight=2)
-        
+
+        self._status_banner = StatusBanner(detail_frame, self.theme)
+
+        self.detail_stack = ttk.Frame(detail_frame, style="Surface.TFrame")
+        self.detail_stack.pack(fill=tk.BOTH, expand=True)
+
         from tkinter import scrolledtext
         self.detail_text = scrolledtext.ScrolledText(
-            detail_frame,
+            self.detail_stack,
             wrap=tk.WORD,
             font=("Helvetica", 10),
             bg=self.theme["surface"],
@@ -234,6 +265,58 @@ class WorkoutHistoryView:
         )
         self.detail_text.pack(fill=tk.BOTH, expand=True)
         self.detail_text.bind("<Escape>", lambda e: self._on_escape_from_detail())
+        self.detail_text.bind("<Return>", lambda e: self._on_enter_in_session_detail())
+        self.detail_text.bind("<Button-1>", lambda e: self._on_detail_click(e), add="+")
+
+        self.exercise_panel = ttk.Frame(self.detail_stack, style="Surface.TFrame")
+        header = ttk.Frame(self.exercise_panel, style="Surface.TFrame")
+        header.pack(side=tk.TOP, fill=tk.X, padx=4, pady=(0, 4))
+        self.exercise_title = ttk.Label(header, text="", style="OnSurfaceSubheading.TLabel")
+        self.exercise_title.pack(side=tk.TOP, anchor=tk.W)
+        self.exercise_pr_label = ttk.Label(header, text="", style="OnSurface.TLabel")
+        self.exercise_pr_label.pack(side=tk.TOP, anchor=tk.W, pady=(2, 6))
+
+        spark_frame = ttk.Frame(self.exercise_panel, style="Surface.TFrame")
+        spark_frame.pack(side=tk.TOP, fill=tk.X, padx=4, pady=(0, 6))
+        self.sparkline_canvas = tk.Canvas(spark_frame, height=56, bg=self.theme["surface"], highlightthickness=0)
+        self.sparkline_canvas.pack(fill=tk.X, expand=True)
+        self.sparkline_sr = tk.Label(
+            spark_frame,
+            text="",
+            wraplength=480,
+            justify=tk.LEFT,
+            bg=self.theme["surface"],
+            fg=self.theme["fg"],
+            font=("Helvetica", 9),
+        )
+        self.sparkline_sr.pack(fill=tk.X, pady=(4, 0))
+
+        ex_list_frame = ttk.Frame(self.exercise_panel, style="Surface.TFrame")
+        ex_list_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+        self.exercise_session_list = tk.Listbox(
+            ex_list_frame,
+            height=12,
+            exportselection=False,
+            font=("Helvetica", 10),
+            bg=self.theme["surface"],
+            fg=self.theme["fg"],
+            selectbackground=self.theme["accent"],
+            selectforeground=self.theme["surface"],
+            highlightthickness=1,
+            highlightcolor=self.theme["accent"],
+            relief=tk.FLAT,
+            borderwidth=0,
+        )
+        self.exercise_session_list.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        ex_scroll = ttk.Scrollbar(ex_list_frame, orient=tk.VERTICAL, command=self.exercise_session_list.yview)
+        ex_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self.exercise_session_list.config(yscrollcommand=ex_scroll.set)
+        self.exercise_session_list.bind("<Escape>", lambda e: self._close_exercise_view())
+        self.exercise_load_more_btn = ttk.Button(
+            self.exercise_panel,
+            text="Load more",
+            command=self._load_next_exercise_page,
+        )
         
         self.load_more_btn = ttk.Button(
             self.container,
@@ -319,9 +402,7 @@ class WorkoutHistoryView:
                 self._display_session_detail(sessions[0])
         except Exception as e:
             self._hide_loading_indicator()
-            # Show error but don't crash
-            import tkinter.messagebox as messagebox
-            messagebox.showerror("Error loading sessions", str(e), parent=self.container.winfo_toplevel())
+            self._handle_db_error(e, "Error loading sessions")
         finally:
             self.is_loading = False
     
@@ -371,11 +452,21 @@ class WorkoutHistoryView:
                 except (StopIteration, ValueError):
                     pass
         except Exception as e:
-            import tkinter.messagebox as messagebox
-            messagebox.showerror("Error loading more sessions", str(e), parent=self.container.winfo_toplevel())
+            self._handle_db_error(e, "Error loading more sessions")
         finally:
             self.is_loading = False
-    
+
+    def _handle_db_error(self, error: BaseException, prefix: str) -> None:
+        if is_fitness_db_lock_error(error):
+            self._status_banner.show_error(
+                f"{prefix}: {error}",
+                file_name=fitness_db_file_label(self.repo),
+            )
+            return
+        import tkinter.messagebox as messagebox
+
+        messagebox.showerror(prefix, str(error), parent=self.container.winfo_toplevel())
+
     def _show_loading_indicator(self) -> None:
         """Show loading indicator after a delay."""
         if self.loading_after_id is not None:
@@ -483,6 +574,8 @@ class WorkoutHistoryView:
     
     def _display_session_detail(self, session: WorkoutSession) -> None:
         """Display detail for selected session."""
+        if self.detail_mode == "exercise":
+            self._close_exercise_view()
         self.detail_text.config(state=tk.NORMAL)
         self.detail_text.delete("1.0", tk.END)
         
@@ -510,68 +603,100 @@ class WorkoutHistoryView:
             self._display_exercises(session, sets)
         
         self.detail_text.tag_config("header", font=("Helvetica", 12, "bold"))
-        self.detail_text.tag_config("exercise", font=("Helvetica", 10, "bold"))
-        self.detail_text.tag_config("trend_up", foreground="#059669")
+        self.detail_text.tag_config("exercise", font=("Helvetica", 10, "bold"), underline=True)
+        self.detail_text.tag_config("trend_up", foreground=self.theme.get("success", "#059669"))
         self.detail_text.tag_config("trend_same", foreground=self.theme["muted"])
-        self.detail_text.tag_config("trend_down", foreground="#DC2626")
-        
+        self.detail_text.tag_config("trend_down", foreground=self.theme.get("error", "#DC2626"))
+        self.detail_text.tag_config("pr_beat", foreground=self.theme.get("success", "#059669"))
+        self.detail_text.tag_config("pr_tie", foreground=self.theme.get("streak", "#D97706"))
+        for ex_id in {s.exercise_id for s in sets}:
+            tag = f"exercise_link_{ex_id}"
+            self.detail_text.tag_config(tag, font=("Helvetica", 10, "bold"), underline=True)
+            self.detail_text.tag_bind(tag, "<Enter>", lambda _e: self.detail_text.config(cursor="hand2"))
+            self.detail_text.tag_bind(tag, "<Leave>", lambda _e: self.detail_text.config(cursor=""))
+
         self.detail_text.config(state=tk.DISABLED)
     
     def _display_exercises(self, session: WorkoutSession, sets: list[WorkoutSet]) -> None:
-        """Display exercises with volume and trends (batched queries)."""
+        """Display exercises with volume, PR badges, and trends (batched queries)."""
         exercise_ids = []
         for wset in sets:
             if wset.exercise_id not in exercise_ids:
                 exercise_ids.append(wset.exercise_id)
-        
-        # Batch exercise names (one SQL), excluding soft-deleted
+
         exercise_names = {}
         try:
-            placeholders = ','.join('?' * len(exercise_ids))
+            placeholders = ",".join("?" * len(exercise_ids))
             for row in self._conn.execute(
                 f"SELECT id, name FROM exercises WHERE id IN ({placeholders}) AND deleted_at IS NULL",
-                exercise_ids
+                exercise_ids,
             ).fetchall():
                 exercise_names[row["id"]] = row["name"]
         except Exception:
             pass
-        
-        # Fetch trends (compare_to_previous_session does internal batching per exercise)
+
+        prior_bests = {}
+        try:
+            prior_bests = self.repo.get_prior_bests_before_session(
+                exercise_ids,
+                session.date,
+                session.created_at,
+                session.id,
+            )
+        except Exception:
+            prior_bests = {}
+
         trends = self._batch_fetch_trends(session, exercise_ids)
-        
+
         for ex_id in exercise_ids:
             ex_sets = [s for s in sets if s.exercise_id == ex_id]
             if not ex_sets:
                 continue
-            
+
             ex_name = exercise_names.get(ex_id, f"{ex_id} (removed)")
-            
-            self.detail_text.insert(tk.END, f"{ex_name}\n", "exercise")
-            
-            for wset in ex_sets:
+            link_tag = f"exercise_link_{ex_id}"
+            self.detail_text.insert(tk.END, f"{ex_name}\n", (link_tag, "exercise"))
+            self.detail_text.tag_bind(link_tag, "<Button-1>", lambda _e, eid=ex_id: self._open_exercise_view(eid))
+
+            prior = prior_bests.get(ex_id, ExerciseBests())
+            badges = pr_badges_for_sets(ex_sets, prior)
+
+            for wset, badge in zip(ex_sets, badges):
                 parts = []
                 if wset.sets:
                     parts.append(f"{wset.sets} sets")
                 if wset.reps:
                     parts.append(f"{wset.reps} reps")
                 if wset.hold_seconds:
-                    parts.append(f"{wset.hold_seconds}s hold")
+                    hold = wset.hold_seconds
+                    hold_txt = f"{hold:g}" if float(hold).is_integer() else f"{hold:.1f}"
+                    parts.append(f"{hold_txt} s hold")
                 if wset.weight_kg:
-                    parts.append(f"{wset.weight_kg:.1f} kg")
+                    w = wset.weight_kg
+                    w_txt = f"{w:g}" if float(w).is_integer() else f"{w:.1f}"
+                    parts.append(f"{w_txt} kg")
                 if wset.form_quality:
                     parts.append(f"quality {wset.form_quality}/10")
-                
+
                 volume, unit = calculate_exercise_volume(wset)
                 if unit:
-                    parts.append(f"volume: {volume:.1f} {unit}")
-                
-                self.detail_text.insert(tk.END, f"  {' · '.join(parts)}\n")
-            
-            # Show trend indicator
+                    vol_txt = f"{volume:g}" if float(volume).is_integer() else f"{volume:.1f}"
+                    parts.append(f"volume: {vol_txt} {unit}")
+
+                line = f"  {' · '.join(parts)}"
+                label = pr_badge_label(badge)
+                if label:
+                    line += f"  [{label}]"
+                tag = "pr_beat" if badge == "beat" else "pr_tie" if badge == "tie" else ""
+                if tag:
+                    self.detail_text.insert(tk.END, line + "\n", tag)
+                else:
+                    self.detail_text.insert(tk.END, line + "\n")
+
             trend_info = trends.get(ex_id, {})
             trend = trend_info.get("trend", "")
             prev_display = trend_info.get("previous_best_display", "")
-            
+
             if trend and prev_display:
                 if trend == "up":
                     self.detail_text.insert(tk.END, f"  ↑ {prev_display}\n", "trend_up")
@@ -579,9 +704,159 @@ class WorkoutHistoryView:
                     self.detail_text.insert(tk.END, f"  ↓ {prev_display}\n", "trend_down")
                 elif trend == "same":
                     self.detail_text.insert(tk.END, f"  = {prev_display}\n", "trend_same")
-            
+
             self.detail_text.insert(tk.END, "\n")
-    
+
+    def _on_detail_click(self, event) -> None:
+        try:
+            index = self.detail_text.index(f"@{event.x},{event.y}")
+            tags = self.detail_text.tag_names(index)
+        except tk.TclError:
+            return
+        for tag in tags:
+            if tag.startswith("exercise_link_"):
+                self._focused_exercise_id = tag.replace("exercise_link_", "", 1)
+                return
+
+    def _on_enter_in_session_detail(self) -> str | None:
+        if self.detail_mode == "exercise":
+            return None
+        ex_id = self._focused_exercise_id
+        if not ex_id:
+            try:
+                index = self.detail_text.index(tk.INSERT)
+                for tag in self.detail_text.tag_names(index):
+                    if tag.startswith("exercise_link_"):
+                        ex_id = tag.replace("exercise_link_", "", 1)
+                        break
+            except tk.TclError:
+                pass
+        if ex_id:
+            self._open_exercise_view(ex_id)
+            return "break"
+        return None
+
+    def _open_exercise_view(self, exercise_id: str) -> None:
+        self.selected_exercise_id = exercise_id
+        self.detail_mode = "exercise"
+        self.exercise_sessions = []
+        self.exercise_sets_by_session = {}
+        self.exercise_has_more = True
+        self.detail_text.pack_forget()
+        self.exercise_panel.pack(fill=tk.BOTH, expand=True)
+        self._load_exercise_first_page()
+
+    def _close_exercise_view(self) -> str | None:
+        if self.detail_mode != "exercise":
+            return None
+        self.detail_mode = "session"
+        self.selected_exercise_id = None
+        self.exercise_panel.pack_forget()
+        if self.exercise_load_more_btn.winfo_ismapped():
+            self.exercise_load_more_btn.pack_forget()
+        self.detail_text.pack(fill=tk.BOTH, expand=True)
+        self.detail_text.focus_set()
+        return "break"
+
+    def _load_exercise_first_page(self) -> None:
+        if not self.selected_exercise_id:
+            return
+        try:
+            page = self._fetch_exercise_page(reset=True)
+        except Exception as exc:
+            self._handle_db_error(exc, "Error loading exercise history")
+            self._close_exercise_view()
+            return
+        self._render_exercise_page(page)
+
+    def _load_next_exercise_page(self) -> None:
+        if not self.selected_exercise_id or not self.exercise_has_more or self.is_loading:
+            return
+        try:
+            page = self._fetch_exercise_page(reset=False)
+        except Exception as exc:
+            self._handle_db_error(exc, "Error loading more exercise history")
+            return
+        self._render_exercise_page(page, append=True)
+
+    def _fetch_exercise_page(self, *, reset: bool) -> dict:
+        ex_id = self.selected_exercise_id
+        assert ex_id
+        before_date = before_id = before_created_at = None
+        if not reset and self.exercise_sessions:
+            last = self.exercise_sessions[-1]
+            before_date = last.date
+            before_id = last.id
+            before_created_at = last.created_at
+        sessions, sets_map, name, stored, computed = self.repo.fetch_exercise_history_page(
+            ex_id,
+            limit=20,
+            before_date=before_date,
+            before_id=before_id,
+            before_created_at=before_created_at,
+        )
+        display_bests = resolve_display_bests(stored, computed)
+        return {
+            "sessions": sessions,
+            "sets_map": sets_map,
+            "display_bests": display_bests,
+            "name": name,
+            "reset": reset,
+        }
+
+    def _render_exercise_page(self, page: dict, *, append: bool = False) -> None:
+        sessions: list[WorkoutSession] = page["sessions"]
+        sets_map: dict[str, list[WorkoutSet]] = page["sets_map"]
+        if append:
+            self.exercise_sessions.extend(sessions)
+            self.exercise_sets_by_session.update(sets_map)
+        else:
+            self.exercise_sessions = sessions
+            self.exercise_sets_by_session = sets_map
+        self.exercise_has_more = len(sessions) >= 20
+
+        self.exercise_title.config(text=page["name"])
+        self.exercise_pr_label.config(text=f"Current PR: {format_best_display(page['display_bests'])}")
+
+        metrics: list[tuple[str, float, str]] = []
+        for session in reversed(self.exercise_sessions):
+            rows = self.exercise_sets_by_session.get(session.id, [])
+            metric, kind = best_set_metric_for_rows(rows)
+            if metric is not None:
+                metrics.append((session.date, float(metric), kind))
+        self._exercise_spark_kind = metrics[-1][2] if metrics else ""
+        self._exercise_spark_values = [m[1] for m in metrics]
+        self._exercise_spark_dates = [m[0] for m in metrics]
+        self.container.update_idletasks()
+        draw_sparkline(
+            self.sparkline_canvas,
+            self._exercise_spark_values,
+            theme=self.theme,
+        )
+        summary = sparkline_accessibility_summary(
+            self._exercise_spark_values,
+            self._exercise_spark_dates,
+            self._exercise_spark_kind,
+        )
+        self.sparkline_sr.config(text=summary)
+
+        self.exercise_session_list.delete(0, tk.END)
+        for session in self.exercise_sessions:
+            rows = self.exercise_sets_by_session.get(session.id, [])
+            metric, kind = best_set_metric_for_rows(rows)
+            metric_txt = format_metric_display(metric, kind)
+            self.exercise_session_list.insert(
+                tk.END,
+                f"{format_date_display(session.date)} · best set {metric_txt}",
+            )
+
+        if self.exercise_has_more:
+            self.exercise_load_more_btn.pack(side=tk.TOP, pady=6)
+        elif self.exercise_load_more_btn.winfo_ismapped():
+            self.exercise_load_more_btn.pack_forget()
+
+        self.exercise_session_list.focus_set()
+
     def _batch_fetch_trends(self, session: WorkoutSession, exercise_ids: list[str]) -> dict[str, dict]:
         """Batch-fetch trend comparisons using compare_to_previous_session.
         
@@ -679,9 +954,12 @@ class WorkoutHistoryView:
                 toplevel.destroy()
         return "break"
     
-    def _on_escape_from_detail(self) -> None:
-        """Return focus to session list."""
+    def _on_escape_from_detail(self) -> str | None:
+        """Return to session list or exit exercise view."""
+        if self.detail_mode == "exercise":
+            return self._close_exercise_view()
         self.session_list.focus_set()
+        return "break"
     
     def refresh(self) -> None:
         """Refresh the view (e.g., after a new session is saved)."""
