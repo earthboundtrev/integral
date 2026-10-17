@@ -1254,9 +1254,8 @@ class PersonalDevelopmentTracker:
                     self._error_timer_id = None
                 error_label.pack_forget()
                 todo_var.set("")
-                on_focus_out(None)
                 self.refresh_dashboard(full=False)
-                # Restore focus after refresh
+                # Restore focus after refresh (skip FocusOut placeholder — field stays ready)
                 self.root.after(10, lambda: self._restore_inline_todo_focus())
                 self.sync_quick_capture_panel()
             
@@ -1659,7 +1658,8 @@ class PersonalDevelopmentTracker:
                 except tk.TclError:
                     pass
         if target == "inline_todo":
-            self._focus_inline_todo_entry(preserve_placeholder=True)
+            # Focused inline field must not show placeholder (#155).
+            self._focus_inline_todo_entry(preserve_placeholder=False)
             return
 
         if not getattr(self, "_inline_todo_placeholder_shown", True):
@@ -3089,6 +3089,15 @@ class PersonalDevelopmentTracker:
             return
         if preserve_placeholder and getattr(self, "_inline_todo_placeholder_shown", False):
             self._inline_todo_ignore_next_focus_in = True
+        elif not preserve_placeholder and getattr(self, "_inline_todo_placeholder_shown", False):
+            var = getattr(self, "_inline_todo_var", None)
+            if var is not None:
+                var.set("")
+                self._inline_todo_placeholder_shown = False
+            try:
+                entry.config(foreground=self.theme["fg"])
+            except tk.TclError:
+                pass
         try:
             entry.focus_set()
         except tk.TclError:
@@ -3122,10 +3131,8 @@ class PersonalDevelopmentTracker:
             if entry is not None:
                 try:
                     if not entry.winfo_exists():
-                        self._snapshot_content_focus_target()
                         return
                 except tk.TclError:
-                    self._snapshot_content_focus_target()
                     return
 
         shown = True

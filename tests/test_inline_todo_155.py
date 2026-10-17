@@ -136,6 +136,30 @@ def test_successful_add_trims_text(tracker):
     assert tracker.todos["items"][-1]["text"] == "Buy milk"
 
 
+def test_successful_add_after_content_rebuild_allows_immediate_second_add(tracker):
+    """Regression: dual focus restore must not leave placeholder + ignore FocusIn (#155)."""
+    before = _todo_count(tracker)
+
+    tracker.refresh_dashboard = lambda full=True: tracker._build_content(recompute=False)
+
+    _begin_inline_todo_edit(tracker)
+    tracker._inline_todo_var.set("First todo")
+    _press_return_inline_todo(tracker)
+
+    for _ in range(3):
+        tracker.root.update_idletasks()
+        tracker.root.update()
+
+    assert _todo_count(tracker) == before + 1
+    assert tracker._inline_todo_placeholder_shown is False
+    assert getattr(tracker, "_inline_todo_ignore_next_focus_in", False) is False
+
+    tracker._inline_todo_var.set("Second todo")
+    _press_return_inline_todo(tracker)
+    assert _todo_count(tracker) == before + 2
+    assert tracker.todos["items"][-1]["text"] == "Second todo"
+
+
 def test_escape_clears_draft_without_placeholder_until_focus_out(tracker):
     var = tracker._inline_todo_var
     btn = tracker._add_todo_button
@@ -215,15 +239,18 @@ def test_rebuild_preserves_placeholder_when_add_todo_had_focus(tracker):
 
 def test_overlapping_rebuild_keeps_pending_inline_todo_snapshot(tracker):
     var = tracker._inline_todo_var
+    btn = tracker._add_todo_button
 
     _begin_inline_todo_edit(tracker)
     var.set("survives double rebuild")
-    tracker._snapshot_inline_todo_state()
+    with patch.object(tracker.root, "focus_get", return_value=btn):
+        tracker._snapshot_inline_todo_state()
     tracker._inline_todo_entry.destroy()
 
     tracker._snapshot_inline_todo_state()
     assert tracker._inline_todo_restore["draft"] == "survives double rebuild"
     assert tracker._inline_todo_restore["placeholder_shown"] is False
+    assert tracker._content_focus_restore_target == "add_todo"
 
 
 def test_add_todo_button_focuses_inline_entry(tracker):
