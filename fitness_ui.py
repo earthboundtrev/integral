@@ -150,9 +150,11 @@ def copy_previous_pending_set_item(
     Build the next queued set.
 
     With ``copy_previous=True`` (+ Set), duplicate the last row with ``sets``=1.
-    Otherwise queue from the picker and metric fields (Add Set / Enter / double-click).
+    Otherwise queue from the picker and metric fields (Add / Enter / double-click).
     """
-    if copy_previous and pending_sets:
+    if copy_previous:
+        if not pending_sets:
+            return None
         prev = pending_sets[-1]
         item: dict = {
             "exercise_id": prev["exercise_id"],
@@ -937,7 +939,8 @@ def open_new_session_dialog(
     ttk.Label(
         form,
         text=(
-            "Search and click an exercise, Add Set for each movement, then Save Session. "
+            "Search and pick an exercise, then Add for each movement (metrics below). "
+            "+ Set copies the last queued row with sets=1 (same exercise). Save Session when done. "
             "Wrong pick? Choose another row, Clear selection, or Remove a queued set — no need to Cancel."
         ),
         wraplength=500,
@@ -977,14 +980,14 @@ def open_new_session_dialog(
                     item.get("hold_seconds"),
                 )
 
-            # Avoid double-counting after Add Set leaves the form unchanged.
+            # Avoid double-counting after Add leaves the form unchanged.
             if not items or _key(form_item) != _key(items[-1]):
                 items = list(items) + [form_item]
         if not items:
             return form_item
         return {"pending_items": items}
 
-    set_frame = ttk.LabelFrame(form, text="Add Set", padding=8)
+    set_frame = ttk.LabelFrame(form, text="Exercise & metrics", padding=8)
     set_frame.pack(fill=tk.BOTH, expand=True, pady=4)
 
     def on_exercise_picked(row) -> None:
@@ -1098,6 +1101,10 @@ def open_new_session_dialog(
         preview.delete(0, tk.END)
         for item in pending_sets:
             preview.insert(tk.END, format_pending_set_line(item))
+        if pending_sets:
+            copy_set_btn.config(state=tk.NORMAL)
+        else:
+            copy_set_btn.config(state=tk.DISABLED)
 
     def focus_reps_selected() -> None:
         if reps_spinbox is None:
@@ -1120,7 +1127,16 @@ def open_new_session_dialog(
             copy_previous=copy_previous,
         )
         if item is None:
-            set_field_error(form_error, "Select an exercise from the search list before adding a set.")
+            if copy_previous:
+                set_field_error(
+                    form_error,
+                    "Queue at least one set with Add before using + Set.",
+                )
+            else:
+                set_field_error(
+                    form_error,
+                    "Select an exercise from the search list before adding a set.",
+                )
             try:
                 picker["search_entry"].focus_set()
             except (KeyError, tk.TclError):
@@ -1377,10 +1393,15 @@ def open_new_session_dialog(
 
     cancel_session_btn = ttk.Button(btn_row, text="Cancel", command=request_close)
     save_session_btn.config(command=save_session)
-    add_set_btn = ttk.Button(
+    add_exercise_btn = ttk.Button(
+        btn_row, text="Add", command=lambda: add_set(copy_previous=False)
+    )
+    add_exercise_btn.pack(side=tk.LEFT, padx=(0, 4))
+    copy_set_btn = ttk.Button(
         btn_row, text="+ Set", command=lambda: add_set(copy_previous=True)
     )
-    add_set_btn.pack(side=tk.LEFT)
+    copy_set_btn.pack(side=tk.LEFT)
+    copy_set_btn.config(state=tk.DISABLED)
     save_session_btn.pack(side=tk.LEFT, padx=8)
     cancel_session_btn.pack(side=tk.LEFT)
     date_var.trace_add("write", refresh_repeat_availability)

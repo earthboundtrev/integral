@@ -255,6 +255,27 @@ def test_copy_previous_pending_set_item_from_picker_when_exercise_differs():
     assert item["reps"] == 15
 
 
+def test_copy_previous_pending_set_item_requires_queue_for_plus_set():
+    class _Var:
+        def __init__(self, value):
+            self._value = value
+
+        def get(self):
+            return self._value
+
+    picker_row = {"id": "b", "name": "B", "source_book": "CC1", "family": "push", "step": 2}
+    item = copy_previous_pending_set_item(
+        [],
+        picker_row=picker_row,
+        sets_var=_Var(2),
+        reps_var=_Var(15),
+        hold_var=_Var(0.0),
+        set_weight_var=_Var(0.0),
+        copy_previous=True,
+    )
+    assert item is None
+
+
 def test_copy_previous_pending_set_item_uses_last_row():
     pending = [
         {
