@@ -22,6 +22,20 @@ _ELLIPSIS = "…"
 _ENTRY_LIST_MIN_DISPLAY_PX = 80
 
 
+def _entry_list_hover_index(listbox: tk.Listbox, y: int, item_count: int) -> int | None:
+    """Return listbox row index under y, or None if y is outside row bounds."""
+    idx = listbox.nearest(y)
+    if idx < 0 or idx >= item_count:
+        return None
+    bbox = listbox.bbox(idx)
+    if not bbox:
+        return None
+    row_y, _row_x, _row_w, row_h = bbox
+    if y < row_y or y >= row_y + row_h:
+        return None
+    return idx
+
+
 def _truncate_text_to_px(text: str, font: tkfont.Font, max_width: int) -> str:
     """Shorten text with an ellipsis when it would exceed max_width pixels."""
     if max_width <= 0 or font.measure(text) <= max_width:
@@ -107,13 +121,22 @@ def show_journal_window(
     header = ttk.Frame(win, padding=(16, 14, 16, 8))
     header.pack(side=tk.TOP, fill=tk.X)
     ttk.Label(header, text="Journal", style="Title.TLabel").pack(anchor="w")
-    ttk.Label(
+    header_hint = ttk.Label(
         header,
         text="Markdown-lite formatting (**bold**, *italic*, # headings, lists, quotes). "
         "Link journal / domain / fitness / writing projects. Enable integral:// in Data & Security for OS paste.",
         style="Muted.TLabel",
         wraplength=980,
-    ).pack(anchor="w", pady=(4, 0))
+    )
+    header_hint.pack(anchor="w", pady=(4, 0))
+
+    def sync_header_wraplength(_event: tk.Event | None = None) -> None:
+        width = win.winfo_width()
+        if width <= 1:
+            return
+        header_hint.configure(wraplength=max(width - 32, 200))
+
+    win.bind("<Configure>", sync_header_wraplength, add="+")
 
     body = ttk.Frame(win, padding=(16, 0, 16, 8))
     body.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
@@ -260,7 +283,10 @@ def show_journal_window(
     indexed_entries: list[dict] = []
     entry_list_full_labels: list[str] = []
     list_tooltip: tk.Toplevel | None = None
+    list_tooltip_label: tk.Label | None = None
+    list_tooltip_idx: list[int | None] = [None]
     entry_list_last_width: list[int] = [0]
+    entry_list_font = tkfont.Font(font=entry_list.cget("font"))
 
     def _entry_list_display_width_px() -> int:
         width = entry_list.winfo_width()
@@ -270,21 +296,28 @@ def show_journal_window(
             width = 220
         return max(width - 12, _ENTRY_LIST_MIN_DISPLAY_PX)
 
-    def _fill_entry_list(select_index: int = 0) -> None:
+    def _fill_entry_list(
+        *,
+        select_index: int | None = None,
+        restore_yview: tuple[float, float] | None = None,
+        apply_selection: bool = True,
+    ) -> None:
+        yview = restore_yview if restore_yview is not None else entry_list.yview()
         entry_list.delete(0, tk.END)
         entry_list_full_labels.clear()
         if not indexed_entries:
             return
-        font = tkfont.Font(font=entry_list.cget("font"))
         max_px = _entry_list_display_width_px()
         for item in indexed_entries:
             label = item.get("title") or item.get("prompt") or "Journal"
             suffix = " ↩" if item.get("backdate_reason") else ""
             full = f"{item['entry_date']}  {label}{suffix}"
             entry_list_full_labels.append(full)
-            entry_list.insert(tk.END, _truncate_text_to_px(full, font, max_px))
-        entry_list.selection_set(select_index)
-        entry_list.see(select_index)
+            entry_list.insert(tk.END, _truncate_text_to_px(full, entry_list_font, max_px))
+        if apply_selection and select_index is not None:
+            entry_list.selection_set(select_index)
+            entry_list.see(select_index)
+        entry_list.yview_moveto(yview[0])
 
     def refresh_list(select_id: str | None = None) -> None:
         nonlocal indexed_entries
@@ -293,40 +326,55 @@ def show_journal_window(
         for index, item in enumerate(indexed_entries):
             if select_id and item.get("id") == select_id:
                 select_index = index
-        _fill_entry_list(select_index)
+        _fill_entry_list(select_index=select_index, apply_selection=True)
 
     def hide_entry_list_tooltip() -> None:
         nonlocal list_tooltip
-        if list_tooltip:
-            list_tooltip.destroy()
-            list_tooltip = None
+        list_tooltip_idx[0] = None
+        if list_tooltip is not None:
+            list_tooltip.withdraw()
+
+    def _ensure_entry_list_tooltip() -> tuple[tk.Toplevel, tk.Label]:
+        nonlocal list_tooltip, list_tooltip_label
+        if list_tooltip is None:
+            list_tooltip = tk.Toplevel(win)
+            list_tooltip.wm_overrideredirect(True)
+            list_tooltip.attributes("-topmost", True)
+            list_tooltip.configure(bg=theme["text_bg"])
+            list_tooltip_label = tk.Label(
+                list_tooltip,
+                text="",
+                bg=theme["text_bg"],
+                fg=theme["text_fg"],
+                font=FONTS["body"],
+                padx=8,
+                pady=4,
+                justify=tk.LEFT,
+            )
+            list_tooltip_label.pack()
+        assert list_tooltip_label is not None
+        return list_tooltip, list_tooltip_label
 
     def on_entry_list_motion(event: tk.Event) -> None:
-        nonlocal list_tooltip
-        hide_entry_list_tooltip()
-        idx = entry_list.nearest(event.y)
-        if idx < 0 or idx >= len(entry_list_full_labels):
+        idx = _entry_list_hover_index(entry_list, event.y, len(entry_list_full_labels))
+        if idx is None:
+            hide_entry_list_tooltip()
             return
         full = entry_list_full_labels[idx]
         shown = entry_list.get(idx)
         if full == shown:
+            hide_entry_list_tooltip()
             return
-        list_tooltip = tk.Toplevel(win)
-        list_tooltip.wm_overrideredirect(True)
-        list_tooltip.configure(bg=theme["text_bg"])
-        tk.Label(
-            list_tooltip,
-            text=full,
-            bg=theme["text_bg"],
-            fg=theme["text_fg"],
-            font=FONTS["body"],
-            padx=8,
-            pady=4,
-            justify=tk.LEFT,
-        ).pack()
-        list_tooltip.geometry(f"+{event.x_root + 12}+{event.y_root + 12}")
+        tip, label = _ensure_entry_list_tooltip()
+        if list_tooltip_idx[0] != idx:
+            label.configure(text=full)
+            list_tooltip_idx[0] = idx
+        tip.geometry(f"+{event.x_root + 12}+{event.y_root + 12}")
+        tip.deiconify()
+        tip.lift()
 
     def on_entry_list_configure(event: tk.Event | None = None) -> None:
+        hide_entry_list_tooltip()
         if not indexed_entries:
             return
         width = entry_list.winfo_width()
@@ -334,8 +382,15 @@ def show_journal_window(
             return
         entry_list_last_width[0] = width
         cur = entry_list.curselection()
-        select_index = cur[0] if cur else 0
-        _fill_entry_list(select_index)
+        yview = entry_list.yview()
+        if cur:
+            _fill_entry_list(
+                select_index=int(cur[0]),
+                restore_yview=yview,
+                apply_selection=True,
+            )
+        else:
+            _fill_entry_list(restore_yview=yview, apply_selection=False)
 
     def abandon_external_edit_ok() -> bool:
         if not external_path["value"]:
@@ -617,10 +672,18 @@ def show_journal_window(
     ):
         ttk.Button(fmt_bar, text=label, width=5, command=lambda a=action: fmt(a)).pack(side=tk.LEFT, padx=2)
 
+    def hide_tooltip_on_scroll(_event: tk.Event | None = None) -> None:
+        hide_entry_list_tooltip()
+
     entry_list.bind("<<ListboxSelect>>", load_selected)
     entry_list.bind("<Configure>", on_entry_list_configure)
     entry_list.bind("<Motion>", on_entry_list_motion)
     entry_list.bind("<Leave>", lambda _e: hide_entry_list_tooltip())
+    entry_list.bind("<FocusOut>", lambda _e: hide_entry_list_tooltip())
+    entry_list.bind("<MouseWheel>", hide_tooltip_on_scroll)
+    entry_list.bind("<Button-4>", hide_tooltip_on_scroll)
+    entry_list.bind("<Button-5>", hide_tooltip_on_scroll)
+    win.bind("<Unmap>", lambda _e: hide_entry_list_tooltip(), add="+")
     backlinks_list.bind("<<ListboxSelect>>", on_backlink_select)
     body_text.bind("<KeyRelease>", refresh_decorations)
 
@@ -629,14 +692,14 @@ def show_journal_window(
     ttk.Button(list_btns, text="New", command=clear_editor).pack(side=tk.LEFT)
     ttk.Button(list_btns, text="Delete", command=delete_selected).pack(side=tk.LEFT, padx=6)
 
-    editor_btns = ttk.Frame(editor)
+    editor_btns = ttk.Frame(editor, style="Surface.TFrame")
     editor_btns.grid(row=7, column=0, sticky="ew", pady=(10, 0))
     editor_btns.columnconfigure(0, weight=1)
 
     primary_btns = ttk.Frame(editor_btns, style="Surface.TFrame")
-    primary_btns.grid(row=0, column=0, sticky="w")
+    primary_btns.grid(row=0, column=0, sticky="ew")
     secondary_btns = ttk.Frame(editor_btns, style="Surface.TFrame")
-    secondary_btns.grid(row=1, column=0, sticky="w", pady=(6, 0))
+    secondary_btns.grid(row=1, column=0, sticky="ew", pady=(6, 0))
 
     ttk.Button(primary_btns, text="Save Entry", style="Accent.TButton", command=save_entry).pack(
         side=tk.LEFT
@@ -718,6 +781,7 @@ def show_journal_window(
 
     refresh_list(select_id=entry_id)
     win.after_idle(on_entry_list_configure)
+    win.after_idle(sync_header_wraplength)
     if entry_id and journal.get_entry(tracker.journal, entry_id):
         load_selected()
     else:
