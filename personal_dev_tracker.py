@@ -1193,12 +1193,17 @@ class PersonalDevelopmentTracker:
             todo_entry.config(foreground=self.theme["fg"])
 
         def on_focus_in(event):
+            if getattr(self, "_inline_todo_ignore_next_focus_in", False):
+                self._inline_todo_ignore_next_focus_in = False
+                return
             clear_inline_todo_placeholder_for_edit()
-        
+
         def on_focus_out(event):
             if self._inline_todo_placeholder_shown:
                 return
-            if not todo_var.get():
+            if not todo_var.get().strip():
+                if todo_var.get():
+                    todo_var.set("")
                 show_inline_todo_placeholder()
         
         restore_shown, restore_draft = self._consume_inline_todo_restore()
@@ -1260,14 +1265,13 @@ class PersonalDevelopmentTracker:
         def clear_todo(event=None):
             if not self._inline_todo_placeholder_shown and todo_var.get():
                 todo_var.set("")
-                show_inline_todo_placeholder()
                 error_label.pack_forget()
+                todo_entry.focus_set()
                 return "break"
-            else:
-                # Second Escape: move focus to + Todo button
-                if hasattr(self, "_add_todo_button"):
-                    self._add_todo_button.focus_set()
-                return "break"
+            # Second Escape (empty field or placeholder showing): move to + Todo
+            if hasattr(self, "_add_todo_button"):
+                self._add_todo_button.focus_set()
+            return "break"
         
         todo_entry.bind("<Return>", add_inline_todo)
         todo_entry.bind("<Escape>", clear_todo)
@@ -1640,24 +1644,26 @@ class PersonalDevelopmentTracker:
         self._dashboard_ready = True
     
     def _restore_content_focus(self) -> None:
-        """Set focus to first focusable control in content pane."""
+        """Restore focus after content rebuild (#128 / #155)."""
         if self._content_pane is None or not self._content_pane.winfo_exists():
             return
-        
-        # Deep search for first focusable widget
-        def find_focusable(widget):
-            """Recursively find first focusable widget."""
-            if widget.winfo_class() in ("TEntry", "Entry", "Text"):
-                return widget
-            for child in widget.winfo_children():
-                result = find_focusable(child)
-                if result:
-                    return result
-            return None
-        
-        focusable = find_focusable(self._content_pane)
-        if focusable:
-            focusable.focus_set()
+
+        target = getattr(self, "_content_focus_restore_target", None)
+        if target == "add_todo":
+            btn = getattr(self, "_add_todo_button", None)
+            if btn is not None:
+                try:
+                    if btn.winfo_exists():
+                        btn.focus_set()
+                        return
+                except tk.TclError:
+                    pass
+        if target == "inline_todo":
+            self._focus_inline_todo_entry(preserve_placeholder=True)
+            return
+
+        if not getattr(self, "_inline_todo_placeholder_shown", True):
+            self._focus_inline_todo_entry(preserve_placeholder=False)
     
     def _refresh_header_chrome(self) -> None:
         """Update header widgets (streak, date) without rebuilding shell."""
@@ -3071,17 +3077,57 @@ class PersonalDevelopmentTracker:
         except ValueError as exc:
             return str(exc)
 
+    def _focus_inline_todo_entry(self, *, preserve_placeholder: bool) -> None:
+        """Focus inline todo; optionally keep placeholder visible (programmatic restore)."""
+        entry = getattr(self, "_inline_todo_entry", None)
+        if entry is None:
+            return
+        try:
+            if not entry.winfo_exists():
+                return
+        except tk.TclError:
+            return
+        if preserve_placeholder and getattr(self, "_inline_todo_placeholder_shown", False):
+            self._inline_todo_ignore_next_focus_in = True
+        try:
+            entry.focus_set()
+        except tk.TclError:
+            pass
+
     def _restore_inline_todo_focus(self) -> None:
         """Restore focus to inline todo entry after dashboard refresh."""
-        if hasattr(self, "_inline_todo_entry"):
-            try:
-                if self._inline_todo_entry.winfo_exists():
-                    self._inline_todo_entry.focus_set()
-            except tk.TclError:
-                pass
+        self._focus_inline_todo_entry(preserve_placeholder=False)
+
+    def _snapshot_content_focus_target(self) -> None:
+        """Remember which control had focus before content rebuild."""
+        widget = self.root.focus_get()
+        target = None
+        entry = getattr(self, "_inline_todo_entry", None)
+        btn = getattr(self, "_add_todo_button", None)
+        try:
+            if widget is not None and entry is not None and widget == entry:
+                if entry.winfo_exists():
+                    target = "inline_todo"
+            elif widget is not None and btn is not None and widget == btn:
+                if btn.winfo_exists():
+                    target = "add_todo"
+        except tk.TclError:
+            target = None
+        self._content_focus_restore_target = target
 
     def _snapshot_inline_todo_state(self) -> None:
         """Preserve inline todo draft and placeholder flag across content rebuild (#155 / #128)."""
+        if getattr(self, "_inline_todo_restore", None) is not None:
+            entry = getattr(self, "_inline_todo_entry", None)
+            if entry is not None:
+                try:
+                    if not entry.winfo_exists():
+                        self._snapshot_content_focus_target()
+                        return
+                except tk.TclError:
+                    self._snapshot_content_focus_target()
+                    return
+
         shown = True
         draft = ""
         var = getattr(self, "_inline_todo_var", None)
@@ -3095,6 +3141,7 @@ class PersonalDevelopmentTracker:
             except tk.TclError:
                 pass
         self._inline_todo_restore = {"placeholder_shown": shown, "draft": draft}
+        self._snapshot_content_focus_target()
 
     def _consume_inline_todo_restore(self) -> tuple[bool, str]:
         snap = getattr(self, "_inline_todo_restore", None)
