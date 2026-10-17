@@ -28,9 +28,9 @@ class TestStatusBanner(unittest.TestCase):
         host.pack()
         theme = {
             "success_bg": "#ECFDF5",
-            "success": "#059669",
+            "success": "#047857",
             "error_bg": "#FEE2E2",
-            "error": "#DC2626",
+            "error": "#B91C1C",
             "warning_bg": "#FEF3C7",
             "fg": "#1A1D21",
             "card_border": "#D8DCE3",
@@ -58,10 +58,14 @@ class TestStatusBanner(unittest.TestCase):
         self.root.mainloop()
         self.assertIsNone(self.banner._frame)
 
-    def test_success_replaces_error_after_retry(self):
+    def test_success_does_not_replace_error_until_dismissed(self):
         self.banner.show_error("Save failed.")
         self.root.update()
         self.banner.show_success("Saved.")
+        self.root.update()
+        self.assertEqual(self.banner._kind, "error")
+        self.assertIsNotNone(self.banner._deferred_success)
+        self.banner.dismiss()
         self.root.update()
         self.assertEqual(self.banner._kind, "success")
 

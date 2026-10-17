@@ -22,9 +22,9 @@ _ICONS = {
 
 def _banner_colors(kind: str, theme: dict) -> tuple[str, str, str]:
     if kind == _KIND_ERROR:
-        return theme.get("error_bg", "#FEE2E2"), theme.get("error", "#DC2626"), theme.get("error", "#DC2626")
+        return theme.get("error_bg", "#FEE2E2"), theme.get("error", "#B91C1C"), theme.get("error", "#B91C1C")
     if kind == _KIND_SUCCESS:
-        return theme.get("success_bg", "#ECFDF5"), theme.get("success", "#059669"), theme.get("success", "#059669")
+        return theme.get("success_bg", "#ECFDF5"), theme.get("success", "#047857"), theme.get("success", "#047857")
     return theme.get("warning_bg", "#FEF3C7"), theme.get("fg", "#1A1D21"), theme.get("fg", "#1A1D21")
 
 
@@ -42,7 +42,9 @@ class StatusBanner:
         self._auto_hide_ms = 0
         self._pause_depth = 0
         self._undo_callback: Callable[[], None] | None = None
-        self._sr_label: tk.Label | None = None
+        self._deferred_success: tuple[str, str | None, Callable[[], None] | None] | None = None
+        self._sr_label = tk.Label(self._host, text="", takefocus=0)
+        self._sr_label.place(x=-10000, y=-10000, width=1, height=1)
 
     def set_theme(self, theme: dict) -> None:
         self._theme = theme
@@ -82,10 +84,14 @@ class StatusBanner:
         self._undo_callback = None
 
     def dismiss(self) -> None:
+        deferred = self._deferred_success if self._kind == _KIND_ERROR else None
+        self._deferred_success = None
         self._clear_frame()
         self._kind = None
-        if self._sr_label is not None:
-            self._sr_label.config(text="")
+        self._sr_label.config(text="")
+        if deferred is not None:
+            message, undo_label, undo_callback = deferred
+            self.show_success(message, undo_label=undo_label, undo_callback=undo_callback)
 
     def _schedule_hide(self, ms: int) -> None:
         self._cancel_hide()
@@ -128,7 +134,12 @@ class StatusBanner:
         extra_actions: list[tuple[str, Callable[[], None]]] | None = None,
         closable: bool = False,
     ) -> None:
+        if kind == _KIND_SUCCESS and self._kind == _KIND_ERROR and self._frame is not None:
+            self._deferred_success = (message, undo_label, undo_callback)
+            return
         self._clear_frame()
+        if kind != _KIND_SUCCESS:
+            self._deferred_success = None
         self._kind = kind
         bg, fg, accent = _banner_colors(kind, self._theme)
         icon = _ICONS.get(kind, "")
@@ -155,9 +166,6 @@ class StatusBanner:
         )
         text.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
-        if self._sr_label is None:
-            self._sr_label = tk.Label(self._host, text="", takefocus=0)
-            self._sr_label.pack_forget()
         self._sr_label.config(text=message)
 
         actions = tk.Frame(inner, bg=bg)
