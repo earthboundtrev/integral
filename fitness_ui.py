@@ -9,10 +9,12 @@ from progression.seed_loader import seed_all_fitness
 from progression.sessions import (
     bridge_fitness_to_daily_entries,
     create_workout_session,
+    find_latest_session_for_repeat,
     fitness_db_file_label,
     format_session_summary,
     is_fitness_db_lock_error,
     link_session_to_body_presence,
+    prefill_from_latest_session,
     snapshot_body_presence_entry,
     snapshot_exercise_progress,
     snapshot_exercise_progress_for_session,
@@ -98,6 +100,8 @@ def format_exercise_picker_label(row: dict) -> str:
 def format_pending_set_line(item: dict) -> str:
     """One-line preview for a queued set in Log Exercise Session."""
     label = item.get("label") or item.get("name") or "Exercise"
+    if item.get("exercise_note"):
+        label = f"{label} ({item['exercise_note']})"
     sets = item.get("sets", 0)
     reps = item.get("reps", 0)
     extras: list[str] = []
@@ -106,9 +110,78 @@ def format_pending_set_line(item: dict) -> str:
     if item.get("weight_kg"):
         extras.append(f"{item['weight_kg']} kg")
     base = f"{label}: {sets}x{reps}"
+    if item.get("prefilled"):
+        base = f"~ {base}"
     if extras:
         return f"{base} ({', '.join(str(x) for x in extras)})"
     return base
+
+
+def enrich_prefill_pending_items(
+    repo: FitnessRepository,
+    items: list[dict],
+) -> list[dict]:
+    """Attach picker labels for prefilled queued sets."""
+    if not items:
+        return items
+    rows_by_id = {r["id"]: r for r in list_exercise_rows(repo)}
+    enriched: list[dict] = []
+    for item in items:
+        copy_item = dict(item)
+        row = rows_by_id.get(copy_item.get("exercise_id", ""))
+        if row:
+            copy_item["label"] = format_exercise_picker_label(row)
+            copy_item["name"] = row["name"]
+        enriched.append(copy_item)
+    return enriched
+
+
+def copy_previous_pending_set_item(
+    pending_sets: list[dict],
+    *,
+    picker_row: dict | None,
+    sets_var,
+    reps_var,
+    hold_var,
+    set_weight_var,
+    copy_previous: bool = False,
+) -> dict | None:
+    """
+    Build the next queued set.
+
+    With ``copy_previous=True`` (+ Set), duplicate the last row with ``sets``=1.
+    Otherwise queue from the picker and metric fields (Add / Enter / double-click).
+    """
+    if copy_previous:
+        if not pending_sets:
+            return None
+        prev = pending_sets[-1]
+        item: dict = {
+            "exercise_id": prev["exercise_id"],
+            "name": prev.get("name", ""),
+            "label": prev.get("label") or prev.get("name", ""),
+            "sets": 1,
+            "reps": prev.get("reps", 0),
+        }
+        if prev.get("hold_seconds"):
+            item["hold_seconds"] = prev["hold_seconds"]
+        if prev.get("weight_kg"):
+            item["weight_kg"] = prev["weight_kg"]
+        return item
+    if picker_row is None:
+        return None
+    item = {
+        "exercise_id": picker_row["id"],
+        "name": picker_row["name"],
+        "label": format_exercise_picker_label(picker_row),
+        "sets": sets_var.get(),
+        "reps": reps_var.get(),
+    }
+    if hold_var.get() > 0:
+        item["hold_seconds"] = hold_var.get()
+    if set_weight_var.get() > 0:
+        item["weight_kg"] = set_weight_var.get()
+    return item
 
 
 def remove_pending_set_at(pending_sets: list[dict], index: int) -> bool:
@@ -257,6 +330,7 @@ def mount_recent_exercise_carousel(
     *,
     as_of_getter=None,
     draft_getter=None,
+    compare_session_id_ref: dict | None = None,
     window_days: int = 7,
     padding=(0, 0),
 ) -> dict:
@@ -270,6 +344,7 @@ def mount_recent_exercise_carousel(
 
     from progression.recent_compare import (
         DEFAULT_HISTORY_LIMIT,
+        aggregate_exercise_sets,
         compare_to_prior,
         exercise_history_snapshots,
         format_snapshot_card,
@@ -457,7 +532,21 @@ def mount_recent_exercise_carousel(
             repo, eid, as_of=as_of, limit=DEFAULT_HISTORY_LIMIT
         )
         state["history"] = history
-        state["prior"] = history[0] if history else None
+        compare_id = (compare_session_id_ref or {}).get("id")
+        prior = None
+        if compare_id:
+            get_session = getattr(repo, "get_workout_session", None)
+            session = get_session(compare_id) if callable(get_session) else None
+            if session is not None:
+                sets = [
+                    s
+                    for s in repo.list_workout_sets(compare_id)
+                    if (s.exercise_id or "") == eid
+                ]
+                prior = aggregate_exercise_sets(session, sets)
+        if prior is None:
+            prior = history[0] if history else None
+        state["prior"] = prior
         _refresh_cue_only()
 
     return {
@@ -795,9 +884,23 @@ def open_new_session_dialog(
     from inline_validation import make_inline_error_label, set_field_error
     from status_banner import _widget_exists, attach_banner_to_main
 
+    form_edited = {"value": False}
+    compare_session_ref: dict = {"id": None}
+    prefill_notes: list[str] = []
+
+    def mark_edited(*_args) -> None:
+        form_edited["value"] = True
+
     def request_close() -> None:
         if getattr(dialog, "_integral_log_save_in_progress", False):
             return
+        if form_edited["value"]:
+            if not messagebox.askyesno(
+                "Discard workout?",
+                "You have unsaved changes. Discard this workout log?",
+                parent=dialog,
+            ):
+                return
         dialog.destroy()
 
     dialog.protocol("WM_DELETE_WINDOW", request_close)
@@ -830,11 +933,14 @@ def open_new_session_dialog(
         row.pack(fill=tk.X, pady=3)
         ttk.Label(row, text=f"{label}:", width=16).pack(side=tk.LEFT)
         ttk.Entry(row, textvariable=var, width=28).pack(side=tk.LEFT)
+    for _var in (date_var, notes_var, duration_var, weight_var):
+        _var.trace_add("write", mark_edited)
 
     ttk.Label(
         form,
         text=(
-            "Search and click an exercise, Add Set for each movement, then Save Session. "
+            "Search and pick an exercise, then Add for each movement (metrics below). "
+            "+ Set copies the last queued row with sets=1 (same exercise). Save Session when done. "
             "Wrong pick? Choose another row, Clear selection, or Remove a queued set — no need to Cancel."
         ),
         wraplength=500,
@@ -874,14 +980,14 @@ def open_new_session_dialog(
                     item.get("hold_seconds"),
                 )
 
-            # Avoid double-counting after Add Set leaves the form unchanged.
+            # Avoid double-counting after Add leaves the form unchanged.
             if not items or _key(form_item) != _key(items[-1]):
                 items = list(items) + [form_item]
         if not items:
             return form_item
         return {"pending_items": items}
 
-    set_frame = ttk.LabelFrame(form, text="Add Set", padding=8)
+    set_frame = ttk.LabelFrame(form, text="Exercise & metrics", padding=8)
     set_frame.pack(fill=tk.BOTH, expand=True, pady=4)
 
     def on_exercise_picked(row) -> None:
@@ -917,6 +1023,7 @@ def open_new_session_dialog(
         repo,
         as_of_getter=lambda: date_var.get(),
         draft_getter=session_draft,
+        compare_session_id_ref=compare_session_ref,
     )
     # Place volume strip above Add Set after both exist.
     carousel["frame"].pack_forget()
@@ -929,16 +1036,53 @@ def open_new_session_dialog(
 
     metrics = ttk.Frame(set_frame)
     metrics.pack(fill=tk.X)
+    metric_prefilled = {"active": False}
+    prefill_bg = theme.get("accent_soft", theme.get("surface_alt", "#EEF0F3"))
+    normal_field_bg = theme.get("field_bg", theme.get("text_bg", "#FFFFFF"))
+    reps_spinbox: tk.Spinbox | None = None
+    hold_entry: tk.Entry | None = None
+    weight_entry: tk.Entry | None = None
+
+    def apply_metric_prefill_style(prefilled: bool) -> None:
+        metric_prefilled["active"] = prefilled
+        bg = prefill_bg if prefilled else normal_field_bg
+        for widget in (reps_spinbox, hold_entry, weight_entry):
+            if widget is None:
+                continue
+            try:
+                widget.configure(background=bg)
+            except tk.TclError:
+                pass
+
+    metric_prefill_suppress = {"active": False}
+
+    def clear_metric_prefill_style(*_args) -> None:
+        if metric_prefill_suppress["active"]:
+            return
+        if metric_prefilled["active"]:
+            apply_metric_prefill_style(False)
+
     for label, var in [("Sets", sets_var), ("Reps", reps_var)]:
         row = ttk.Frame(metrics)
         row.pack(fill=tk.X, pady=2)
         ttk.Label(row, text=f"{label}:", width=10).pack(side=tk.LEFT)
-        ttk.Spinbox(row, from_=0, to=999, textvariable=var, width=8).pack(side=tk.LEFT)
+        spin = tk.Spinbox(row, from_=0, to=999, textvariable=var, width=8)
+        spin.pack(side=tk.LEFT)
+        if label == "Reps":
+            reps_spinbox = spin
     for label, var in [("Hold (sec)", hold_var), ("Weight (kg)", set_weight_var)]:
         row = ttk.Frame(metrics)
         row.pack(fill=tk.X, pady=2)
         ttk.Label(row, text=f"{label}:", width=10).pack(side=tk.LEFT)
-        ttk.Entry(row, textvariable=var, width=10).pack(side=tk.LEFT)
+        entry = tk.Entry(row, textvariable=var, width=10)
+        entry.pack(side=tk.LEFT)
+        if label == "Hold (sec)":
+            hold_entry = entry
+        else:
+            weight_entry = entry
+    for _var in (sets_var, reps_var, hold_var, set_weight_var):
+        _var.trace_add("write", clear_metric_prefill_style)
+        _var.trace_add("write", mark_edited)
 
     ttk.Label(form, text="Queued sets (this session)").pack(anchor="w", pady=(8, 2))
     preview = tk.Listbox(form, height=6, exportselection=False)
@@ -949,35 +1093,122 @@ def open_new_session_dialog(
     draft_btns = ttk.Frame(form)
     draft_btns.pack(fill=tk.X, pady=(0, 4))
 
+    replace_row = ttk.Frame(form)
+    replace_var = tk.StringVar(value="Replace queued sets with your last session?")
+    ttk.Label(replace_row, textvariable=replace_var).pack(side=tk.LEFT, padx=(0, 8))
+
     def rebuild_preview() -> None:
         preview.delete(0, tk.END)
         for item in pending_sets:
             preview.insert(tk.END, format_pending_set_line(item))
+        if pending_sets:
+            copy_set_btn.config(state=tk.NORMAL)
+        else:
+            copy_set_btn.config(state=tk.DISABLED)
 
-    def add_set():
+    def focus_reps_selected() -> None:
+        if reps_spinbox is None:
+            return
+        try:
+            reps_spinbox.focus_set()
+            reps_spinbox.selection_range(0, tk.END)
+        except tk.TclError:
+            pass
+
+    def add_set(*, from_enter: bool = False, copy_previous: bool = False):
         row = picker["get_selected_row"]()
-        if row is None:
-            set_field_error(form_error, "Select an exercise from the search list before adding a set.")
+        item = copy_previous_pending_set_item(
+            pending_sets,
+            picker_row=row,
+            sets_var=sets_var,
+            reps_var=reps_var,
+            hold_var=hold_var,
+            set_weight_var=set_weight_var,
+            copy_previous=copy_previous,
+        )
+        if item is None:
+            if copy_previous:
+                set_field_error(
+                    form_error,
+                    "Queue at least one set with Add before using + Set.",
+                )
+            else:
+                set_field_error(
+                    form_error,
+                    "Select an exercise from the search list before adding a set.",
+                )
             try:
                 picker["search_entry"].focus_set()
             except (KeyError, tk.TclError):
                 pass
             return
         set_field_error(form_error, None)
-        item = {
-            "exercise_id": row["id"],
-            "name": row["name"],
-            "label": format_exercise_picker_label(row),
-            "sets": sets_var.get(),
-            "reps": reps_var.get(),
-        }
-        if hold_var.get() > 0:
-            item["hold_seconds"] = hold_var.get()
-        if set_weight_var.get() > 0:
-            item["weight_kg"] = set_weight_var.get()
         pending_sets.append(item)
+        mark_edited()
         rebuild_preview()
         carousel["refresh_draft"]()
+        if from_enter or pending_sets:
+            focus_reps_selected()
+
+    def on_metric_return(_event=None):
+        add_set(from_enter=True)
+        return "break"
+
+    if hold_entry is not None:
+        hold_entry.bind("<Return>", on_metric_return)
+    if weight_entry is not None:
+        weight_entry.bind("<Return>", on_metric_return)
+
+    def apply_repeat_prefill(*, force: bool = False) -> None:
+        if not repeat_state["enabled"]:
+            return
+        if pending_sets and not force:
+            replace_row.pack(fill=tk.X, pady=(0, 6), before=draft_btns)
+            return
+        replace_row.pack_forget()
+        log_date = date_var.get().strip()
+        items, source_id, notes = prefill_from_latest_session(repo, exclude_date=log_date)
+        items = enrich_prefill_pending_items(repo, items)
+        if not items:
+            if notes:
+                set_field_error(form_error, "; ".join(notes))
+            else:
+                set_field_error(form_error, "No prior session to repeat.")
+            return
+        pending_sets.clear()
+        pending_sets.extend(items)
+        compare_session_ref["id"] = source_id
+        form_edited["value"] = False
+        prefill_notes.clear()
+        prefill_notes.extend(notes)
+        if prefill_notes:
+            set_field_error(form_error, "; ".join(prefill_notes))
+        else:
+            set_field_error(form_error, None)
+        metric_prefill_suppress["active"] = True
+        try:
+            if items:
+                first = items[0]
+                sets_var.set(first.get("sets", 1))
+                reps_var.set(first.get("reps", 10))
+                hold_var.set(first.get("hold_seconds") or 0.0)
+                set_weight_var.set(first.get("weight_kg") or 0.0)
+        finally:
+            metric_prefill_suppress["active"] = False
+        form_edited["value"] = False
+        apply_metric_prefill_style(any(it.get("prefilled") for it in items))
+        rebuild_preview()
+        carousel["reload"]()
+
+    def confirm_replace() -> None:
+        replace_row.pack_forget()
+        apply_repeat_prefill(force=True)
+
+    def dismiss_replace() -> None:
+        replace_row.pack_forget()
+
+    ttk.Button(replace_row, text="Replace", command=confirm_replace).pack(side=tk.LEFT, padx=(0, 6))
+    ttk.Button(replace_row, text="Keep current", command=dismiss_replace).pack(side=tk.LEFT)
 
     def remove_selected_set() -> None:
         selection = preview.curselection()
@@ -989,6 +1220,10 @@ def open_new_session_dialog(
             )
             return
         if remove_pending_set_at(pending_sets, int(selection[0])):
+            mark_edited()
+            for item in pending_sets:
+                item.pop("prefilled", None)
+            apply_metric_prefill_style(False)
             rebuild_preview()
             carousel["refresh_draft"]()
 
@@ -1018,7 +1253,11 @@ def open_new_session_dialog(
             return
         set_field_error(form_error, None)
         session_date = date_var.get().strip()
-        exercise_ids = list(dict.fromkeys(item["exercise_id"] for item in pending_sets))
+        sets_payload = [
+            {k: v for k, v in item.items() if k not in ("prefilled", "exercise_note")}
+            for item in pending_sets
+        ]
+        exercise_ids = list(dict.fromkeys(item["exercise_id"] for item in sets_payload))
         progress_before = snapshot_exercise_progress_for_session(repo, exercise_ids)
         if tracker is not None:
             body_before = snapshot_body_presence_entry(tracker.entries, session_date)
@@ -1033,7 +1272,7 @@ def open_new_session_dialog(
             session = create_workout_session(
                 repo,
                 session_date,
-                pending_sets,
+                sets_payload,
                 notes=notes_var.get().strip(),
                 duration_minutes=duration_var.get() or None,
                 body_weight_kg=weight_var.get() if weight_var.get() > 0 else None,
@@ -1125,14 +1364,60 @@ def open_new_session_dialog(
             else:
                 after_persist(True, None)
 
+    repeat_state = {"enabled": find_latest_session_for_repeat(repo, exclude_date=date_var.get().strip()) is not None}
+
+    def refresh_repeat_availability(*_args) -> None:
+        has_source = (
+            find_latest_session_for_repeat(repo, exclude_date=date_var.get().strip()) is not None
+        )
+        repeat_state["enabled"] = has_source
+        if has_source:
+            repeat_btn.config(state=tk.NORMAL)
+            repeat_hint.set("")
+        else:
+            repeat_btn.config(state=tk.DISABLED)
+            repeat_hint.set("Log at least one workout on another day to enable Repeat.")
+
+    repeat_btn = ttk.Button(
+        btn_row,
+        text="Repeat last session",
+        command=lambda: apply_repeat_prefill(force=False),
+        underline=0,
+    )
+    repeat_hint = tk.StringVar(value="")
+    if not repeat_state["enabled"]:
+        repeat_btn.config(state=tk.DISABLED)
+        repeat_hint.set("Log at least one workout on another day to enable Repeat.")
+    repeat_btn.pack(side=tk.LEFT, padx=(0, 8))
+    ttk.Label(btn_row, textvariable=repeat_hint, style="Muted.TLabel").pack(side=tk.LEFT, padx=(0, 8))
+
     cancel_session_btn = ttk.Button(btn_row, text="Cancel", command=request_close)
     save_session_btn.config(command=save_session)
-    ttk.Button(btn_row, text="Add Set", command=add_set).pack(side=tk.LEFT)
+    add_exercise_btn = ttk.Button(
+        btn_row, text="Add", command=lambda: add_set(copy_previous=False)
+    )
+    add_exercise_btn.pack(side=tk.LEFT, padx=(0, 4))
+    copy_set_btn = ttk.Button(
+        btn_row, text="+ Set", command=lambda: add_set(copy_previous=True)
+    )
+    copy_set_btn.pack(side=tk.LEFT)
+    copy_set_btn.config(state=tk.DISABLED)
     save_session_btn.pack(side=tk.LEFT, padx=8)
     cancel_session_btn.pack(side=tk.LEFT)
+    date_var.trace_add("write", refresh_repeat_availability)
     from ui_accent import wire_dialog_accent_keys
 
     wire_dialog_accent_keys(dialog, save_session_btn, cancel_btn=cancel_session_btn)
+
+    def on_ctrl_save(_event=None):
+        save_session()
+        return "break"
+
+    dialog.bind("<Control-s>", on_ctrl_save, add="+")
+    dialog.bind("<Control-S>", on_ctrl_save, add="+")
+    dialog.bind("<Control-Return>", on_ctrl_save, add="+")
+    dialog.bind("<Alt-r>", lambda _e: (apply_repeat_prefill(force=False), "break"), add="+")
+    dialog.bind("<Alt-R>", lambda _e: (apply_repeat_prefill(force=False), "break"), add="+")
     return dialog
 
 

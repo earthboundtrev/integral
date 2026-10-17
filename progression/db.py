@@ -488,6 +488,129 @@ class FitnessRepository:
             )
         return workout_set
 
+    def get_workout_session(self, session_id: str) -> WorkoutSession | None:
+        self.initialize()
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT id, date, notes, duration_minutes, body_weight_kg, created_at
+                FROM workout_sessions
+                WHERE id = ?
+                """,
+                (session_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return WorkoutSession(
+            id=row["id"],
+            date=row["date"],
+            notes=row["notes"],
+            duration_minutes=row["duration_minutes"],
+            body_weight_kg=row["body_weight_kg"],
+            created_at=row["created_at"],
+        )
+
+    def list_workout_sessions_by_created_at(self, limit: int = 50) -> list[WorkoutSession]:
+        """Newest saved session first (``created_at``), ties by date then id."""
+        self.initialize()
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, date, notes, duration_minutes, body_weight_kg, created_at
+                FROM workout_sessions
+                ORDER BY COALESCE(created_at, '') DESC, date DESC, id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [
+            WorkoutSession(
+                id=row["id"],
+                date=row["date"],
+                notes=row["notes"],
+                duration_minutes=row["duration_minutes"],
+                body_weight_kg=row["body_weight_kg"],
+                created_at=row["created_at"],
+            )
+            for row in rows
+        ]
+
+    def insert_workout_session_with_sets(
+        self,
+        session: WorkoutSession,
+        sets_data: list[dict],
+    ) -> WorkoutSession:
+        """Insert session row and all sets in one SQLite transaction."""
+        from datetime import datetime, timezone
+
+        self.initialize()
+        created_at = session.created_at
+        if created_at is None:
+            created_at = datetime.now(timezone.utc).isoformat()
+        with self.connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                conn.execute(
+                    """
+                    INSERT INTO workout_sessions (
+                        id, date, notes, duration_minutes, body_weight_kg, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        session.id,
+                        session.date,
+                        session.notes,
+                        session.duration_minutes,
+                        session.body_weight_kg,
+                        created_at,
+                    ),
+                )
+                now = datetime.now(timezone.utc).isoformat()
+                for ordinal, item in enumerate(sets_data):
+                    workout_set = WorkoutSet(
+                        session_id=session.id,
+                        exercise_id=item["exercise_id"],
+                        sets=item.get("sets"),
+                        reps=item.get("reps"),
+                        hold_seconds=item.get("hold_seconds"),
+                        weight_kg=item.get("weight_kg"),
+                        form_quality=item.get("form_quality"),
+                        ordinal=ordinal,
+                        created_at=now,
+                    )
+                    conn.execute(
+                        """
+                        INSERT INTO workout_sets (
+                            id, session_id, exercise_id, sets, reps, hold_seconds,
+                            weight_kg, form_quality, ordinal, created_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            workout_set.id,
+                            workout_set.session_id,
+                            workout_set.exercise_id,
+                            workout_set.sets,
+                            workout_set.reps,
+                            workout_set.hold_seconds,
+                            workout_set.weight_kg,
+                            workout_set.form_quality,
+                            workout_set.ordinal,
+                            workout_set.created_at,
+                        ),
+                    )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return WorkoutSession(
+            id=session.id,
+            date=session.date,
+            notes=session.notes,
+            duration_minutes=session.duration_minutes,
+            body_weight_kg=session.body_weight_kg,
+            created_at=created_at,
+        )
+
     def workout_session_exists(self, session_id: str) -> bool:
         self.initialize()
         with self.connect() as conn:

@@ -16,6 +16,107 @@ BODY_MOVEMENT_CHECKLIST = "Completed movement or exercise"
 LEGACY_BODY_MOVEMENT_CHECKLIST = "Completed movement/exercise"
 
 
+def find_latest_session_for_repeat(
+    repo: FitnessRepository,
+    *,
+    exclude_date: str | None = None,
+) -> WorkoutSession | None:
+    """Latest session by save timestamp (``created_at``), optionally skipping a calendar date."""
+    exclude = (exclude_date or "").strip()
+    list_fn = getattr(repo, "list_workout_sessions_by_created_at", None)
+    if callable(list_fn):
+        sessions = list_fn(limit=5000)
+    else:
+        sessions = repo.list_workout_sessions(limit=5000)
+    for session in sessions:
+        if exclude and (session.date or "").strip() == exclude:
+            continue
+        return session
+    return None
+
+
+def _prefill_items_for_session(
+    repo: FitnessRepository,
+    session: WorkoutSession,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    rows = repo.list_workout_sets(session.id)
+    rows.sort(key=lambda s: (s.ordinal if s.ordinal is not None else 0, s.id))
+    items: list[dict[str, Any]] = []
+    skip_notes: list[str] = []
+    for workout_set in rows:
+        exercise = repo.get_exercise(workout_set.exercise_id)
+        if exercise is None:
+            skip_notes.append(f"Skipped removed exercise ({workout_set.exercise_id})")
+            continue
+        item: dict[str, Any] = {
+            "exercise_id": exercise.id,
+            "name": exercise.name,
+            "label": exercise.name,
+            "sets": workout_set.sets if workout_set.sets is not None else 1,
+            "reps": workout_set.reps if workout_set.reps is not None else 0,
+            "prefilled": True,
+        }
+        if workout_set.hold_seconds is not None and workout_set.hold_seconds > 0:
+            item["hold_seconds"] = workout_set.hold_seconds
+        if workout_set.weight_kg is not None and workout_set.weight_kg > 0:
+            item["weight_kg"] = workout_set.weight_kg
+        items.append(item)
+    return items, skip_notes
+
+
+def prefill_from_latest_session(
+    repo: FitnessRepository,
+    *,
+    exclude_date: str | None = None,
+) -> tuple[list[dict[str, Any]], str | None, list[str]]:
+    """
+    Build queued-set dicts from the latest saved session (#114).
+
+    Returns (items, source_session_id, skip_notes). Empty DB → ([], None, []).
+    Skips exercises removed from the catalog (deleted). If the newest session
+    only contains removed exercises, walks to an earlier session that still has rows.
+    """
+    exclude = (exclude_date or "").strip()
+    list_fn = getattr(repo, "list_workout_sessions_by_created_at", None)
+    if callable(list_fn):
+        sessions = list_fn(limit=5000)
+    else:
+        sessions = repo.list_workout_sessions(limit=5000)
+    skip_notes: list[str] = []
+    for session in sessions:
+        if exclude and (session.date or "").strip() == exclude:
+            continue
+        items, session_notes = _prefill_items_for_session(repo, session)
+        skip_notes.extend(session_notes)
+        if items:
+            return items, session.id, skip_notes
+    return [], None, skip_notes
+
+
+def _insert_session_and_sets(
+    repo: FitnessRepository,
+    session: WorkoutSession,
+    sets_data: list[dict[str, Any]],
+) -> WorkoutSession:
+    insert_fn = getattr(repo, "insert_workout_session_with_sets", None)
+    if callable(insert_fn):
+        return insert_fn(session, sets_data)
+    repo.add_workout_session(session)
+    for ordinal, item in enumerate(sets_data):
+        workout_set = WorkoutSet(
+            session_id=session.id,
+            exercise_id=item["exercise_id"],
+            sets=item.get("sets"),
+            reps=item.get("reps"),
+            hold_seconds=item.get("hold_seconds"),
+            weight_kg=item.get("weight_kg"),
+            form_quality=item.get("form_quality"),
+            ordinal=ordinal,
+        )
+        repo.add_workout_set(workout_set)
+    return session
+
+
 def create_workout_session(
     repo: FitnessRepository,
     date: str,
@@ -30,37 +131,40 @@ def create_workout_session(
         duration_minutes=duration_minutes,
         body_weight_kg=body_weight_kg,
     )
-    repo.add_workout_session(session)
-
-    for ordinal, item in enumerate(sets_data):
-        workout_set = WorkoutSet(
-            session_id=session.id,
-            exercise_id=item["exercise_id"],
-            sets=item.get("sets"),
-            reps=item.get("reps"),
-            hold_seconds=item.get("hold_seconds"),
-            weight_kg=item.get("weight_kg"),
-            form_quality=item.get("form_quality"),
-            ordinal=ordinal,
-        )
-        repo.add_workout_set(workout_set)
-
-        performance = {}
-        if workout_set.sets is not None:
-            performance["sets"] = workout_set.sets
-        if workout_set.reps is not None:
-            performance["reps"] = workout_set.reps
-        if workout_set.hold_seconds is not None:
-            performance["hold_seconds"] = workout_set.hold_seconds
-        if workout_set.weight_kg is not None:
-            performance["weight_kg"] = workout_set.weight_kg
-        if performance:
-            record_performance(
+    exercise_ids = list(dict.fromkeys(item["exercise_id"] for item in sets_data))
+    progress_before = snapshot_exercise_progress_for_session(repo, exercise_ids)
+    session_persisted = False
+    try:
+        session = _insert_session_and_sets(repo, session, sets_data)
+        session_persisted = True
+        for item in sets_data:
+            performance = {}
+            if item.get("sets") is not None:
+                performance["sets"] = item["sets"]
+            if item.get("reps") is not None:
+                performance["reps"] = item["reps"]
+            if item.get("hold_seconds") is not None:
+                performance["hold_seconds"] = item["hold_seconds"]
+            if item.get("weight_kg") is not None:
+                performance["weight_kg"] = item["weight_kg"]
+            if performance:
+                record_performance(
+                    repo,
+                    item["exercise_id"],
+                    performance,
+                    session_id=session.id,
+                )
+    except Exception:
+        if session_persisted and getattr(repo, "workout_session_exists", lambda _id: False)(
+            session.id
+        ):
+            undo_workout_session_log(
                 repo,
-                workout_set.exercise_id,
-                performance,
-                session_id=session.id,
+                session.id,
+                exercise_ids=exercise_ids,
+                progress_snapshots=progress_before,
             )
+        raise
 
     return session
 
