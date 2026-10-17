@@ -232,10 +232,22 @@ def test_keyboard_shortcuts_bound(tracker):
     
     assert ("<Control-k>" in binds_str or "<Control-K>" in binds_str or
             "Control-Key-k" in binds_str or "Control-Key-K" in binds_str), "Ctrl+K not bound"
-    assert ("<Control-R>" in binds_str or "Control-Key-R" in binds_str), "Ctrl+Shift+R not bound"
-    assert ("<Control-J>" in binds_str or "Control-Key-J" in binds_str), "Ctrl+Shift+J not bound"
-    assert ("<Control-G>" in binds_str or "Control-Key-G" in binds_str), "Ctrl+Shift+G not bound"
-    assert ("<Control-I>" in binds_str or "Control-Key-I" in binds_str), "Ctrl+Shift+I not bound"
+    def _shift_letter(ch: str) -> bool:
+        u, lo = ch.upper(), ch.lower()
+        return (
+            f"<Control-Shift-{u}>" in binds_str
+            or f"<Control-Shift-{lo}>" in binds_str
+            or f"<Control-Shift-Key-{u}>" in binds_str
+            or f"<Control-Shift-Key-{lo}>" in binds_str
+        )
+
+    assert _shift_letter("R"), "Ctrl+Shift+R not bound"
+    assert _shift_letter("J"), "Ctrl+Shift+J not bound"
+    assert _shift_letter("G"), "Ctrl+Shift+G not bound"
+    assert _shift_letter("I"), "Ctrl+Shift+I not bound"
+    assert _shift_letter("T"), "Ctrl+Shift+T not bound"
+    assert _shift_letter("W"), "Ctrl+Shift+W not bound"
+    assert "<F1>" in binds_str or "<Key-F1>" in binds_str, "F1 shortcuts list not bound"
 
 
 def test_window_tracking_on_close(tracker):

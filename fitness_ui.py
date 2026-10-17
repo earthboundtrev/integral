@@ -948,6 +948,7 @@ def open_new_session_dialog(
     from ui_accent import wire_dialog_accent_keys
 
     wire_dialog_accent_keys(dialog, save_session_btn, cancel_btn=cancel_session_btn)
+    return dialog
 
 
 def show_fitness_window(
