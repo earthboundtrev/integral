@@ -201,19 +201,28 @@ class TestJournalWindowLayout(unittest.TestCase):
 
     def test_entry_list_hover_index_ignores_gap_between_rows(self) -> None:
         root = tk.Tk()
-        root.withdraw()
+        root.geometry("280x160")
         try:
-            lb = tk.Listbox(root, height=4)
+            lb = tk.Listbox(root, height=6)
             lb.pack()
             for i in range(3):
                 lb.insert(tk.END, f"Row {i}")
-            root.update_idletasks()
+            root.update()
             bbox0 = lb.bbox(0)
             assert bbox0 is not None
-            inside = bbox0[1] + bbox0[3] // 2
-            self.assertEqual(_entry_list_hover_index(lb, inside, 3), 0)
-            gap_y = bbox0[1] + bbox0[3] + 2
-            self.assertIsNone(_entry_list_hover_index(lb, gap_y, 3))
+            inside0 = bbox0[1] + bbox0[3] // 2
+            self.assertEqual(_entry_list_hover_index(lb, inside0, 3), 0)
+            bbox1 = lb.bbox(1)
+            assert bbox1 is not None
+            gap_y = bbox1[1] - 1
+            if gap_y > bbox0[1]:
+                self.assertIsNone(_entry_list_hover_index(lb, gap_y, 3))
+            inside1 = bbox1[1] + bbox1[3] // 2
+            self.assertEqual(_entry_list_hover_index(lb, inside1, 3), 1)
+            bbox2 = lb.bbox(2)
+            assert bbox2 is not None
+            below_last = bbox2[1] + bbox2[3] + 5
+            self.assertIsNone(_entry_list_hover_index(lb, below_last, 3))
         finally:
             root.destroy()
 

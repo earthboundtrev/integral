@@ -30,7 +30,7 @@ def _entry_list_hover_index(listbox: tk.Listbox, y: int, item_count: int) -> int
     bbox = listbox.bbox(idx)
     if not bbox:
         return None
-    row_y, _row_x, _row_w, row_h = bbox
+    _row_x, row_y, _row_w, row_h = bbox
     if y < row_y or y >= row_y + row_h:
         return None
     return idx
@@ -317,7 +317,8 @@ def show_journal_window(
         if apply_selection and select_index is not None:
             entry_list.selection_set(select_index)
             entry_list.see(select_index)
-        entry_list.yview_moveto(yview[0])
+        if restore_yview is not None:
+            entry_list.yview_moveto(yview[0])
 
     def refresh_list(select_id: str | None = None) -> None:
         nonlocal indexed_entries
