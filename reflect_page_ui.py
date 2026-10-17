@@ -365,7 +365,48 @@ class DomainReflectRow:
         self.notes.delete("1.0", tk.END)
         if existing.get("notes"):
             self.notes.insert("1.0", existing["notes"])
+        if self.details_built:
+            for item, var in self.check_vars.items():
+                var.set(bool(existing.get("checklist", {}).get(item, False)))
+            for name, var in self.metric_vars.items():
+                metric_def = next(
+                    (m for m in self.cat_data.get("metrics", []) if m["name"] == name),
+                    None,
+                )
+                default = metric_def.get("default", 0) if metric_def else 0
+                existing_val = existing.get("metrics", {}).get(name, default)
+                try:
+                    if isinstance(var, tk.DoubleVar):
+                        var.set(float(existing_val))
+                    else:
+                        var.set(int(existing_val))
+                except (tk.TclError, TypeError, ValueError):
+                    pass
+            self.checklist_touched.clear()
+            self.metrics_touched.clear()
         set_field_error(self.domain_error, None)
+
+    def commit_saved_baseline(self, existing: dict | None = None) -> None:
+        """Reset dirty baseline after a successful save."""
+        if existing is not None:
+            self._existing_entry = existing
+        rating = self.rating_row.get_rating()
+        self._initial_rating = rating
+        self._initial_notes = self.notes_text()
+        self.checklist_touched.clear()
+        self.metrics_touched.clear()
+
+    def is_dirty_vs_storage(self, date_str: str, entries: dict) -> bool:
+        stored = entries.get(date_str, {}).get(self.cat_name, {})
+        if self.should_remove_entry():
+            return bool(stored)
+        err = self.validation_error()
+        if err:
+            return True
+        payload = self.build_payload()
+        if payload is not None:
+            return merge_entry_updates(stored, payload) != stored
+        return False
 
     def should_remove_entry(self) -> bool:
         """User cleared a rating that existed when the page opened."""
@@ -375,8 +416,6 @@ class DomainReflectRow:
         rating = self.rating_row.get_rating()
         notes = self.notes_text()
         if rating is not None or not notes:
-            return None
-        if self._initial_rating is not None:
             return None
         if notes == self._initial_notes:
             return None
@@ -448,8 +487,6 @@ def save_reflect_page(
             day = tracker.entries.get(date_str)
             if day and row.cat_name in day:
                 del day[row.cat_name]
-                if not day:
-                    tracker.entries.pop(date_str, None)
                 changed = True
             continue
         payload = row.build_payload()
@@ -459,7 +496,11 @@ def save_reflect_page(
         merged = merge_entry_updates(existing, payload)
         if merged != existing:
             changed = True
-        tracker.entries[date_str][row.cat_name] = merged
+        tracker.entries.setdefault(date_str, {})[row.cat_name] = merged
+
+    day_after = tracker.entries.get(date_str)
+    if day_after is not None and not day_after:
+        tracker.entries.pop(date_str, None)
 
     if not changed:
         banner = tracker.ensure_status_banner()
@@ -573,9 +614,18 @@ def open_reflect_page(tracker: PersonalDevelopmentTracker) -> tk.Toplevel:
         row.frame.pack(fill=tk.X, pady=(0, 10))
         rows.append(row)
 
-    def reload_rows_from_storage() -> None:
+    def reload_row_from_storage(category: str) -> None:
         day_entries = tracker.entries.get(date_str, {})
         for row in rows:
+            if row.cat_name == category:
+                row.reload_from_entry(day_entries.get(category, {}))
+                break
+
+    def reload_rows_from_storage_respecting_dirty() -> None:
+        for row in rows:
+            if row.is_dirty_vs_storage(date_str, tracker.entries):
+                continue
+            day_entries = tracker.entries.get(date_str, {})
             row.reload_from_entry(day_entries.get(row.cat_name, {}))
 
     storage_snapshot: dict = copy.deepcopy(tracker.entries.get(date_str, {}))
@@ -588,9 +638,20 @@ def open_reflect_page(tracker: PersonalDevelopmentTracker) -> tk.Toplevel:
         cat = row.cat_name
 
         def open_full_form(category: str = cat) -> None:
-            tracker.open_log_dialog(category, date_str=date_str)
-            reload_rows_from_storage()
-            sync_storage_snapshot()
+            def when_closed(saved: bool) -> None:
+                if saved:
+                    reload_row_from_storage(category)
+                    sync_storage_snapshot()
+
+            dialog = tracker.open_log_dialog(
+                category,
+                date_str=date_str,
+                on_closed=when_closed,
+            )
+            try:
+                dialog.wait_window()
+            except tk.TclError:
+                pass
 
         row.set_full_form_command(lambda c=cat: open_full_form(c))
 
@@ -631,6 +692,13 @@ def open_reflect_page(tracker: PersonalDevelopmentTracker) -> tk.Toplevel:
             tracker._integral_reflect_save_in_progress = False
             save_btn.config(state=tk.NORMAL)
             if ok:
+                day_entries = tracker.entries.get(date_str, {})
+                for r in rows:
+                    stored = day_entries.get(r.cat_name, {})
+                    if stored:
+                        r.commit_saved_baseline(stored)
+                    else:
+                        r.reload_from_entry({})
                 sync_storage_snapshot()
 
         save_reflect_page(
@@ -663,7 +731,7 @@ def open_reflect_page(tracker: PersonalDevelopmentTracker) -> tk.Toplevel:
         if event.widget is not win:
             return
         if tracker.entries.get(date_str, {}) != storage_snapshot:
-            reload_rows_from_storage()
+            reload_rows_from_storage_respecting_dirty()
             sync_storage_snapshot()
 
     win.bind("<FocusIn>", on_reflect_focus_in, add="+")

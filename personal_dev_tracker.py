@@ -2394,7 +2394,13 @@ class PersonalDevelopmentTracker:
         parent_window.destroy()
         self.open_log_dialog(cat_name, date_str=date_str)
 
-    def open_log_dialog(self, cat_name: str, date_str: str | None = None) -> None:
+    def open_log_dialog(
+        self,
+        cat_name: str,
+        date_str: str | None = None,
+        *,
+        on_closed: Callable[[bool], None] | None = None,
+    ) -> tk.Toplevel:
         dialog = tk.Toplevel(self.root)
         dialog.title(f"Log: {cat_name}")
         dialog.geometry("600x720")
@@ -2562,7 +2568,10 @@ class PersonalDevelopmentTracker:
             def mark_metric(_event=None, name=metric_name) -> None:
                 metrics_touched.add(name)
 
-            metric_widget.bind("<FocusOut>", mark_metric, add="+")
+            metric_widget.bind("<KeyRelease>", mark_metric, add="+")
+            if metric_type != "number":
+                metric_widget.bind("<<Increment>>", mark_metric, add="+")
+                metric_widget.bind("<<Decrement>>", mark_metric, add="+")
 
         ttk.Label(
             inner,
@@ -2573,6 +2582,16 @@ class PersonalDevelopmentTracker:
 
         date_var.trace_add("write", load_existing)
         load_existing()
+
+        def request_close_log(*, saved: bool = False) -> None:
+            if getattr(dialog, "_integral_log_save_in_progress", False) and not saved:
+                return
+            if on_closed is not None and not getattr(dialog, "_integral_log_on_closed_fired", False):
+                dialog._integral_log_on_closed_fired = True
+                on_closed(saved)
+            dialog.destroy()
+
+        dialog._integral_request_close_log = request_close_log
 
         save_log_btn = ttk.Button(
             footer_btns,
@@ -2614,14 +2633,9 @@ class PersonalDevelopmentTracker:
                 text="Log writing session",
                 command=lambda: self.log_writing_session_for_day(date_var.get().strip(), parent=dialog),
             ).pack(side=tk.LEFT, padx=(0, 8))
-        def request_close_log() -> None:
-            if getattr(dialog, "_integral_log_save_in_progress", False):
-                return
-            dialog.destroy()
-
-        cancel_log_btn = ttk.Button(footer_btns, text="Cancel", command=request_close_log)
+        cancel_log_btn = ttk.Button(footer_btns, text="Cancel", command=lambda: request_close_log(saved=False))
         cancel_log_btn.pack(side=tk.LEFT)
-        dialog.protocol("WM_DELETE_WINDOW", request_close_log)
+        dialog.protocol("WM_DELETE_WINDOW", lambda: request_close_log(saved=False))
         from ui_accent import wire_dialog_accent_keys
 
         wire_dialog_accent_keys(dialog, save_log_btn, cancel_btn=cancel_log_btn)
@@ -2631,6 +2645,8 @@ class PersonalDevelopmentTracker:
             style="Muted.TLabel",
             wraplength=560,
         ).pack(anchor="w", pady=(8, 0))
+
+        return dialog
 
     def save_log(
         self,
@@ -2746,7 +2762,11 @@ class PersonalDevelopmentTracker:
                     cancel_log_btn.config(state=tk.NORMAL)
                 return
             if _widget_exists(dialog):
-                dialog.destroy()
+                close_fn = getattr(dialog, "_integral_request_close_log", None)
+                if close_fn is not None:
+                    close_fn(saved=True)
+                else:
+                    dialog.destroy()
             if date_str == self.today_str() and self._reminder_scheduler is not None:
                 self._reminder_scheduler.notify_logged_today()
             self.refresh_dashboard()
