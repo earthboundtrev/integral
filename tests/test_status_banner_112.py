@@ -77,6 +77,7 @@ class TestSavedMessageboxRemoved(unittest.TestCase):
     def test_no_saved_messagebox_in_fitness_ui(self):
         text = Path("fitness_ui.py").read_text(encoding="utf-8")
         self.assertNotIn('messagebox.showinfo("Saved"', text)
+        self.assertNotIn('messagebox.showinfo("Logged"', text)
 
     def test_no_saved_messagebox_in_save_log(self):
         text = Path("personal_dev_tracker.py").read_text(encoding="utf-8")
@@ -148,12 +149,62 @@ class TestSaveFailureBanner(unittest.TestCase):
             tracker._invoke_save_callbacks = lambda cbs, ok, err: PersonalDevelopmentTracker._invoke_save_callbacks(
                 tracker, cbs, ok, err
             )
-            tracker._schedule_chained_flush = lambda sync=False: None
-            with patch("personal_dev_tracker.save_data_file", side_effect=OSError("locked")):
+            tracker._schedule_chained_flush = lambda sync=False: PersonalDevelopmentTracker._schedule_chained_flush(
+                tracker, sync=sync
+            )
+            with patch("personal_dev_tracker.save_data_file", side_effect=OSError("locked")) as mock_save:
                 PersonalDevelopmentTracker._flush_save(tracker, sync=True)
             root.update()
             self.assertEqual(banner._kind, "error")
             self.assertIn("data.json", banner._message_var.get() or DATA_FILE)
+            self.assertIsNone(tracker._pending_save_payload)
+            self.assertEqual(mock_save.call_count, 1)
+        finally:
+            root.destroy()
+
+    def test_flush_save_locked_does_not_recurse(self):
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            from personal_dev_tracker import PersonalDevelopmentTracker
+
+            host = tk.Frame(root)
+            host.pack()
+            theme = {"error_bg": "#FEE2E2", "error": "#DC2626", "fg": "#111", "card_border": "#ccc"}
+            banner = StatusBanner(host, theme)
+            tracker = SimpleNamespace(
+                root=root,
+                theme=theme,
+                settings={},
+                vault_passphrase=None,
+                _status_banner=banner,
+                _save_after_callbacks=[],
+                _save_write_in_progress=False,
+                _save_after_id=None,
+                _pending_save_payload={"entries": {}},
+                ensure_status_banner=lambda: banner,
+            )
+            tracker._show_save_error_banner = lambda err: PersonalDevelopmentTracker._show_save_error_banner(
+                tracker, err
+            )
+            tracker._invoke_save_callbacks = lambda cbs, ok, err: PersonalDevelopmentTracker._invoke_save_callbacks(
+                tracker, cbs, ok, err
+            )
+            tracker._schedule_chained_flush = lambda sync=False: PersonalDevelopmentTracker._schedule_chained_flush(
+                tracker, sync=sync
+            )
+            banner_errors: list[str] = []
+
+            def count_errors(err):
+                banner_errors.append(str(err))
+                PersonalDevelopmentTracker._show_save_error_banner(tracker, err)
+
+            tracker._show_save_error_banner = count_errors
+            with patch("personal_dev_tracker.save_data_file", side_effect=OSError("locked")) as mock_save:
+                PersonalDevelopmentTracker._flush_save(tracker, sync=True)
+            self.assertEqual(mock_save.call_count, 1)
+            self.assertEqual(len(banner_errors), 1)
+            self.assertIsNone(tracker._pending_save_payload)
         finally:
             root.destroy()
 

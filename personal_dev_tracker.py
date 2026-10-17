@@ -938,6 +938,8 @@ class PersonalDevelopmentTracker:
                     self._pending_save_payload = None
             else:
                 self._show_save_error_banner(error)
+                if self._pending_save_payload is payload:
+                    self._pending_save_payload = None
             self._schedule_chained_flush(sync=sync)
 
         def run_async() -> None:
@@ -2576,6 +2578,8 @@ class PersonalDevelopmentTracker:
                 rating_error=rating_error,
                 validate_date=validate_date_field,
                 validate_rating=validate_rating_field,
+                save_log_btn=save_log_btn,
+                cancel_log_btn=cancel_log_btn,
             ),
         )
         save_log_btn.pack(side=tk.LEFT, padx=(0, 8))
@@ -2621,7 +2625,11 @@ class PersonalDevelopmentTracker:
         rating_error: tk.Label | None = None,
         validate_date: Callable[[], str | None] | None = None,
         validate_rating: Callable[[], str | None] | None = None,
+        save_log_btn: tk.Misc | None = None,
+        cancel_log_btn: tk.Misc | None = None,
     ) -> None:
+        if getattr(dialog, "_integral_log_save_in_progress", False):
+            return
         date_str = date_var.get().strip()
         reason = backdate_var.get().strip()
         date_msg = validate_date() if validate_date else journal.validate_backdate(date_str, reason=reason)
@@ -2684,13 +2692,24 @@ class PersonalDevelopmentTracker:
         if hint and hint.suggested_actions and not self.settings.get("hide_post_log_guidance"):
             guidance_text = f"{hint.message}\n\nTry: {hint.suggested_actions[0]}"
 
+        dialog._integral_log_save_in_progress = True
+        if save_log_btn is not None:
+            save_log_btn.config(state=tk.DISABLED)
+        if cancel_log_btn is not None:
+            cancel_log_btn.config(state=tk.DISABLED)
+
         def on_saved(ok: bool, _err: BaseException | None) -> None:
+            dialog._integral_log_save_in_progress = False
             if not ok:
                 if prior_day is None:
                     self.entries.pop(date_str, None)
                 else:
                     self.entries[date_str] = prior_day
                 self._invalidate_caches()
+                if save_log_btn is not None:
+                    save_log_btn.config(state=tk.NORMAL)
+                if cancel_log_btn is not None:
+                    cancel_log_btn.config(state=tk.NORMAL)
                 return
             dialog.destroy()
             if date_str == self.today_str() and self._reminder_scheduler is not None:

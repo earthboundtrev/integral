@@ -15,6 +15,7 @@ from progression.sessions import (
     link_session_to_body_presence,
     snapshot_body_presence_entry,
     snapshot_exercise_progress,
+    snapshot_exercise_progress_for_session,
     sync_fitness_sessions_to_entries,
     undo_workout_session_log,
 )
@@ -513,6 +514,7 @@ def open_log_dialog_for_exercise(
     from progression.engine import exercise_log_allowed
     from progression.sessions import create_workout_session
     from progression.video_catalog import get_exercise_video, open_exercise_video
+    from status_banner import attach_banner_to_main
 
     exercise = repo.get_exercise(exercise_id)
     if exercise is None:
@@ -666,18 +668,19 @@ def open_log_dialog_for_exercise(
         except ValueError as exc:
             messagebox.showwarning("Cannot log", str(exc), parent=dialog)
             return
-        dialog.destroy()
+        session_date = date_var.get().strip()
         if on_session_saved:
-            on_session_saved(session.date)
+            on_session_saved(session_date)
         else:
             data = storage.load()
-            data = link_session_to_body_presence(data, session.date)
+            data = link_session_to_body_presence(data, session_date)
             storage.save(data)
         if on_saved:
             on_saved()
         progress = repo.get_user_progress(exercise_id)
         status = progress.status if progress else "logged"
-        messagebox.showinfo("Logged", f"{exercise.name}: {status}")
+        dialog.destroy()
+        attach_banner_to_main(parent, theme).show_success(f"{exercise.name}: {status}")
 
     save_btn = ttk.Button(footer_btns, text="Save Log", style="Accent.TButton", command=save)
     save_btn.pack(side=tk.LEFT, padx=(0, 8))
@@ -939,7 +942,7 @@ def open_new_session_dialog(
         set_field_error(form_error, None)
         session_date = date_var.get().strip()
         exercise_ids = list(dict.fromkeys(item["exercise_id"] for item in pending_sets))
-        progress_before = snapshot_exercise_progress(repo, exercise_ids)
+        progress_before = snapshot_exercise_progress_for_session(repo, exercise_ids)
         if tracker is not None:
             body_before = snapshot_body_presence_entry(tracker.entries, session_date)
         else:
@@ -947,6 +950,7 @@ def open_new_session_dialog(
             body_before = snapshot_body_presence_entry(stored.get("entries", {}), session_date)
         main_banner = attach_banner_to_main(parent, theme, tracker=tracker)
         save_session_btn.config(state=tk.DISABLED)
+        cancel_session_btn.config(state=tk.DISABLED)
 
         try:
             session = create_workout_session(
@@ -959,6 +963,7 @@ def open_new_session_dialog(
             )
         except Exception as exc:  # noqa: BLE001
             save_session_btn.config(state=tk.NORMAL)
+            cancel_session_btn.config(state=tk.NORMAL)
             if is_fitness_db_lock_error(exc):
                 main_banner.show_error(
                     f"Could not save workout: {exc}",
@@ -972,6 +977,7 @@ def open_new_session_dialog(
 
         def after_persist(ok: bool, err: BaseException | None) -> None:
             save_session_btn.config(state=tk.NORMAL)
+            cancel_session_btn.config(state=tk.NORMAL)
             if not ok:
                 undo_workout_session_log(
                     repo,
@@ -1037,10 +1043,10 @@ def open_new_session_dialog(
             else:
                 after_persist(True, None)
 
+    cancel_session_btn = ttk.Button(btn_row, text="Cancel", command=dialog.destroy)
     save_session_btn.config(command=save_session)
     ttk.Button(btn_row, text="Add Set", command=add_set).pack(side=tk.LEFT)
     save_session_btn.pack(side=tk.LEFT, padx=8)
-    cancel_session_btn = ttk.Button(btn_row, text="Cancel", command=dialog.destroy)
     cancel_session_btn.pack(side=tk.LEFT)
     from ui_accent import wire_dialog_accent_keys
 

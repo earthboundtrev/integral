@@ -176,11 +176,37 @@ def restore_body_presence_entry(
     day[BODY_PRESENCE_CATEGORY] = copy.deepcopy(snapshot)
 
 
+def exercise_ids_affected_by_logging(
+    repo: FitnessRepository,
+    exercise_ids: list[str],
+) -> list[str]:
+    """Progress rows that logging may update, including unlock targets along outgoing edges."""
+    seen: set[str] = set()
+    queue = list(dict.fromkeys(exercise_ids))
+    while queue:
+        exercise_id = queue.pop(0)
+        if exercise_id in seen:
+            continue
+        seen.add(exercise_id)
+        for edge in repo.list_outgoing_edges(exercise_id):
+            queue.append(edge.to_exercise_id)
+    return list(seen)
+
+
 def snapshot_exercise_progress(
     repo: FitnessRepository,
     exercise_ids: list[str],
 ) -> dict[str, UserExerciseProgress | None]:
     return {exercise_id: repo.get_user_progress(exercise_id) for exercise_id in exercise_ids}
+
+
+def snapshot_exercise_progress_for_session(
+    repo: FitnessRepository,
+    exercise_ids: list[str],
+) -> dict[str, UserExerciseProgress | None]:
+    """Snapshot session exercises plus progression unlock side-effects for undo."""
+    affected = exercise_ids_affected_by_logging(repo, exercise_ids)
+    return snapshot_exercise_progress(repo, affected)
 
 
 def restore_exercise_progress(

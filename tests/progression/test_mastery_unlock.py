@@ -56,6 +56,42 @@ def test_record_performance_marks_mastered_and_sets_achieved_at(tmp_path):
     assert stored.best_reps == 5
 
 
+def test_undo_workout_session_reverts_unlock_side_effects(tmp_path):
+    from progression.sessions import (
+        create_workout_session,
+        snapshot_exercise_progress_for_session,
+        undo_workout_session_log,
+    )
+
+    repo = make_repo(tmp_path)
+    wall = add_exercise(repo, "Wall Push-up")
+    incline = add_exercise(repo, "Incline Push-up")
+    repo.add_edge(
+        ProgressionEdge(
+            from_exercise_id=wall.id,
+            to_exercise_id=incline.id,
+            unlock_condition={"requires": "mastered"},
+        )
+    )
+
+    progress_before = snapshot_exercise_progress_for_session(repo, [wall.id])
+    session = create_workout_session(
+        repo,
+        "2026-06-27",
+        [{"exercise_id": wall.id, "sets": 3, "reps": 5}],
+    )
+    assert repo.get_user_progress(incline.id).status == "available"
+
+    undo_workout_session_log(
+        repo,
+        session.id,
+        exercise_ids=[wall.id],
+        progress_snapshots=progress_before,
+    )
+    assert repo.get_user_progress(wall.id) is None
+    assert repo.get_user_progress(incline.id) is None
+
+
 def test_mastered_edge_unlocks_target_as_available(tmp_path):
     repo = make_repo(tmp_path)
     wall = add_exercise(repo, "Wall Push-up")
