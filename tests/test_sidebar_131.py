@@ -41,6 +41,8 @@ def _mock_tracker_init(self, root):
     self._session_counts_cache = None
     self._save_after_id = None
     self._pending_save_payload = None
+    self._save_after_callbacks = []
+    self._save_write_in_progress = False
     self._fitness_state_dirty = False
     self._dashboard_ready = False
     self._categories_tab_built = False
