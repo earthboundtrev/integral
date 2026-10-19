@@ -27,7 +27,9 @@ def _mock_tracker(root: tk.Tk) -> MagicMock:
     tracker.entries = {}
     tracker.sessions = []
     tracker.creative_projects = {"projects": []}
-    today = "2026-10-17"
+    # Read the date from the same clock journal.create_entry uses, so the
+    # fixture stays "today" on any day the tests run.
+    today = journal.date.today().isoformat()
     tracker.today_str.return_value = today
     tracker._invalidate_caches = MagicMock()
     tracker.refresh_dashboard = MagicMock()
