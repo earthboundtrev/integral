@@ -147,6 +147,8 @@ def create_workout_session(
                 performance["hold_seconds"] = item["hold_seconds"]
             if item.get("weight_kg") is not None:
                 performance["weight_kg"] = item["weight_kg"]
+            if item.get("form_quality") is not None:
+                performance["form_quality"] = item["form_quality"]
             if performance:
                 record_performance(
                     repo,
