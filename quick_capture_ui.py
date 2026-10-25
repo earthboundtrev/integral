@@ -78,6 +78,7 @@ def open_quick_capture_panel(tracker: PersonalDevelopmentTracker) -> tk.Toplevel
         tracker.set_quick_capture_enabled(False, persist=True)
 
     win.protocol("WM_DELETE_WINDOW", on_close)
+    win._qc_building = True
 
     # Show a delayed busy indicator during build (issue #120).
     # The indicator appears only if the build takes longer than 180 ms.
@@ -105,6 +106,7 @@ def open_quick_capture_panel(tracker: PersonalDevelopmentTracker) -> tk.Toplevel
     def _on_build_error(exc: BaseException) -> None:
         try:
             if win.winfo_exists():
+                win._qc_building = False
                 indicator.stop()
         except tk.TclError:
             pass
@@ -241,6 +243,7 @@ class _QuickCaptureBuild:
         refresh_scroll_region(self.canvas, self.inner)
 
     def _phase_finalize(self) -> None:
+        self.win._qc_building = False
         self.refresh_dw_timer()
         self.win.update_idletasks()
         refresh_scroll_region(self.canvas, self.inner)
@@ -417,6 +420,8 @@ class _QuickCaptureBuild:
             tracker.save_data(flush=True)
 
         def rebuild_todo_lists() -> None:
+            if getattr(win, "_qc_building", False):
+                return
             for child in self.today_list.winfo_children():
                 child.destroy()
             for child in self.upcoming_list.winfo_children():
