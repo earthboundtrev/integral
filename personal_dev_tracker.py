@@ -765,25 +765,29 @@ class PersonalDevelopmentTracker:
             self.settings["fitness"] = get_fitness_settings(self.settings)
             self.sessions = migrated.get("sessions", [])
             self._invalidate_session_counts()
-            
+
+            on_disk_encrypted = is_encrypted_file(DATA_FILE)
+            if on_disk_encrypted and not self.settings.get("encryption_enabled"):
+                self.settings["encryption_enabled"] = True
+
             migration_dirty = False
             if self.sessions:
                 from legacy_fitness_migration import run_in_memory_migration
                 from progression.db import get_fitness_db_path
 
+                journal_encrypted = on_disk_encrypted or bool(
+                    self.settings.get("encryption_enabled")
+                )
                 needs_migration = any(
                     not sess.get("migrated_to_fitness_db") for sess in self.sessions
                 )
-                if needs_migration and (
-                    not self.settings.get("encryption_enabled") or self.vault_passphrase
-                ):
+                if needs_migration and (not journal_encrypted or self.vault_passphrase):
                     try:
-                        encrypted = bool(self.settings.get("encryption_enabled"))
                         result = run_in_memory_migration(
                             self.sessions,
                             get_fitness_db_path(),
                             data_path=DATA_FILE,
-                            include_free_text_notes=not encrypted,
+                            include_free_text_notes=not journal_encrypted,
                         )
                         if result.get("flagged_count", 0) > 0:
                             migration_dirty = True

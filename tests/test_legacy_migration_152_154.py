@@ -83,6 +83,28 @@ class TestLegacyMigration152154(unittest.TestCase):
         self.assertFalse(result.get("backed_up"))
         self.assertIn("migrated_to_fitness_db", sessions[0])
 
+    def test_envelope_without_inner_encryption_flag_omits_notes_from_db(self):
+        """On-disk vault envelope is source of truth even if settings omit the flag."""
+        secret_note = "envelope-only-secret"
+        passphrase = "pässwörd"
+        sessions = [{"date": "2026-10-04", "notes": secret_note}]
+        payload = {"schema_version": 2, "sessions": sessions, "settings": {}}
+        envelope = encrypt_payload(payload, passphrase)
+        with open(self.data_path, "w", encoding="utf-8") as handle:
+            json.dump(envelope, handle)
+
+        data = load_data_file(self.data_path, passphrase)
+        result = run_in_memory_migration(
+            data["sessions"],
+            self.db_path,
+            data_path=self.data_path,
+            include_free_text_notes=False,
+        )
+        self.assertEqual(result["migrated_count"], 1)
+        with open(self.db_path, "rb") as handle:
+            db_bytes = handle.read()
+        self.assertNotIn(secret_note.encode("utf-8"), db_bytes)
+
     def test_encrypted_data_json_backup_is_ciphertext(self):
         secret_note = "pässwörd-secret-note-ü"
         passphrase = "pässwörd"
