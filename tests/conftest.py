@@ -6,6 +6,8 @@ import tkinter as tk
 
 import pytest
 
+import paths
+
 
 def pump_tk(root: tk.Misc, steps: int = 25) -> None:
     """Process pending Tk events (chunked dashboard builds use after_idle)."""
@@ -15,6 +17,14 @@ def pump_tk(root: tk.Misc, steps: int = 25) -> None:
             root.update()
         except tk.TclError:
             break
+
+
+@pytest.fixture(autouse=True)
+def _isolated_user_data_home(tmp_path, monkeypatch):
+    """Never touch the developer's real ~/.integral during pytest."""
+    home = tmp_path / "integral-user-data"
+    home.mkdir()
+    monkeypatch.setattr(paths, "user_data_dir", lambda: str(home))
 
 
 @pytest.fixture(autouse=True)

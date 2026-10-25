@@ -96,6 +96,42 @@ def legacy_user_data_directories() -> list[str]:
     return unique
 
 
+def _data_json_is_empty_placeholder(path: str) -> bool:
+    """True when data.json is a fresh-install stub (safe to sideline, not real history)."""
+    if not os.path.isfile(path):
+        return False
+    try:
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return False
+    if not isinstance(data, dict):
+        return False
+    if data.get("integral_encrypted"):
+        return False
+    if data.get("entries"):
+        return False
+    if data.get("sessions"):
+        return False
+    if data.get("journal"):
+        return False
+    if data.get("milestones"):
+        return False
+    return True
+
+
+def _sideline_placeholder_dest(dest_file: str) -> bool:
+    if not _data_json_is_empty_placeholder(dest_file):
+        return False
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    preserved = f"{dest_file}.preserved-before-migration-{stamp}"
+    try:
+        os.replace(dest_file, preserved)
+    except OSError:
+        return False
+    return True
+
+
 def _file_digest(path: str) -> str | None:
     try:
         h = hashlib.sha256()
@@ -148,8 +184,11 @@ def _copy_file_if_absent(src_file: str, dest_file: str, conflicts: list[str]) ->
     if os.path.exists(dest_file):
         if _file_digest(src_file) == _file_digest(dest_file):
             return False
-        conflicts.append(dest_file)
-        return False
+        if _sideline_placeholder_dest(dest_file):
+            pass
+        else:
+            conflicts.append(dest_file)
+            return False
     os.makedirs(os.path.dirname(dest_file) or ".", exist_ok=True)
     from integral_io import atomic_copy_file
 
@@ -197,7 +236,7 @@ def _record_source(
 def _migrate_from_source(canonical: str, source: str, state: dict[str, Any]) -> MigrationResult:
     source = os.path.normpath(source)
     prior = state.get("sources", {}).get(source)
-    if prior and prior.get("outcome") in ("copied", "merged", "conflict"):
+    if prior and prior.get("outcome") in ("copied", "merged"):
         return MigrationResult(outcome="none", source=source)
 
     if not os.path.isdir(source):
@@ -243,7 +282,10 @@ def _migrate_from_source(canonical: str, source: str, state: dict[str, Any]) -> 
         outcome = "none"
         message = None
 
-    _record_source(state, source, outcome if outcome != "none" else "skipped_empty", copied, conflicts)
+    recorded = outcome if outcome != "none" else "skipped_empty"
+    if copied == 0 and not conflicts and dest_has and prior is None:
+        recorded = "identical"
+    _record_source(state, source, recorded, copied, conflicts)
     return MigrationResult(
         outcome=outcome,
         source=source,

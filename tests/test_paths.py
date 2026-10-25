@@ -1,3 +1,5 @@
+import os
+import sys
 from pathlib import Path
 
 import paths
@@ -42,9 +44,25 @@ def test_seed_loader_uses_app_resource(monkeypatch, tmp_path):
 
 def test_user_data_dir_unchanged_when_frozen(monkeypatch):
     import profiles
+    import sys
 
     monkeypatch.setattr(paths, "is_frozen", lambda: True)
-    app_dir = profiles.get_app_dir()
-    assert str(app_dir).endswith(".integral")
+    if sys.platform == "win32":
+        monkeypatch.setenv("APPDATA", "/tmp/integral-appdata-test")
+        monkeypatch.setattr(
+            paths,
+            "user_data_dir",
+            lambda: os.path.join(os.environ["APPDATA"], paths.APP_SLUG),
+        )
+        app_dir = profiles.get_app_dir()
+        assert app_dir.endswith("Integral")
+    else:
+        monkeypatch.setattr(
+            paths,
+            "user_data_dir",
+            lambda: os.path.join(os.path.expanduser("~"), ".integral"),
+        )
+        app_dir = profiles.get_app_dir()
+        assert str(app_dir).endswith(".integral")
     assert "MEIPASS" not in str(app_dir)
     assert "dist" not in str(app_dir)

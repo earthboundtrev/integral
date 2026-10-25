@@ -181,6 +181,10 @@ class PersonalDevelopmentTracker:
         self._more_menu_popup: Any | None = None
         self._footer_more_btn: ttk.Button | None = None
 
+        import user_data_migration
+
+        user_data_migration.run_at_startup()
+
         if is_encrypted_file(DATA_FILE) and not prompt_vault_unlock(self):
             messagebox.showerror("Locked", "Cannot open encrypted journal without passphrase.")
             root.destroy()
@@ -4240,6 +4244,10 @@ def main() -> None:
     import sys
 
     import deep_links
+
+    import user_data_migration
+
+    user_data_migration.run_at_startup()
 
     protocol_url = deep_links.extract_protocol_arg(sys.argv)
     owns_lock = deep_links.acquire_instance_lock()

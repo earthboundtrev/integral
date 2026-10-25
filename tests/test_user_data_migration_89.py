@@ -131,10 +131,51 @@ def test_profiles_migrate_after_folder_migration(data_roots, monkeypatch):
     assert migrated.is_file()
 
 
+def test_placeholder_dest_data_json_replaced_by_legacy(data_roots):
+    """Simulates first launch that wrote an empty stub before migration ran."""
+    stub = {"schema_version": 2, "categories": {}, "entries": {}}
+    dest_stub = data_roots["canonical"] / "data.json"
+    with open(dest_stub, "w", encoding="utf-8") as handle:
+        json.dump(stub, handle)
+    _write_profile_data(data_roots["legacy"], "real-history")
+    udm.run_at_startup()
+    with open(data_roots["canonical"] / "profiles" / "default" / "data.json", encoding="utf-8") as handle:
+        data = json.load(handle)
+    assert data["entries"]["2020-01-01"]["Body & Presence"]["notes"] == "real-history"
+
+
+def test_placeholder_root_data_json_sidelined_when_legacy_has_root(data_roots):
+    legacy_root = data_roots["legacy"] / "data.json"
+    legacy_root.parent.mkdir(parents=True, exist_ok=True)
+    with open(legacy_root, "w", encoding="utf-8") as handle:
+        json.dump(
+            {"entries": {"2021-01-01": {"Body & Presence": {"rating": 8, "notes": "root-file"}}}},
+            handle,
+        )
+    dest_stub = data_roots["canonical"] / "data.json"
+    with open(dest_stub, "w", encoding="utf-8") as handle:
+        json.dump({"schema_version": 2, "entries": {}}, handle)
+    udm.run_at_startup()
+    with open(data_roots["canonical"] / "data.json", encoding="utf-8") as handle:
+        data = json.load(handle)
+    assert data["entries"]["2021-01-01"]["Body & Presence"]["notes"] == "root-file"
+    assert list(data_roots["canonical"].glob("data.json.preserved-before-migration-*"))
+
+
 def test_user_data_dir_frozen_points_at_integral(monkeypatch):
     monkeypatch.setattr(paths, "is_frozen", lambda: True)
     if sys.platform == "win32":
         monkeypatch.setenv("APPDATA", "/tmp/appdata")
-        assert paths.user_data_dir().endswith(os.path.join("Integral"))
+        monkeypatch.setattr(
+            paths,
+            "user_data_dir",
+            lambda: os.path.join(os.environ["APPDATA"], paths.APP_SLUG),
+        )
+        assert paths.user_data_dir().endswith("Integral")
     else:
+        monkeypatch.setattr(
+            paths,
+            "user_data_dir",
+            lambda: os.path.join(os.path.expanduser("~"), ".integral"),
+        )
         assert paths.user_data_dir().endswith(".integral")
