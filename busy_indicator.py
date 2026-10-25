@@ -15,6 +15,8 @@ DEFAULT_DELAY_MS = 180
 HEARTBEAT_MAX_GAP_MS = 50
 # Batched UI work should yield to the event loop often enough for the delay timer.
 DEFAULT_COOPERATIVE_BATCH_SIZE = 15
+# Time-slice cooperative UI work (~one frame at 60 Hz).
+DEFAULT_TIME_BOX_MS = 16
 
 
 class BusyIndicator:
@@ -121,6 +123,11 @@ class BusyIndicator:
 
         if self._visible:
             self._hide()
+
+    @property
+    def is_visible(self) -> bool:
+        """True when the delayed spinner is on screen."""
+        return self._visible
 
     def step(self, text: str) -> None:
         """Update the label during a long operation (optional).
@@ -233,6 +240,30 @@ class BusyIndicator:
         self._label_var = None
 
 
+def pump_until_indicator_visible(
+    widget: tk.Misc,
+    indicator: BusyIndicator,
+    *,
+    min_delay_ms: float = DEFAULT_DELAY_MS,
+    extra_ms: float = 20.0,
+) -> None:
+    """Pump Tk until the delayed indicator is visible or ``min_delay_ms`` elapses."""
+    deadline = time.perf_counter() + (min_delay_ms + extra_ms) / 1000.0
+    while time.perf_counter() < deadline:
+        pump_event_loop(widget)
+        if indicator.is_visible:
+            return
+
+
+def pump_event_loop(widget: tk.Misc) -> None:
+    """Yield to Tk so delayed BusyIndicator timers and animations can run."""
+    try:
+        widget.update_idletasks()
+        widget.update()
+    except tk.TclError:
+        pass
+
+
 def cooperative_batch_steps(
     total: int,
     batch_size: int,
@@ -317,6 +348,57 @@ def run_cooperative_steps(
         scheduler.after_idle(run_next)
 
     scheduler.after_idle(run_next)
+
+
+def run_timeboxed_index_work(
+    scheduler: tk.Misc,
+    indicator: BusyIndicator,
+    *,
+    indices: Sequence[int],
+    consume: Callable[[int], None],
+    budget_ms: float = DEFAULT_TIME_BOX_MS,
+    on_complete: Callable[[], None] | None = None,
+    on_cancel: Callable[[], None] | None = None,
+) -> None:
+    """Process ``indices`` in order, yielding to Tk every ``budget_ms`` (issue #131)."""
+    position = 0
+
+    def _alive() -> bool:
+        try:
+            return scheduler.winfo_exists()
+        except tk.TclError:
+            return False
+
+    def _abort() -> None:
+        indicator.stop()
+        if on_cancel is not None:
+            on_cancel()
+
+    def tick() -> None:
+        nonlocal position
+        if indicator.cancel_requested or not _alive():
+            _abort()
+            return
+        deadline = time.perf_counter() + (budget_ms / 1000.0)
+        while position < len(indices) and time.perf_counter() < deadline:
+            if indicator.cancel_requested or not _alive():
+                _abort()
+                return
+            consume(indices[position])
+            position += 1
+        if position >= len(indices):
+            if on_complete is not None:
+                on_complete()
+            return
+        try:
+            scheduler.update_idletasks()
+            scheduler.update()
+        except tk.TclError:
+            _abort()
+            return
+        scheduler.after_idle(tick)
+
+    scheduler.after_idle(tick)
 
 
 def measure_event_loop_gaps(

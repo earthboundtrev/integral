@@ -8,6 +8,7 @@ from typing import Callable
 
 import mpl_tk
 import tkinter as tk
+from busy_indicator import pump_event_loop, pump_until_indicator_visible, run_cooperative_steps
 from tkinter import messagebox, ttk
 
 DEFAULT_DASHBOARD_COUNT = 8
@@ -157,8 +158,8 @@ class GraphWindow:
         app_settings: dict | None = None,
         on_graph_settings_changed: Callable[[dict], None] | None = None,
         initial_tab: str | None = None,
+        host: tk.Toplevel | None = None,
     ) -> None:
-        mpl_tk.ensure_matplotlib()
         self.entries = entries
         self.categories = categories
         self.theme = theme
@@ -170,6 +171,18 @@ class GraphWindow:
         self._tab_index: dict[str, int] = {}
         self._dashboard_refresh: Callable[[], None] | None = None
 
+        if host is not None:
+            self._deferred_host = True
+            self.window = host
+            pump_event_loop(self.window)
+            notebook = ttk.Notebook(self.window)
+            notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+            self._notebook = notebook
+            self._schedule_deferred_graph_build(entries, initial_tab)
+            return
+
+        self._deferred_host = False
+        mpl_tk.ensure_matplotlib()
         self.window = tk.Toplevel(parent)
         self.window.title("Graphing & Progress")
         self.window.geometry("1180x820")
@@ -178,7 +191,11 @@ class GraphWindow:
         notebook = ttk.Notebook(self.window)
         notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         self._notebook = notebook
+        self._populate_graph_tabs(entries)
+        self._select_initial_graph_tab(initial_tab)
 
+    def _populate_graph_tabs(self, entries: dict) -> None:
+        notebook = self._notebook
         if entries:
             self._add_dashboard_tab(notebook)
             self._add_ratings_tab(notebook)
@@ -197,12 +214,71 @@ class GraphWindow:
 
         self._add_ai_insight_tab(notebook)
 
+    def _select_initial_graph_tab(self, initial_tab: str | None) -> None:
+        notebook = self._notebook
         if initial_tab == "ai_insight":
             notebook.select(self._tab_index["ai_insight"])
         elif initial_tab == "ratings" and "ratings" in self._tab_index:
             notebook.select(self._tab_index["ratings"])
         elif "dashboard" in self._tab_index:
             notebook.select(self._tab_index["dashboard"])
+
+    def _schedule_deferred_graph_build(self, entries: dict, initial_tab: str | None) -> None:
+        indicator = getattr(self.window, "_deferred_busy_indicator", None)
+        finish_build = getattr(self.window, "_deferred_finish_build", None)
+        self.window._deferred_build_async = True
+
+        def _yield_for_spinner() -> None:
+            pump_event_loop(self.window)
+
+        def _import_matplotlib() -> None:
+            if indicator is not None:
+                pump_until_indicator_visible(self.window, indicator)
+            else:
+                pump_event_loop(self.window)
+            mpl_tk.ensure_matplotlib()
+
+        def _select_tab() -> None:
+            self._select_initial_graph_tab(initial_tab)
+
+        def _complete() -> None:
+            self.window._deferred_build_async = False
+            if finish_build is not None:
+                finish_build()
+
+        notebook = self._notebook
+        steps: list[Callable[[], None]] = [_yield_for_spinner, _import_matplotlib]
+        if entries:
+            steps.extend(
+                [
+                    lambda: self._add_dashboard_tab(notebook),
+                    lambda: self._add_ratings_tab(notebook),
+                    lambda: self._add_metrics_tab(notebook),
+                    lambda: self._add_heatmap_tab(notebook),
+                    lambda: self._add_radar_tab(notebook),
+                ]
+            )
+        else:
+
+            def _add_empty_tab() -> None:
+                empty = ttk.Frame(notebook, padding=20)
+                notebook.add(empty, text="Charts")
+                self._register_tab(notebook, empty, "empty")
+                ttk.Label(
+                    empty,
+                    text="Log a few days of data to see charts.",
+                    font=("Helvetica", 12),
+                ).pack(anchor="w")
+
+            steps.append(_add_empty_tab)
+        steps.append(lambda: self._add_ai_insight_tab(notebook))
+        steps.append(_select_tab)
+        if indicator is not None:
+            run_cooperative_steps(self.window, indicator, steps, on_complete=_complete)
+        else:
+            for step in steps:
+                step()
+            _complete()
 
     def _register_tab(self, notebook: ttk.Notebook, frame: ttk.Frame, key: str) -> None:
         self._tab_index[key] = notebook.index(frame)
@@ -351,6 +427,8 @@ class GraphWindow:
                 canvas.figure = _figure
                 canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
                 canvas.draw()
+                if getattr(self, "_deferred_host", False):
+                    pump_event_loop(self.window)
 
                 actions = ttk.Frame(panel)
                 actions.pack(fill=tk.X, pady=(6, 0))
@@ -779,6 +857,7 @@ def open_graphs(
     app_settings: dict | None = None,
     on_graph_settings_changed: Callable[[dict], None] | None = None,
     initial_tab: str | None = None,
+    host: tk.Toplevel | None = None,
 ) -> None:
     try:
         GraphWindow(
@@ -791,6 +870,7 @@ def open_graphs(
             app_settings=app_settings,
             on_graph_settings_changed=on_graph_settings_changed,
             initial_tab=initial_tab,
+            host=host,
         )
     except ImportError:
         messagebox.showerror(
