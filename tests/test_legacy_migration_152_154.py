@@ -80,6 +80,7 @@ class TestLegacyMigration152154(unittest.TestCase):
         )
         self.assertEqual(result["migrated_count"], 0)
         self.assertEqual(result["flagged_count"], 1)
+        self.assertFalse(result.get("backed_up"))
         self.assertIn("migrated_to_fitness_db", sessions[0])
 
     def test_encrypted_data_json_backup_is_ciphertext(self):

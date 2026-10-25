@@ -126,6 +126,10 @@ def backup_files_for_migration(data_path: str, db_path: str) -> tuple[str, str |
                 os.remove(data_backup)
             except OSError:
                 pass
+            try:
+                os.remove(db_backup)
+            except OSError:
+                pass
             raise Exception(f"Failed to backup fitness.db: {e}") from e
 
     prune_migration_backups(os.path.dirname(os.path.abspath(data_path)), keep_timestamp=timestamp)
@@ -327,9 +331,9 @@ def run_in_memory_migration(
         dry_run=True,
         include_free_text_notes=include_free_text_notes,
     )
-    work = plan["migrated_count"] > 0 or bool(plan.get("sessions_to_flag"))
-
-    if not work:
+    needs_insert = plan["migrated_count"] > 0
+    needs_flag = bool(plan.get("sessions_to_flag"))
+    if not needs_insert and not needs_flag:
         return {
             **plan,
             "flagged_count": 0,
@@ -338,8 +342,12 @@ def run_in_memory_migration(
 
     data_backup: str | None = None
     db_backup: str | None = None
+    data_dir = os.path.dirname(os.path.abspath(data_path))
     try:
-        data_backup, db_backup = backup_files_for_migration(data_path, fitness_db_path)
+        if needs_insert:
+            data_backup, db_backup = backup_files_for_migration(data_path, fitness_db_path)
+        else:
+            prune_migration_backups(data_dir)
         result = migrate_legacy_sessions(
             data,
             repo,
@@ -348,9 +356,10 @@ def run_in_memory_migration(
         )
         flagged = apply_migrated_flags(sessions, result.get("sessions_to_flag", []))
         result["flagged_count"] = flagged
-        result["backed_up"] = True
-        result["data_backup"] = data_backup
-        result["db_backup"] = db_backup
+        result["backed_up"] = needs_insert
+        if needs_insert:
+            result["data_backup"] = data_backup
+            result["db_backup"] = db_backup
         return result
     except Exception as e:
         raise Exception(
