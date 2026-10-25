@@ -394,6 +394,7 @@ class WorkoutHistoryView:
             
             self._hide_loading_indicator()
             self._hide_empty_state()
+            self.is_loading = False
             self._refresh_session_list()
             
             if sessions:
@@ -442,6 +443,7 @@ class WorkoutHistoryView:
             # Store current selection to restore after refresh
             current_selection = self.selected_session
             
+            self.is_loading = False
             self._refresh_session_list()
             
             # Restore selection
