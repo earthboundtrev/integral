@@ -104,14 +104,18 @@ def show_journal_window(
     prompt: str | None = None,
     entry_id: str | None = None,
     seed: str | None = None,
+    host: tk.Toplevel | None = None,
 ) -> None:
     theme = tracker.theme
-    win = tk.Toplevel(tracker.root)
-    win.title("Journal")
-    win.geometry(JOURNAL_WINDOW_GEOMETRY)
-    win.minsize(*JOURNAL_WINDOW_MINSIZE)
-    win.configure(bg=theme["bg"])
-    win.transient(tracker.root)
+    if host is not None:
+        win = host
+    else:
+        win = tk.Toplevel(tracker.root)
+        win.title("Journal")
+        win.geometry(JOURNAL_WINDOW_GEOMETRY)
+        win.minsize(*JOURNAL_WINDOW_MINSIZE)
+        win.configure(bg=theme["bg"])
+        win.transient(tracker.root)
 
     footer = ttk.Frame(win, padding=(16, 8, 16, 12))
     footer.pack(side=tk.BOTTOM, fill=tk.X)

@@ -5,9 +5,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import nav_items
 import personal_dev_tracker
-
+from sidebar_nav import ACCENT_BAR_WIDTH_PX, handle_sidebar_nav_key, set_sidebar_active
+from tests.conftest import pump_tk_until
 from tests.mock_tracker import mock_tracker_init as _mock_tracker_init
+
+
+def _font_is_bold(widget: tk.Button) -> bool:
+    return "bold" in str(widget.cget("font")).lower()
 
 
 @pytest.fixture
@@ -179,6 +185,47 @@ def test_window_tracking_on_close(tracker):
     mock_window.destroy()
     
     assert "test_key" not in tracker._open_windows
+
+
+def test_sidebar_today_active_by_default(tracker):
+    """AC: active item uses bold font and accent bar."""
+    tracker.root.update_idletasks()
+    assert tracker._sidebar_active_id == "today"
+    btn = tracker._sidebar_nav_buttons_by_id["today"]
+    assert _font_is_bold(btn)
+    bar = tracker._sidebar_nav_accent_bars["today"]
+    assert bar.cget("width") == ACCENT_BAR_WIDTH_PX
+    assert bar.cget("bg") == tracker.theme["accent"]
+
+
+def test_set_sidebar_active_updates_styles(tracker):
+    tracker.root.update_idletasks()
+    set_sidebar_active(tracker, "journal")
+    assert tracker._sidebar_active_id == "journal"
+    journal_btn = tracker._sidebar_nav_buttons_by_id["journal"]
+    today_btn = tracker._sidebar_nav_buttons_by_id["today"]
+    assert _font_is_bold(journal_btn)
+    assert not _font_is_bold(today_btn)
+    assert tracker._sidebar_nav_accent_bars["journal"].cget("bg") == tracker.theme["accent"]
+
+
+def test_sidebar_keyboard_down_moves_focus(tracker):
+    tracker.root.update_idletasks()
+    order = [spec.id for spec in nav_items.sidebar_nav_items()]
+    next_id = order[order.index("today") + 1]
+    with patch("sidebar_nav._focus_nav_button") as mock_focus:
+        assert handle_sidebar_nav_key(tracker, "today", "Down") is True
+        mock_focus.assert_called_once_with(tracker, next_id)
+
+
+def test_show_journal_uses_deferred_host(tracker):
+    tracker.root.update_idletasks()
+    with patch("journal_ui.show_journal_window") as mock_show:
+        tracker.show_journal()
+        assert pump_tk_until(tracker.root, lambda: mock_show.called)
+        mock_show.assert_called_once()
+        assert mock_show.call_args.kwargs.get("host") is not None
+        assert "journal" in tracker._open_windows
 
 
 def test_show_weekly_summary_raise_if_open(tracker):

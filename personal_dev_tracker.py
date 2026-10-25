@@ -172,6 +172,9 @@ class PersonalDevelopmentTracker:
         self._deep_work_extend_btn: ttk.Button | None = None
         self._deep_work_end_btn: ttk.Button | None = None
         self._sidebar_nav_frames: dict[str, tk.Frame] = {}
+        self._sidebar_nav_buttons_by_id: dict[str, tk.Button] = {}
+        self._sidebar_nav_accent_bars: dict[str, tk.Frame] = {}
+        self._sidebar_active_id: str | None = None
         self._sidebar_goto_frame: tk.Frame | None = None
         self._sidebar_deep_work_hint: tk.Label | None = None
         self._quick_capture_win: tk.Toplevel | None = None
@@ -1820,9 +1823,21 @@ class PersonalDevelopmentTracker:
         nav_container = tk.Frame(container, bg=sidebar_bg)
         nav_container.pack(fill=tk.BOTH, expand=True, pady=(8, 0))
         
+        from sidebar_nav import (
+            ACCENT_BAR_HEIGHT_PX,
+            ACCENT_BAR_WIDTH_PX,
+            NAV_ITEM_HEIGHT_PX,
+            attach_sidebar_hover,
+            bind_sidebar_nav_keyboard,
+            set_sidebar_active,
+            wrap_sidebar_action,
+        )
+
         self._sidebar_nav_buttons = []
         self._sidebar_nav_frames = {}
-        
+        self._sidebar_nav_buttons_by_id = {}
+        self._sidebar_nav_accent_bars = {}
+
         sidebar_actions: dict[str, Callable[[], None]] = {
             "today": lambda: self._raise_or_open("today"),
             "fitness_hub": lambda: self._raise_or_open("fitness"),
@@ -1831,17 +1846,28 @@ class PersonalDevelopmentTracker:
             "graphs": lambda: self._raise_or_open("graphs"),
             "weekly_summary": self.show_weekly_summary,
         }
-        
+
         for spec in nav_items.sidebar_nav_items():
-            btn_frame = tk.Frame(nav_container, bg=sidebar_bg, height=36)
+            btn_frame = tk.Frame(nav_container, bg=sidebar_bg, height=NAV_ITEM_HEIGHT_PX)
             btn_frame.pack(fill=tk.X, padx=8, pady=1)
             btn_frame.pack_propagate(False)
             self._sidebar_nav_frames[spec.id] = btn_frame
-            
+
+            accent_bar = tk.Frame(
+                btn_frame,
+                bg=sidebar_bg,
+                width=ACCENT_BAR_WIDTH_PX,
+                height=ACCENT_BAR_HEIGHT_PX,
+            )
+            accent_bar.pack(side=tk.LEFT, padx=(4, 0), pady=(10, 10))
+            accent_bar.pack_propagate(False)
+            self._sidebar_nav_accent_bars[spec.id] = accent_bar
+
+            action = wrap_sidebar_action(self, spec.id, sidebar_actions[spec.id])
             btn = tk.Button(
                 btn_frame,
                 text=spec.label,
-                command=sidebar_actions[spec.id],
+                command=action,
                 bg=sidebar_bg,
                 fg=theme["fg"],
                 font=FONTS["caption"],
@@ -1849,19 +1875,21 @@ class PersonalDevelopmentTracker:
                 cursor="hand2",
                 anchor="w",
                 padx=8,
+                takefocus=1,
             )
             btn.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
             self._sidebar_nav_buttons.append(btn)
-            
-            def on_enter(e, b=btn):
-                if b["state"] != "disabled":
-                    b.configure(bg=theme["surface"])
-            
-            def on_leave(e, b=btn):
-                b.configure(bg=sidebar_bg)
-            
-            btn.bind("<Enter>", on_enter)
-            btn.bind("<Leave>", on_leave)
+            self._sidebar_nav_buttons_by_id[spec.id] = btn
+            attach_sidebar_hover(
+                btn,
+                nav_id=spec.id,
+                tracker=self,
+                sidebar_bg=sidebar_bg,
+                surface=theme["surface"],
+            )
+
+        bind_sidebar_nav_keyboard(self, self._sidebar_nav_buttons_by_id)
+        set_sidebar_active(self, "today")
         
         hint_row = tk.Frame(nav_container, bg=sidebar_bg)
         hint_row.pack(fill=tk.X, padx=16, pady=(4, 0))
@@ -1920,20 +1948,36 @@ class PersonalDevelopmentTracker:
         )
         self._sidebar_more_btn.pack(fill=tk.X)
 
+    def _sidebar_nav_id_for_window_key(self, window_key: str) -> str | None:
+        mapping = {
+            "today": "today",
+            "fitness": "fitness_hub",
+            "journal": "journal",
+            "graphs": "graphs",
+        }
+        return mapping.get(window_key)
+
     def _raise_or_open(self, window_key: str) -> None:
         """Open a window or raise it if already open (#131)."""
+        from sidebar_nav import set_sidebar_active
+
+        nav_id = self._sidebar_nav_id_for_window_key(window_key)
         existing = self._open_windows.get(window_key)
         if existing is not None:
             try:
                 if existing.winfo_exists():
+                    if nav_id:
+                        set_sidebar_active(self, nav_id)
                     existing.lift()
                     existing.focus_force()
                     return
             except tk.TclError:
                 pass
             del self._open_windows[window_key]
-        
+
         if window_key == "today":
+            if nav_id:
+                set_sidebar_active(self, nav_id)
             self.root.lift()
             self.root.focus_force()
             if self._content_pane and self._content_pane.winfo_exists():
@@ -1941,6 +1985,7 @@ class PersonalDevelopmentTracker:
         elif window_key == "fitness":
             if nav_items.deep_work_blocks_action(self, item_id="fitness_hub"):
                 return
+            set_sidebar_active(self, "fitness_hub")
             self.show_fitness_hub()
         elif window_key == "journal":
             self.show_journal()
@@ -1973,8 +2018,11 @@ class PersonalDevelopmentTracker:
 
     def show_reflect(self) -> None:
         """Open one-screen daily reflection for today (#113)."""
+        from sidebar_nav import set_sidebar_active
+
         if nav_items.deep_work_blocks_action(self, item_id="reflect"):
             return
+        set_sidebar_active(self, "reflect")
         from reflect_page_ui import open_reflect_page
 
         open_reflect_page(self)
@@ -2996,19 +3044,23 @@ class PersonalDevelopmentTracker:
                 text.insert(tk.END, f"{item.get('body', '')}\n")
 
     def show_weekly_summary(self) -> None:
+        from sidebar_nav import set_sidebar_active
+
         if nav_items.deep_work_blocks_action(self, item_id="weekly_summary"):
             return
         existing = self._open_windows.get("weekly_summary")
         if existing is not None:
             try:
                 if existing.winfo_exists():
+                    set_sidebar_active(self, "weekly_summary")
                     existing.lift()
                     existing.focus_force()
                     return
             except tk.TclError:
                 pass
             del self._open_windows["weekly_summary"]
-        
+
+        set_sidebar_active(self, "weekly_summary")
         window = tk.Toplevel(self.root)
         self._track_window("weekly_summary", window)
         window.title("Weekly Summary")
@@ -3102,26 +3154,40 @@ class PersonalDevelopmentTracker:
         show_milestones_dialog(self)
 
     def show_journal(self) -> None:
+        from deferred_toplevel import run_deferred_toplevel_build
+        from journal_ui import JOURNAL_WINDOW_GEOMETRY, JOURNAL_WINDOW_MINSIZE, show_journal_window
+        from sidebar_nav import set_sidebar_active
+
         existing = self._open_windows.get("journal")
         if existing is not None:
             try:
                 if existing.winfo_exists():
+                    set_sidebar_active(self, "journal")
                     existing.lift()
                     existing.focus_force()
                     return
             except tk.TclError:
                 pass
             del self._open_windows["journal"]
-        
-        before_children = set(self.root.winfo_children())
-        show_journal_window(self)
-        self.root.update_idletasks()
-        after_children = set(self.root.winfo_children())
-        new_windows = after_children - before_children
-        for child in new_windows:
-            if isinstance(child, tk.Toplevel):
-                self._track_window("journal", child)
-                break
+
+        set_sidebar_active(self, "journal")
+        win = tk.Toplevel(self.root)
+        win.title("Journal")
+        win.geometry(JOURNAL_WINDOW_GEOMETRY)
+        win.minsize(*JOURNAL_WINDOW_MINSIZE)
+        win.configure(bg=self.theme["bg"])
+        win.transient(self.root)
+
+        def build() -> None:
+            show_journal_window(self, host=win)
+
+        run_deferred_toplevel_build(
+            win,
+            theme=self.theme,
+            busy_label="Loading Journal…",
+            build=build,
+        )
+        self._track_window("journal", win)
 
     def set_quick_capture_enabled(self, enabled: bool, *, persist: bool = True) -> None:
         self.settings = quick_capture.apply_quick_capture_settings(
@@ -3538,6 +3604,10 @@ class PersonalDevelopmentTracker:
             except tk.TclError:
                 pass
 
+        from sidebar_nav import set_sidebar_active
+
+        set_sidebar_active(self, getattr(self, "_sidebar_active_id", None))
+
     def _widget_inside(self, widget: tk.Misc | None, ancestor: tk.Misc | None) -> bool:
         if widget is None or ancestor is None:
             return False
@@ -3869,36 +3939,48 @@ class PersonalDevelopmentTracker:
         run_search()
 
     def show_graphs(self) -> None:
+        from deferred_toplevel import run_deferred_toplevel_build
+        from graphs import open_graphs
+        from sidebar_nav import set_sidebar_active
+
         existing = self._open_windows.get("graphs")
         if existing is not None:
             try:
                 if existing.winfo_exists():
+                    set_sidebar_active(self, "graphs")
                     existing.lift()
                     existing.focus_force()
                     return
             except tk.TclError:
                 pass
             del self._open_windows["graphs"]
-        
-        from graphs import open_graphs
-        before_children = set(self.root.winfo_children())
-        open_graphs(
-            self.root,
-            self.entries,
-            self.categories,
-            self.theme,
-            journal_data=self.journal,
-            fitness_settings=self.settings.get("fitness"),
-            app_settings=self.settings,
-            on_graph_settings_changed=self._save_graph_settings,
+
+        set_sidebar_active(self, "graphs")
+        win = tk.Toplevel(self.root)
+        win.title("Graphing & Progress")
+        win.geometry("1180x820")
+        win.configure(bg=self.theme["bg"])
+
+        def build() -> None:
+            open_graphs(
+                self.root,
+                self.entries,
+                self.categories,
+                self.theme,
+                journal_data=self.journal,
+                fitness_settings=self.settings.get("fitness"),
+                app_settings=self.settings,
+                on_graph_settings_changed=self._save_graph_settings,
+                host=win,
+            )
+
+        run_deferred_toplevel_build(
+            win,
+            theme=self.theme,
+            busy_label="Loading graphs…",
+            build=build,
         )
-        self.root.update_idletasks()
-        after_children = set(self.root.winfo_children())
-        new_windows = after_children - before_children
-        for child in new_windows:
-            if isinstance(child, tk.Toplevel):
-                self._track_window("graphs", child)
-                break
+        self._track_window("graphs", win)
 
     def _save_graph_settings(self, payload: dict) -> None:
         self.settings["graphs"] = payload.get("graphs", {})

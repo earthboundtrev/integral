@@ -157,6 +157,7 @@ class GraphWindow:
         app_settings: dict | None = None,
         on_graph_settings_changed: Callable[[dict], None] | None = None,
         initial_tab: str | None = None,
+        host: tk.Toplevel | None = None,
     ) -> None:
         mpl_tk.ensure_matplotlib()
         self.entries = entries
@@ -170,10 +171,13 @@ class GraphWindow:
         self._tab_index: dict[str, int] = {}
         self._dashboard_refresh: Callable[[], None] | None = None
 
-        self.window = tk.Toplevel(parent)
-        self.window.title("Graphing & Progress")
-        self.window.geometry("1180x820")
-        self.window.configure(bg=theme["bg"])
+        if host is not None:
+            self.window = host
+        else:
+            self.window = tk.Toplevel(parent)
+            self.window.title("Graphing & Progress")
+            self.window.geometry("1180x820")
+            self.window.configure(bg=theme["bg"])
 
         notebook = ttk.Notebook(self.window)
         notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
@@ -779,6 +783,7 @@ def open_graphs(
     app_settings: dict | None = None,
     on_graph_settings_changed: Callable[[dict], None] | None = None,
     initial_tab: str | None = None,
+    host: tk.Toplevel | None = None,
 ) -> None:
     try:
         GraphWindow(
@@ -791,6 +796,7 @@ def open_graphs(
             app_settings=app_settings,
             on_graph_settings_changed=on_graph_settings_changed,
             initial_tab=initial_tab,
+            host=host,
         )
     except ImportError:
         messagebox.showerror(
