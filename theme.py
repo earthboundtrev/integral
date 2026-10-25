@@ -231,6 +231,12 @@ def apply_theme(root: tk.Misc, theme: dict) -> None:
 
     style.configure("OnSurface.TLabel", background=surface, foreground=fg, font=FONTS["body"])
     style.configure("OnSurfaceMuted.TLabel", background=surface, foreground=muted, font=FONTS["body"])
+    style.configure(
+        "OnSurfaceError.TLabel",
+        background=surface,
+        foreground=theme.get("error", "#B91C1C"),
+        font=FONTS["body"],
+    )
     style.configure("OnSurfaceSubheading.TLabel", background=surface, foreground=fg, font=FONTS["subheading"])
 
     style.configure("TLabelframe", background=bg, bordercolor=theme["card_border"], relief="flat")
