@@ -5,7 +5,7 @@ from __future__ import annotations
 import tkinter as tk
 from typing import Callable
 
-from busy_indicator import BusyIndicator
+from busy_indicator import BusyIndicator, pump_event_loop
 
 
 def run_deferred_toplevel_build(
@@ -15,11 +15,12 @@ def run_deferred_toplevel_build(
     busy_label: str,
     build: Callable[[], None],
     on_build_error: Callable[[Exception], None] | None = None,
-) -> None:
+) -> BusyIndicator:
     """Show a busy indicator on ``win``, then run ``build`` after the next event-loop tick.
 
     The host window should already exist (title/geometry set). ``build`` populates it and
-    must not create another Toplevel for the same surface.
+    must not create another Toplevel for the same surface. Long ``build`` implementations
+    should call ``pump_event_loop(win)`` periodically so the 180 ms spinner can appear.
     """
     busy_host = tk.Frame(win, bg=theme["bg"])
     busy_host.pack(fill=tk.BOTH, expand=True)
@@ -45,21 +46,7 @@ def run_deferred_toplevel_build(
 
     indicator.start()
 
-    def do_build() -> None:
-        try:
-            if not win.winfo_exists():
-                return
-        except tk.TclError:
-            return
-        try:
-            build()
-        except Exception as exc:
-            indicator.stop()
-            if on_build_error is not None:
-                on_build_error(exc)
-            else:
-                raise
-            return
+    def finish_after_build() -> None:
         try:
             if not win.winfo_exists():
                 return
@@ -71,4 +58,23 @@ def run_deferred_toplevel_build(
         except tk.TclError:
             pass
 
+    def do_build() -> None:
+        try:
+            if not win.winfo_exists():
+                return
+        except tk.TclError:
+            return
+        pump_event_loop(win)
+        try:
+            build()
+        except Exception as exc:
+            indicator.stop()
+            if on_build_error is not None:
+                on_build_error(exc)
+            else:
+                raise
+            return
+        finish_after_build()
+
     win.after(1, do_build)
+    return indicator

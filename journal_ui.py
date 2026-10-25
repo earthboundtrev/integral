@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Callable
 import integral_links
 import journal
 import richtext
+from busy_indicator import pump_event_loop
 from theme import FONTS, style_listbox, style_text_widget
 
 if TYPE_CHECKING:
@@ -107,8 +108,10 @@ def show_journal_window(
     host: tk.Toplevel | None = None,
 ) -> None:
     theme = tracker.theme
+    deferred_host = host is not None
     if host is not None:
         win = host
+        pump_event_loop(win)
     else:
         win = tk.Toplevel(tracker.root)
         win.title("Journal")
@@ -141,6 +144,9 @@ def show_journal_window(
         header_hint.configure(wraplength=max(width - 32, 200))
 
     win.bind("<Configure>", sync_header_wraplength, add="+")
+
+    if deferred_host:
+        pump_event_loop(win)
 
     body = ttk.Frame(win, padding=(16, 0, 16, 8))
     body.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
@@ -312,12 +318,14 @@ def show_journal_window(
         if not indexed_entries:
             return
         max_px = _entry_list_display_width_px()
-        for item in indexed_entries:
+        for index, item in enumerate(indexed_entries):
             label = item.get("title") or item.get("prompt") or "Journal"
             suffix = " ↩" if item.get("backdate_reason") else ""
             full = f"{item['entry_date']}  {label}{suffix}"
             entry_list_full_labels.append(full)
             entry_list.insert(tk.END, _truncate_text_to_px(full, entry_list_font, max_px))
+            if deferred_host and index % 24 == 23:
+                pump_event_loop(win)
         if apply_selection and select_index is not None:
             entry_list.selection_set(select_index)
             entry_list.see(select_index)

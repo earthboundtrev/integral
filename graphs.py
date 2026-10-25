@@ -8,6 +8,7 @@ from typing import Callable
 
 import mpl_tk
 import tkinter as tk
+from busy_indicator import pump_event_loop
 from tkinter import messagebox, ttk
 
 DEFAULT_DASHBOARD_COUNT = 8
@@ -171,8 +172,10 @@ class GraphWindow:
         self._tab_index: dict[str, int] = {}
         self._dashboard_refresh: Callable[[], None] | None = None
 
+        deferred_host = host is not None
         if host is not None:
             self.window = host
+            pump_event_loop(self.window)
         else:
             self.window = tk.Toplevel(parent)
             self.window.title("Graphing & Progress")
@@ -185,10 +188,20 @@ class GraphWindow:
 
         if entries:
             self._add_dashboard_tab(notebook)
+            if deferred_host:
+                pump_event_loop(self.window)
             self._add_ratings_tab(notebook)
+            if deferred_host:
+                pump_event_loop(self.window)
             self._add_metrics_tab(notebook)
+            if deferred_host:
+                pump_event_loop(self.window)
             self._add_heatmap_tab(notebook)
+            if deferred_host:
+                pump_event_loop(self.window)
             self._add_radar_tab(notebook)
+            if deferred_host:
+                pump_event_loop(self.window)
         else:
             empty = ttk.Frame(notebook, padding=20)
             notebook.add(empty, text="Charts")
@@ -200,6 +213,8 @@ class GraphWindow:
             ).pack(anchor="w")
 
         self._add_ai_insight_tab(notebook)
+        if deferred_host:
+            pump_event_loop(self.window)
 
         if initial_tab == "ai_insight":
             notebook.select(self._tab_index["ai_insight"])

@@ -101,6 +101,11 @@ class BusyIndicator:
         if self._visible:
             self._hide()
 
+    @property
+    def is_visible(self) -> bool:
+        """True when the delayed spinner is on screen."""
+        return self._visible
+
     def step(self, text: str) -> None:
         """Update the label during a long operation (optional).
 
@@ -199,6 +204,15 @@ class BusyIndicator:
             self._frame = None
 
         self._label_var = None
+
+
+def pump_event_loop(widget: tk.Misc) -> None:
+    """Yield to Tk so delayed BusyIndicator timers and animations can run."""
+    try:
+        widget.update_idletasks()
+        widget.update()
+    except tk.TclError:
+        pass
 
 
 def _default_theme() -> dict:

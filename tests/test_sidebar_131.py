@@ -218,6 +218,41 @@ def test_sidebar_keyboard_down_moves_focus(tracker):
         mock_focus.assert_called_once_with(tracker, next_id)
 
 
+def test_deferred_toplevel_shows_busy_indicator_on_slow_build(tracker):
+    """B6: spinner can appear while a slow host build runs."""
+    import time
+
+    from busy_indicator import BusyIndicator
+    from deferred_toplevel import run_deferred_toplevel_build
+
+    tracker.root.deiconify()
+    tracker.root.update_idletasks()
+    win = tk.Toplevel(tracker.root)
+    win.geometry("400x300")
+    win.deiconify()
+
+    saw_visible = False
+
+    def build() -> None:
+        nonlocal saw_visible
+        deadline = time.perf_counter() + 0.35
+        while time.perf_counter() < deadline:
+            win.update_idletasks()
+            win.update()
+            if indicator.is_visible:
+                saw_visible = True
+
+    indicator = run_deferred_toplevel_build(
+        win,
+        theme=tracker.theme,
+        busy_label="Loading…",
+        build=build,
+    )
+    assert pump_tk_until(win, lambda: saw_visible, timeout_s=1.0)
+    assert saw_visible
+    win.destroy()
+
+
 def test_show_journal_uses_deferred_host(tracker):
     tracker.root.update_idletasks()
     with patch("journal_ui.show_journal_window") as mock_show:
