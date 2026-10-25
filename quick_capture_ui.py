@@ -7,7 +7,12 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 from typing import TYPE_CHECKING
 
-from busy_indicator import BusyIndicator
+from busy_indicator import (
+    BusyIndicator,
+    DEFAULT_COOPERATIVE_BATCH_SIZE,
+    cooperative_batch_steps,
+    run_cooperative_steps,
+)
 import deep_work as dw
 import focus_shield
 import quick_capture
@@ -73,6 +78,7 @@ def open_quick_capture_panel(tracker: PersonalDevelopmentTracker) -> tk.Toplevel
         tracker.set_quick_capture_enabled(False, persist=True)
 
     win.protocol("WM_DELETE_WINDOW", on_close)
+    win._qc_building = True
 
     # Show a delayed busy indicator during build (issue #120).
     # The indicator appears only if the build takes longer than 180 ms.
@@ -83,467 +89,586 @@ def open_quick_capture_panel(tracker: PersonalDevelopmentTracker) -> tk.Toplevel
     win._busy_indicator = indicator
     indicator.start()
 
+    def _finish_build() -> None:
+        try:
+            if not win.winfo_exists():
+                return
+        except tk.TclError:
+            return
+        indicator.stop()
+        try:
+            busy_host.destroy()
+        except tk.TclError:
+            pass
+        if hasattr(win, "_busy_indicator"):
+            delattr(win, "_busy_indicator")
+
+    def _on_build_error(exc: BaseException) -> None:
+        try:
+            if win.winfo_exists():
+                win._qc_building = False
+                indicator.stop()
+        except tk.TclError:
+            pass
+        tracker._quick_capture_win = None
+        try:
+            win.destroy()
+        except tk.TclError:
+            pass
+        raise exc
+
     def build_content() -> None:
-        # Return early if window was destroyed before callback runs.
         try:
             if not win.winfo_exists():
                 return
         except tk.TclError:
             return
 
-        try:
-            # Build content while indicator is still armed.
-            result = _build_quick_capture_body(tracker, win, theme, on_close)
-            
-            # Only stop and clean up after build is complete, if window still exists.
-            try:
-                if not win.winfo_exists():
-                    return result
-            except tk.TclError:
-                return result
-            
-            indicator.stop()
-            try:
-                busy_host.destroy()
-            except tk.TclError:
-                pass
-            if hasattr(win, '_busy_indicator'):
-                delattr(win, '_busy_indicator')
-            
-            return result
-        except tk.TclError:
-            # Window closed during build - not an error.
-            try:
-                if win.winfo_exists():
-                    indicator.stop()
-            except tk.TclError:
-                pass
-            return
-        except Exception:
-            # Real build error.
-            try:
-                if win.winfo_exists():
-                    indicator.stop()
-            except tk.TclError:
-                pass
-            tracker._quick_capture_win = None
-            try:
-                win.destroy()
-            except tk.TclError:
-                pass
-            raise
+        qc = _QuickCaptureBuild(tracker, win, theme, on_close)
+        build_steps: list = [
+            qc._phase_shell,
+            qc._phase_deep_work,
+            qc._phase_todos,
+            qc._phase_rest,
+            lambda: qc.append_todo_phases(build_steps),
+        ]
+        run_cooperative_steps(
+            win,
+            indicator,
+            build_steps,
+            on_complete=_finish_build,
+            on_step_error=_on_build_error,
+        )
 
-    # Build content after the next idle, allowing the indicator timer to arm.
-    # Use after(1) instead of after_idle so the event loop can process the timer.
     win.after(1, build_content)
 
     return win
 
 
-def _build_quick_capture_body(tracker, win, theme, on_close) -> tk.Toplevel:
-    # Pin footer first so scroll body cannot eat the whole window.
-    footer = ttk.Frame(win, padding=(12, 8))
-    footer.pack(side=tk.BOTTOM, fill=tk.X)
-    ttk.Button(footer, text="Turn off Quick Capture", command=on_close).pack(anchor="e")
+class _QuickCaptureBuild:
+    """Cooperative Quick Capture body build (issue #120 / #135)."""
 
-    # Yield to event loop after footer (allow indicator timer to fire).
-    # Guard against window close during update().
-    try:
-        win.update()
-        if not win.winfo_exists():
-            return win
-    except tk.TclError:
-        return win
+    def __init__(self, tracker, win, theme, on_close) -> None:
+        self.tracker = tracker
+        self.win = win
+        self.theme = theme
+        self.on_close = on_close
+        self.pad = None
+        self.inner = None
+        self.canvas = None
+        self.refresh_dw_timer = None
+        self.rebuild_todo_lists = None
+        self.today_list = None
+        self.upcoming_list = None
+        self._today_items: list = []
+        self._upcoming_items: list = []
+        self._today_ids: list = []
+        self._upcoming_ids: list = []
+        self._edit_categories: list = []
 
-    scroll_host = ttk.Frame(win)
-    scroll_host.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+    def append_todo_phases(self, steps: list) -> None:
+        """Append batched todo row steps after chrome phases (items known post-todos)."""
+        steps.extend(
+            [
+                self._clear_todo_lists,
+                *self._todo_row_batch_steps(),
+                self._finish_todo_lists,
+                self._phase_finalize,
+            ]
+        )
 
-    outer, inner, canvas = ui_scroll.make_scrollable_frame(
-        scroll_host,
-        theme=theme,
-        chrome_bg=theme["bg"],
-    )
-    outer.pack(fill=tk.BOTH, expand=True)
-
-    pad = ttk.Frame(inner, padding=12)
-    pad.pack(fill=tk.X, expand=False)
-
-    # FONTS key is "subheading" (not "subtitle") — wrong key crashed build after
-    # caching the empty Toplevel, so later opens only lifted a blank shell.
-    ttk.Label(pad, text="Quick Capture", font=FONTS["subheading"]).pack(anchor="w")
-    ttk.Label(
-        pad,
-        text="Todos, links, journal, quick log, and Deep Work — off when you close this.",
-        style="Muted.TLabel",
-        wraplength=380,
-    ).pack(anchor="w", pady=(2, 8))
-
-    # --- Deep Work + focus shield ---
-    dw_box = ttk.LabelFrame(pad, text="Deep Work + focus shield", padding=8)
-    dw_box.pack(fill=tk.X, pady=(0, 10))
-    dw_timer_var = tk.StringVar(value="Not running")
-    ttk.Label(dw_box, textvariable=dw_timer_var, font=FONTS["subheading"]).pack(anchor="w")
-
-    def refresh_dw_timer() -> None:
-        session = getattr(tracker, "_deep_work_session", None)
-        if session and session.running:
-            dw_timer_var.set(f"Remaining {session.format_mmss()}")
-        elif getattr(tracker, "_focus_shield", None) and tracker._focus_shield.active:
-            dw_timer_var.set("Focus shield on (no timer)")
-        else:
-            dw_timer_var.set("Not running")
-        try:
-            if win.winfo_exists():
-                win.after(1000, refresh_dw_timer)
-        except tk.TclError:
-            pass
-
-    def start_deep_work_flow() -> None:
-        if tracker._deep_work_session and tracker._deep_work_session.running:
-            messagebox.showinfo(
-                "Deep Work",
-                f"Already running — {tracker._deep_work_session.format_mmss()} left.",
-                parent=win,
-            )
-            return
-        _show_deep_work_shield_dialog(tracker, parent=win)
-
-    def end_deep_work() -> None:
-        tracker.end_deep_work(completed=False)
-        refresh_dw_timer()
-
-    def extend_deep_work() -> None:
-        tracker.extend_deep_work()
-        refresh_dw_timer()
-
-    dw_btns = ttk.Frame(dw_box)
-    dw_btns.pack(fill=tk.X, pady=(6, 0))
-    ttk.Button(dw_btns, text="Start Deep Work…", command=start_deep_work_flow).pack(
-        side=tk.LEFT
-    )
-    ttk.Button(dw_btns, text="+10 min", command=extend_deep_work).pack(side=tk.LEFT, padx=4)
-    ttk.Button(dw_btns, text="End", command=end_deep_work).pack(side=tk.LEFT)
-
-    # Yield to event loop after Deep Work section (allow indicator to show/animate).
-    try:
-        win.update()
-        if not win.winfo_exists():
-            return win
-    except tk.TclError:
-        return win
-
-    # --- Today / Upcoming todos (collapsible) ---
-    def _make_section(title: str, section_key: str) -> tk.Frame:
-        box = ttk.Frame(pad)
-        box.pack(fill=tk.X, expand=False, pady=(0, 10))
-        body = tk.Frame(box, bg=theme["bg"])
-        header_var = tk.StringVar()
-        state = {"collapsed": quick_capture.is_section_collapsed(tracker.settings, section_key)}
-
-        def render_header() -> None:
-            header_var.set(f"{'▸' if state['collapsed'] else '▾'}  {title}")
-
-        def apply_visibility() -> None:
-            if state["collapsed"]:
-                body.pack_forget()
-            else:
-                body.pack(fill=tk.X, expand=False, pady=(4, 0))
-            win.update_idletasks()
-            refresh_scroll_region(canvas, inner)
-
-        def toggle(_event=None) -> None:
-            state["collapsed"] = not state["collapsed"]
-            tracker.settings = quick_capture.set_section_collapsed(
-                tracker.settings, section_key, state["collapsed"]
-            )
-            tracker.save_data(flush=True)
-            render_header()
-            apply_visibility()
-
-        header = ttk.Label(box, textvariable=header_var, style="Subheading.TLabel", cursor="hand2")
-        header.pack(fill=tk.X)
-        header.bind("<Button-1>", toggle)
-        render_header()
-        apply_visibility()
-        return body
-
-    today_list = _make_section("Today’s todos", "today")
-    upcoming_list = _make_section("Upcoming (scheduled)", "upcoming")
-
-    add_frame = ttk.Frame(pad)
-    add_frame.pack(fill=tk.X, pady=(0, 10))
-    ttk.Label(add_frame, text="New todo").pack(anchor="w")
-    new_text = tk.StringVar()
-    
-    # Store todo StringVar for external prefill
-    tracker._qc_todo_var = new_text
-    
-    # Pre-fill text if carried over from inline field
-    prefill = getattr(tracker, "_qc_prefill_text", "")
-    if prefill:
-        new_text.set(prefill)
-        tracker._qc_prefill_text = ""
-    
-    todo_entry = ttk.Entry(add_frame, textvariable=new_text)
-    todo_entry.pack(fill=tk.X, pady=2)
-    from inline_validation import focus_first_invalid, make_inline_error_label, set_field_error
-
-    todo_error = make_inline_error_label(add_frame, theme)
-    todo_error.pack(anchor="w")
-    row = ttk.Frame(add_frame)
-    row.pack(fill=tk.X, pady=2)
-    cat_error = make_inline_error_label(row, theme)
-    ttk.Label(row, text="Work date").pack(side=tk.LEFT)
-    date_var = tk.StringVar(value=tracker.today_str())
-    ttk.Entry(row, textvariable=date_var, width=12).pack(side=tk.LEFT, padx=6)
-    ttk.Label(row, text="Category").pack(side=tk.LEFT, padx=(8, 0))
-    cat_names = list(tracker.categories.keys())
-    new_cat = tk.StringVar(value="")
-    new_cat_combo = ttk.Combobox(row, textvariable=new_cat, width=22)
-    new_cat_combo.pack(side=tk.LEFT, padx=4)
-    bind_category_typeahead(new_cat_combo, cat_names, allow_blank=True)
-
-    def persist_todos() -> None:
-        tracker.todos = todos.normalize_todos(tracker.todos)
-        tracker.save_data(flush=True)
-
-    def rebuild_todo_lists() -> None:
-        for child in today_list.winfo_children():
+    def _clear_todo_lists(self) -> None:
+        for child in self.today_list.winfo_children():
             child.destroy()
-        for child in upcoming_list.winfo_children():
+        for child in self.upcoming_list.winfo_children():
             child.destroy()
-        today = tracker.today_str()
-        edit_categories = list(tracker.categories.keys())
-        today_items = todos.items_for_day(tracker.todos, today)
-        today_ids = [i["id"] for i in today_items]
-        for item in today_items:
-            _todo_row(
-                today_list, tracker, item, persist_todos, rebuild_todo_lists, win,
-                sibling_ids=today_ids, categories=edit_categories,
+
+    def _todo_row_batch_steps(self) -> tuple:
+        win = self.win
+        tracker = self.tracker
+
+        def today_batch(start: int, end: int) -> None:
+            for item in self._today_items[start:end]:
+                _todo_row(
+                    self.today_list,
+                    tracker,
+                    item,
+                    self._persist_todos,
+                    self.rebuild_todo_lists,
+                    win,
+                    sibling_ids=self._today_ids,
+                    categories=self._edit_categories,
+                )
+
+        def upcoming_batch(start: int, end: int) -> None:
+            for item in self._upcoming_items[start:end]:
+                _todo_row(
+                    self.upcoming_list,
+                    tracker,
+                    item,
+                    self._persist_todos,
+                    self.rebuild_todo_lists,
+                    win,
+                    upcoming=True,
+                    sibling_ids=self._upcoming_ids,
+                    categories=self._edit_categories,
+                )
+
+        steps = cooperative_batch_steps(
+            len(self._today_items),
+            DEFAULT_COOPERATIVE_BATCH_SIZE,
+            today_batch,
+        )
+        steps.extend(
+            cooperative_batch_steps(
+                len(self._upcoming_items),
+                DEFAULT_COOPERATIVE_BATCH_SIZE,
+                upcoming_batch,
             )
-        upcoming = todos.upcoming_items(tracker.todos, today)
-        upcoming_ids = [i["id"] for i in upcoming]
-        for item in upcoming:
-            _todo_row(
-                upcoming_list, tracker, item, persist_todos, rebuild_todo_lists, win,
-                upcoming=True, sibling_ids=upcoming_ids, categories=edit_categories,
-            )
-        if not today_list.winfo_children():
-            ttk.Label(today_list, text="No todos for today.", style="Muted.TLabel").pack(anchor="w")
-        if not upcoming_list.winfo_children():
-            ttk.Label(upcoming_list, text="Nothing scheduled ahead.", style="Muted.TLabel").pack(
+        )
+        return tuple(steps)
+
+    def _finish_todo_lists(self) -> None:
+        if not self.today_list.winfo_children():
+            ttk.Label(self.today_list, text="No todos for today.", style="Muted.TLabel").pack(
                 anchor="w"
             )
-        win.update_idletasks()
-        refresh_scroll_region(canvas, inner)
-    
-    # Store rebuild callback for external refresh
-    tracker._qc_rebuild_todos = rebuild_todo_lists
+        if not self.upcoming_list.winfo_children():
+            ttk.Label(
+                self.upcoming_list,
+                text="Nothing scheduled ahead.",
+                style="Muted.TLabel",
+            ).pack(anchor="w")
+        self.win.update_idletasks()
+        refresh_scroll_region(self.canvas, self.inner)
 
-    def add_todo() -> None:
-        text = new_text.get().strip()
-        MAX_TODO_LENGTH = 500
-        text_err = None
-        if not text:
-            text_err = "Enter a todo."
-        elif len(text) > MAX_TODO_LENGTH:
-            text_err = f"Todo text is too long (max {MAX_TODO_LENGTH} characters)."
+    def _phase_finalize(self) -> None:
+        self.win._qc_building = False
+        self.refresh_dw_timer()
+        self.win.update_idletasks()
+        refresh_scroll_region(self.canvas, self.inner)
+        self.canvas.yview_moveto(0)
 
-        category = resolve_category_name(
-            new_cat.get(), list(tracker.categories.keys()), allow_blank=True
+    def _phase_shell(self) -> None:
+        win = self.win
+        theme = self.theme
+        tracker = self.tracker
+        on_close = self.on_close
+        # Pin footer first so scroll body cannot eat the whole window.
+        footer = ttk.Frame(win, padding=(12, 8))
+        footer.pack(side=tk.BOTTOM, fill=tk.X)
+        ttk.Button(footer, text="Turn off Quick Capture", command=on_close).pack(anchor="e")
+
+        scroll_host = ttk.Frame(win)
+        scroll_host.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
+        outer, self.inner, self.canvas = ui_scroll.make_scrollable_frame(
+            scroll_host,
+            theme=theme,
+            chrome_bg=theme["bg"],
         )
-        cat_err = None
-        if category is None:
-            cat_err = "Pick a category from the list (or leave blank)."
+        outer.pack(fill=tk.BOTH, expand=True)
 
-        work_date = date_var.get().strip() or tracker.today_str()
-        add_err = None
-        if not text_err and not cat_err:
+        self.pad = ttk.Frame(self.inner, padding=12)
+        self.pad.pack(fill=tk.X, expand=False)
+
+        # FONTS key is "subheading" (not "subtitle") — wrong key crashed build after
+        # caching the empty Toplevel, so later opens only lifted a blank shell.
+        ttk.Label(self.pad, text="Quick Capture", font=FONTS["subheading"]).pack(anchor="w")
+        ttk.Label(
+            self.pad,
+            text="Todos, links, journal, quick log, and Deep Work — off when you close this.",
+            style="Muted.TLabel",
+            wraplength=380,
+        ).pack(anchor="w", pady=(2, 8))
+
+
+    def _phase_deep_work(self) -> None:
+        win = self.win
+        theme = self.theme
+        tracker = self.tracker
+        on_close = self.on_close
+        # --- Deep Work + focus shield ---
+        dw_box = ttk.LabelFrame(self.pad, text="Deep Work + focus shield", padding=8)
+        dw_box.pack(fill=tk.X, pady=(0, 10))
+        dw_timer_var = tk.StringVar(value="Not running")
+        ttk.Label(dw_box, textvariable=dw_timer_var, font=FONTS["subheading"]).pack(anchor="w")
+
+        def refresh_dw_timer() -> None:
+            session = getattr(tracker, "_deep_work_session", None)
+            if session and session.running:
+                dw_timer_var.set(f"Remaining {session.format_mmss()}")
+            elif getattr(tracker, "_focus_shield", None) and tracker._focus_shield.active:
+                dw_timer_var.set("Focus shield on (no timer)")
+            else:
+                dw_timer_var.set("Not running")
             try:
-                tracker.todos = todos.add_todo(
-                    tracker.todos,
-                    text=text,
-                    work_date=work_date,
-                    category=category,
-                )
-                tracker.settings["last_todo_category"] = category
-            except ValueError as exc:
-                add_err = str(exc)
+                if win.winfo_exists():
+                    win.after(1000, refresh_dw_timer)
+            except tk.TclError:
+                pass
 
-        pairs = [
-            (todo_entry, todo_error, text_err or add_err),
-            (new_cat_combo, cat_error, cat_err if not text_err and not add_err else None),
-        ]
-        if focus_first_invalid(pairs):
-            return
-
-        set_field_error(todo_error, None)
-        set_field_error(cat_error, None)
-        persist_todos()
-        new_text.set("")
-        date_var.set(tracker.today_str())
-        new_cat.set("")
-        rebuild_todo_lists()
-
-    ttk.Button(add_frame, text="Add todo", style="Accent.TButton", command=add_todo).pack(
-        anchor="w", pady=(4, 0)
-    )
-    todo_entry.bind("<Return>", lambda _event: add_todo())
-
-    # Yield to event loop after todo section (allow indicator to animate).
-    try:
-        win.update()
-        if not win.winfo_exists():
-            return win
-    except tk.TclError:
-        return win
-
-    # --- Quick log launcher ---
-    log_box = ttk.LabelFrame(pad, text="Quick log", padding=8)
-    log_box.pack(fill=tk.X, pady=(0, 10))
-    log_type = tk.StringVar(value=QUICK_LOG_CHOICES[0][0])
-    ttk.Combobox(
-        log_box,
-        textvariable=log_type,
-        values=[label for label, _ in QUICK_LOG_CHOICES],
-        state="readonly",
-    ).pack(fill=tk.X)
-    log_cat = tk.StringVar(value=list(tracker.categories.keys())[0] if tracker.categories else "")
-    ttk.Label(log_box, text="Life domain (when applicable)", style="Muted.TLabel").pack(
-        anchor="w", pady=(6, 0)
-    )
-    log_cat_combo = ttk.Combobox(log_box, textvariable=log_cat)
-    log_cat_combo.pack(fill=tk.X, pady=2)
-    bind_category_typeahead(log_cat_combo, list(tracker.categories.keys()))
-
-    def open_quick_log() -> None:
-        label = log_type.get()
-        kind = dict(QUICK_LOG_CHOICES).get(label, "")
-        tracker.root.deiconify()
-        tracker.root.lift()
-        if kind == "life":
-            cat = resolve_category_name(log_cat.get(), list(tracker.categories.keys()))
-            if not cat:
+        def start_deep_work_flow() -> None:
+            if tracker._deep_work_session and tracker._deep_work_session.running:
                 messagebox.showinfo(
-                    "Quick log",
-                    "Pick a life domain from the list (type to filter, then select a match).",
+                    "Deep Work",
+                    f"Already running — {tracker._deep_work_session.format_mmss()} left.",
                     parent=win,
                 )
                 return
-            log_cat.set(cat)
-            tracker.open_log_dialog(cat)
-        elif kind == "journal":
+            _show_deep_work_shield_dialog(tracker, parent=win)
+
+        def end_deep_work() -> None:
+            tracker.end_deep_work(completed=False)
+            refresh_dw_timer()
+
+        def extend_deep_work() -> None:
+            tracker.extend_deep_work()
+            refresh_dw_timer()
+
+        dw_btns = ttk.Frame(dw_box)
+        dw_btns.pack(fill=tk.X, pady=(6, 0))
+        ttk.Button(dw_btns, text="Start Deep Work…", command=start_deep_work_flow).pack(
+            side=tk.LEFT
+        )
+        ttk.Button(dw_btns, text="+10 min", command=extend_deep_work).pack(side=tk.LEFT, padx=4)
+        ttk.Button(dw_btns, text="End", command=end_deep_work).pack(side=tk.LEFT)
+        self.refresh_dw_timer = refresh_dw_timer
+
+
+    def _phase_todos(self) -> None:
+        win = self.win
+        theme = self.theme
+        tracker = self.tracker
+        on_close = self.on_close
+        pad = self.pad
+        canvas = self.canvas
+        inner = self.inner
+        # --- Today / Upcoming todos (collapsible) ---
+        def _make_section(title: str, section_key: str) -> tk.Frame:
+            box = ttk.Frame(self.pad)
+            box.pack(fill=tk.X, expand=False, pady=(0, 10))
+            body = tk.Frame(box, bg=theme["bg"])
+            header_var = tk.StringVar()
+            state = {"collapsed": quick_capture.is_section_collapsed(tracker.settings, section_key)}
+
+            def render_header() -> None:
+                header_var.set(f"{'▸' if state['collapsed'] else '▾'}  {title}")
+
+            def apply_visibility() -> None:
+                if state["collapsed"]:
+                    body.pack_forget()
+                else:
+                    body.pack(fill=tk.X, expand=False, pady=(4, 0))
+                win.update_idletasks()
+                refresh_scroll_region(self.canvas, self.inner)
+
+            def toggle(_event=None) -> None:
+                state["collapsed"] = not state["collapsed"]
+                tracker.settings = quick_capture.set_section_collapsed(
+                    tracker.settings, section_key, state["collapsed"]
+                )
+                tracker.save_data(flush=True)
+                render_header()
+                apply_visibility()
+
+            header = ttk.Label(box, textvariable=header_var, style="Subheading.TLabel", cursor="hand2")
+            header.pack(fill=tk.X)
+            header.bind("<Button-1>", toggle)
+            render_header()
+            apply_visibility()
+            return body
+
+        self.today_list = _make_section("Today’s todos", "today")
+        self.upcoming_list = _make_section("Upcoming (scheduled)", "upcoming")
+
+        add_frame = ttk.Frame(self.pad)
+        add_frame.pack(fill=tk.X, pady=(0, 10))
+        ttk.Label(add_frame, text="New todo").pack(anchor="w")
+        new_text = tk.StringVar()
+
+        # Store todo StringVar for external prefill
+        tracker._qc_todo_var = new_text
+
+        # Pre-fill text if carried over from inline field
+        prefill = getattr(tracker, "_qc_prefill_text", "")
+        if prefill:
+            new_text.set(prefill)
+            tracker._qc_prefill_text = ""
+
+        todo_entry = ttk.Entry(add_frame, textvariable=new_text)
+        todo_entry.pack(fill=tk.X, pady=2)
+        from inline_validation import focus_first_invalid, make_inline_error_label, set_field_error
+
+        todo_error = make_inline_error_label(add_frame, theme)
+        todo_error.pack(anchor="w")
+        row = ttk.Frame(add_frame)
+        row.pack(fill=tk.X, pady=2)
+        cat_error = make_inline_error_label(row, theme)
+        ttk.Label(row, text="Work date").pack(side=tk.LEFT)
+        date_var = tk.StringVar(value=tracker.today_str())
+        ttk.Entry(row, textvariable=date_var, width=12).pack(side=tk.LEFT, padx=6)
+        ttk.Label(row, text="Category").pack(side=tk.LEFT, padx=(8, 0))
+        cat_names = list(tracker.categories.keys())
+        new_cat = tk.StringVar(value="")
+        new_cat_combo = ttk.Combobox(row, textvariable=new_cat, width=22)
+        new_cat_combo.pack(side=tk.LEFT, padx=4)
+        bind_category_typeahead(new_cat_combo, cat_names, allow_blank=True)
+
+        def persist_todos() -> None:
+            tracker.todos = todos.normalize_todos(tracker.todos)
+            tracker.save_data(flush=True)
+
+        def rebuild_todo_lists() -> None:
+            if getattr(win, "_qc_building", False):
+                return
+            for child in self.today_list.winfo_children():
+                child.destroy()
+            for child in self.upcoming_list.winfo_children():
+                child.destroy()
+            today = tracker.today_str()
+            edit_categories = list(tracker.categories.keys())
+            today_items = todos.items_for_day(tracker.todos, today)
+            today_ids = [i["id"] for i in today_items]
+            for item in today_items:
+                _todo_row(
+                    self.today_list,
+                    tracker,
+                    item,
+                    persist_todos,
+                    rebuild_todo_lists,
+                    win,
+                    sibling_ids=today_ids,
+                    categories=edit_categories,
+                )
+            upcoming = todos.upcoming_items(tracker.todos, today)
+            upcoming_ids = [i["id"] for i in upcoming]
+            for item in upcoming:
+                _todo_row(
+                    self.upcoming_list,
+                    tracker,
+                    item,
+                    persist_todos,
+                    rebuild_todo_lists,
+                    win,
+                    upcoming=True,
+                    sibling_ids=upcoming_ids,
+                    categories=edit_categories,
+                )
+            if not self.today_list.winfo_children():
+                ttk.Label(
+                    self.today_list, text="No todos for today.", style="Muted.TLabel"
+                ).pack(anchor="w")
+            if not self.upcoming_list.winfo_children():
+                ttk.Label(
+                    self.upcoming_list,
+                    text="Nothing scheduled ahead.",
+                    style="Muted.TLabel",
+                ).pack(anchor="w")
+            win.update_idletasks()
+            refresh_scroll_region(self.canvas, self.inner)
+
+        self._persist_todos = persist_todos
+        self.rebuild_todo_lists = rebuild_todo_lists
+        tracker._qc_rebuild_todos = rebuild_todo_lists
+        today = tracker.today_str()
+        self._today_items = todos.items_for_day(tracker.todos, today)
+        self._today_ids = [i["id"] for i in self._today_items]
+        self._upcoming_items = todos.upcoming_items(tracker.todos, today)
+        self._upcoming_ids = [i["id"] for i in self._upcoming_items]
+        self._edit_categories = list(tracker.categories.keys())
+
+        def add_todo() -> None:
+            text = new_text.get().strip()
+            MAX_TODO_LENGTH = 500
+            text_err = None
+            if not text:
+                text_err = "Enter a todo."
+            elif len(text) > MAX_TODO_LENGTH:
+                text_err = f"Todo text is too long (max {MAX_TODO_LENGTH} characters)."
+
+            category = resolve_category_name(
+                new_cat.get(), list(tracker.categories.keys()), allow_blank=True
+            )
+            cat_err = None
+            if category is None:
+                cat_err = "Pick a category from the list (or leave blank)."
+
+            work_date = date_var.get().strip() or tracker.today_str()
+            add_err = None
+            if not text_err and not cat_err:
+                try:
+                    tracker.todos = todos.add_todo(
+                        tracker.todos,
+                        text=text,
+                        work_date=work_date,
+                        category=category,
+                    )
+                    tracker.settings["last_todo_category"] = category
+                except ValueError as exc:
+                    add_err = str(exc)
+
+            pairs = [
+                (todo_entry, todo_error, text_err or add_err),
+                (new_cat_combo, cat_error, cat_err if not text_err and not add_err else None),
+            ]
+            if focus_first_invalid(pairs):
+                return
+
+            set_field_error(todo_error, None)
+            set_field_error(cat_error, None)
+            persist_todos()
+            new_text.set("")
+            date_var.set(tracker.today_str())
+            new_cat.set("")
+            rebuild_todo_lists()
+
+        ttk.Button(add_frame, text="Add todo", style="Accent.TButton", command=add_todo).pack(
+            anchor="w", pady=(4, 0)
+        )
+        todo_entry.bind("<Return>", lambda _event: add_todo())
+        self.rebuild_todo_lists = rebuild_todo_lists
+
+
+    def _phase_rest(self) -> None:
+        win = self.win
+        theme = self.theme
+        tracker = self.tracker
+        on_close = self.on_close
+        pad = self.pad
+        canvas = self.canvas
+        inner = self.inner
+        # --- Quick log launcher ---
+        log_box = ttk.LabelFrame(self.pad, text="Quick log", padding=8)
+        log_box.pack(fill=tk.X, pady=(0, 10))
+        log_type = tk.StringVar(value=QUICK_LOG_CHOICES[0][0])
+        ttk.Combobox(
+            log_box,
+            textvariable=log_type,
+            values=[label for label, _ in QUICK_LOG_CHOICES],
+            state="readonly",
+        ).pack(fill=tk.X)
+        log_cat = tk.StringVar(value=list(tracker.categories.keys())[0] if tracker.categories else "")
+        ttk.Label(log_box, text="Life domain (when applicable)", style="Muted.TLabel").pack(
+            anchor="w", pady=(6, 0)
+        )
+        log_cat_combo = ttk.Combobox(log_box, textvariable=log_cat)
+        log_cat_combo.pack(fill=tk.X, pady=2)
+        bind_category_typeahead(log_cat_combo, list(tracker.categories.keys()))
+
+        def open_quick_log() -> None:
+            label = log_type.get()
+            kind = dict(QUICK_LOG_CHOICES).get(label, "")
+            tracker.root.deiconify()
+            tracker.root.lift()
+            if kind == "life":
+                cat = resolve_category_name(log_cat.get(), list(tracker.categories.keys()))
+                if not cat:
+                    messagebox.showinfo(
+                        "Quick log",
+                        "Pick a life domain from the list (type to filter, then select a match).",
+                        parent=win,
+                    )
+                    return
+                log_cat.set(cat)
+                tracker.open_log_dialog(cat)
+            elif kind == "journal":
+                from journal_ui import show_journal_window
+
+                show_journal_window(tracker, tracker.today_str())
+            elif kind == "exercise":
+                tracker.show_log_exercise()
+            elif kind == "practice":
+                tracker.show_log_practice()
+            elif kind == "fitness":
+                tracker.show_fitness_hub()
+            elif kind == "body":
+                tracker.show_fitness_hub()
+                messagebox.showinfo(
+                    "Body composition",
+                    "Opened Fitness Hub — use Body Composition from there.",
+                    parent=win,
+                )
+            elif kind == "plan":
+                tracker.show_plan_tomorrow()
+            elif kind == "writing":
+                tracker.show_writing_projects()
+
+        ttk.Button(log_box, text="Open", command=open_quick_log).pack(
+            anchor="w", pady=(8, 0)
+        )
+
+        # --- Link capture (SPEC-314) ---
+        link_box = ttk.LabelFrame(self.pad, text="Link → day entry", padding=8)
+        link_box.pack(fill=tk.X, pady=(0, 10))
+        url_var = tk.StringVar()
+        title_var = tk.StringVar()
+        link_cat = tk.StringVar(value=list(tracker.categories.keys())[0] if tracker.categories else "")
+        ttk.Entry(link_box, textvariable=url_var).pack(fill=tk.X, pady=2)
+        ttk.Entry(link_box, textvariable=title_var).pack(fill=tk.X, pady=2)
+        link_cat_combo = ttk.Combobox(link_box, textvariable=link_cat)
+        link_cat_combo.pack(fill=tk.X, pady=2)
+        bind_category_typeahead(link_cat_combo, list(tracker.categories.keys()))
+        link_status = tk.StringVar(value="")
+        ttk.Label(link_box, textvariable=link_status, style="Muted.TLabel", wraplength=360).pack(anchor="w")
+
+        def save_link() -> None:
+            url = url_var.get().strip()
+            category = resolve_category_name(link_cat.get(), list(tracker.categories.keys()))
+            if not url or not quick_capture.looks_like_url(url):
+                messagebox.showinfo("Quick Capture", "Paste an http(s) URL.", parent=win)
+                return
+            if not category:
+                messagebox.showinfo(
+                    "Quick Capture",
+                    "Pick a category from the list (type to filter, then select a match).",
+                    parent=win,
+                )
+                return
+            link_cat.set(category)
+            title = title_var.get().strip()
+            if not title and quick_capture.is_youtube_url(url):
+                fetched = quick_capture.fetch_youtube_title(url)
+                if fetched:
+                    title = fetched
+                    title_var.set(fetched)
+            quick_capture.merge_day_entry_starter(
+                tracker.entries,
+                date_str=tracker.today_str(),
+                category=category,
+                url=url,
+                title=title,
+            )
+            tracker._invalidate_caches()
+            tracker.save_data(flush=True)
+            tracker.refresh_dashboard(full=False)
+            link_status.set(f"Saved to {category}.")
+            url_var.set("")
+            title_var.set("")
+
+        ttk.Button(link_box, text="Save link", command=save_link).pack(
+            anchor="w", pady=(4, 0)
+        )
+
+        # --- Journal ---
+        journal_box = ttk.LabelFrame(self.pad, text="Journal", padding=8)
+        journal_box.pack(fill=tk.X, pady=(0, 10))
+        seed_text = tk.Text(journal_box, height=3, wrap=tk.WORD, font=FONTS["body"])
+        seed_text.pack(fill=tk.X)
+        style_text_widget(seed_text, theme)
+
+        def journal_now() -> None:
+            seed = seed_text.get("1.0", "end-1c").strip()
+            tracker.root.deiconify()
+            tracker.root.lift()
             from journal_ui import show_journal_window
 
-            show_journal_window(tracker, tracker.today_str())
-        elif kind == "exercise":
-            tracker.show_log_exercise()
-        elif kind == "practice":
-            tracker.show_log_practice()
-        elif kind == "fitness":
-            tracker.show_fitness_hub()
-        elif kind == "body":
-            tracker.show_fitness_hub()
-            messagebox.showinfo(
-                "Body composition",
-                "Opened Fitness Hub — use Body Composition from there.",
-                parent=win,
-            )
-        elif kind == "plan":
-            tracker.show_plan_tomorrow()
-        elif kind == "writing":
-            tracker.show_writing_projects()
+            show_journal_window(tracker, tracker.today_str(), seed=seed or None)
+            seed_text.delete("1.0", tk.END)
 
-    ttk.Button(log_box, text="Open", command=open_quick_log).pack(
-        anchor="w", pady=(8, 0)
-    )
-
-    # --- Link capture (SPEC-314) ---
-    link_box = ttk.LabelFrame(pad, text="Link → day entry", padding=8)
-    link_box.pack(fill=tk.X, pady=(0, 10))
-    url_var = tk.StringVar()
-    title_var = tk.StringVar()
-    link_cat = tk.StringVar(value=list(tracker.categories.keys())[0] if tracker.categories else "")
-    ttk.Entry(link_box, textvariable=url_var).pack(fill=tk.X, pady=2)
-    ttk.Entry(link_box, textvariable=title_var).pack(fill=tk.X, pady=2)
-    link_cat_combo = ttk.Combobox(link_box, textvariable=link_cat)
-    link_cat_combo.pack(fill=tk.X, pady=2)
-    bind_category_typeahead(link_cat_combo, list(tracker.categories.keys()))
-    link_status = tk.StringVar(value="")
-    ttk.Label(link_box, textvariable=link_status, style="Muted.TLabel", wraplength=360).pack(anchor="w")
-
-    def save_link() -> None:
-        url = url_var.get().strip()
-        category = resolve_category_name(link_cat.get(), list(tracker.categories.keys()))
-        if not url or not quick_capture.looks_like_url(url):
-            messagebox.showinfo("Quick Capture", "Paste an http(s) URL.", parent=win)
-            return
-        if not category:
-            messagebox.showinfo(
-                "Quick Capture",
-                "Pick a category from the list (type to filter, then select a match).",
-                parent=win,
-            )
-            return
-        link_cat.set(category)
-        title = title_var.get().strip()
-        if not title and quick_capture.is_youtube_url(url):
-            fetched = quick_capture.fetch_youtube_title(url)
-            if fetched:
-                title = fetched
-                title_var.set(fetched)
-        quick_capture.merge_day_entry_starter(
-            tracker.entries,
-            date_str=tracker.today_str(),
-            category=category,
-            url=url,
-            title=title,
+        ttk.Button(journal_box, text="Journal now", command=journal_now).pack(
+            anchor="w", pady=(6, 0)
         )
-        tracker._invalidate_caches()
-        tracker.save_data(flush=True)
-        tracker.refresh_dashboard(full=False)
-        link_status.set(f"Saved to {category}.")
-        url_var.set("")
-        title_var.set("")
-
-    ttk.Button(link_box, text="Save link", command=save_link).pack(
-        anchor="w", pady=(4, 0)
-    )
-
-    # --- Journal ---
-    journal_box = ttk.LabelFrame(pad, text="Journal", padding=8)
-    journal_box.pack(fill=tk.X, pady=(0, 10))
-    seed_text = tk.Text(journal_box, height=3, wrap=tk.WORD, font=FONTS["body"])
-    seed_text.pack(fill=tk.X)
-    style_text_widget(seed_text, theme)
-
-    def journal_now() -> None:
-        seed = seed_text.get("1.0", "end-1c").strip()
-        tracker.root.deiconify()
-        tracker.root.lift()
-        from journal_ui import show_journal_window
-
-        show_journal_window(tracker, tracker.today_str(), seed=seed or None)
-        seed_text.delete("1.0", tk.END)
-
-    ttk.Button(journal_box, text="Journal now", command=journal_now).pack(
-        anchor="w", pady=(6, 0)
-    )
-
-    # Yield to event loop after all sections built (final animation frame).
-    try:
-        win.update()
-        if not win.winfo_exists():
-            return win
-    except tk.TclError:
-        return win
-
-    rebuild_todo_lists()
-    refresh_dw_timer()
-    win.update_idletasks()
-    refresh_scroll_region(canvas, inner)
-    canvas.yview_moveto(0)
-    return win
 
 
 def _todo_row(
