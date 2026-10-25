@@ -6,11 +6,13 @@ import tempfile
 import unittest
 
 from legacy_fitness_migration import (
+    apply_migrated_flags,
     backup_files_for_migration,
-    mark_migrated_in_data_json,
+    legacy_source_hash,
     migrate_legacy_sessions,
-    run_migration,
+    run_in_memory_migration,
 )
+from vault import load_data_file, save_data_file
 from progression.db import FitnessRepository
 
 
@@ -128,24 +130,27 @@ class TestLegacyMigration(unittest.TestCase):
         self.assertEqual(len(result["errors"]), 2)
 
     def test_mark_migrated_flag(self):
-        """Test that sessions are marked as migrated in data.json."""
-        data = {
-            "sessions": [
-                {"date": "2026-10-01", "notes": "Session 1"},
-                {"date": "2026-10-02", "notes": "Session 2"},
-            ]
-        }
-        
-        with open(self.data_path, 'w') as f:
-            json.dump(data, f)
-        
-        mark_migrated_in_data_json(self.data_path)
-        
-        with open(self.data_path, 'r') as f:
+        """Test that sessions are marked as migrated in memory and persist via save."""
+        sessions = [
+            {"date": "2026-10-01", "notes": "Session 1"},
+            {"date": "2026-10-02", "notes": "Session 2"},
+        ]
+        apply_migrated_flags(sessions, sessions)
+        with open(self.data_path, "w", encoding="utf-8") as f:
+            json.dump({"sessions": sessions}, f)
+        save_data_file(self.data_path, {"sessions": sessions}, encrypted=False, passphrase=None)
+
+        with open(self.data_path, "r", encoding="utf-8") as f:
             updated = json.load(f)
-        
+
         for sess in updated["sessions"]:
             self.assertIn("migrated_to_fitness_db", sess)
+
+    def test_legacy_hash_ignores_migrated_flag(self):
+        """Hash is stable when migrated_to_fitness_db is added (#154)."""
+        base = {"date": "2026-10-01", "notes": "Test"}
+        flagged = {**base, "migrated_to_fitness_db": "2026-10-01T12:00:00"}
+        self.assertEqual(legacy_source_hash(base), legacy_source_hash(flagged))
 
     def test_transaction_rollback_on_failure(self):
         """Test that failed migration leaves database unchanged."""
@@ -179,17 +184,20 @@ class TestLegacyMigration(unittest.TestCase):
         with open(self.data_path, 'w') as f:
             json.dump(data, f)
         
-        result = run_migration(self.data_path, self.db_path, mark_migrated=True)
-        
+        data = load_data_file(self.data_path, None)
+        result = run_in_memory_migration(
+            data["sessions"], self.db_path, data_path=self.data_path
+        )
+
         self.assertEqual(result["migrated_count"], 1)
-        
-        # Verify backup was created
+        self.assertEqual(result["flagged_count"], 1)
+
+        save_data_file(self.data_path, data, encrypted=False, passphrase=None)
+
         backups = [f for f in os.listdir(self.temp_dir) if "migration_backup" in f]
         self.assertGreater(len(backups), 0)
-        
-        # Verify migration flag was added
-        with open(self.data_path, 'r') as f:
-            updated = json.load(f)
+
+        updated = load_data_file(self.data_path, None)
         self.assertIn("migrated_to_fitness_db", updated["sessions"][0])
 
 

@@ -765,34 +765,44 @@ class PersonalDevelopmentTracker:
             self.settings["fitness"] = get_fitness_settings(self.settings)
             self.sessions = migrated.get("sessions", [])
             self._invalidate_session_counts()
-            
-            # Migrate legacy program sessions to fitness.db (with backup)
+
+            on_disk_encrypted = is_encrypted_file(DATA_FILE)
+            if on_disk_encrypted and not self.settings.get("encryption_enabled"):
+                self.settings["encryption_enabled"] = True
+
+            migration_dirty = False
             if self.sessions:
-                from legacy_fitness_migration import run_migration
+                from legacy_fitness_migration import run_in_memory_migration
                 from progression.db import get_fitness_db_path
-                try:
-                    # Check if any unmigrated sessions remain
-                    needs_migration = any(
-                        not sess.get("migrated_to_fitness_db")
-                        for sess in self.sessions
-                    )
-                    if needs_migration:
-                        result = run_migration(
+
+                journal_encrypted = on_disk_encrypted or bool(
+                    self.settings.get("encryption_enabled")
+                )
+                needs_migration = any(
+                    not sess.get("migrated_to_fitness_db") for sess in self.sessions
+                )
+                if needs_migration and (not journal_encrypted or self.vault_passphrase):
+                    try:
+                        result = run_in_memory_migration(
+                            self.sessions,
+                            get_fitness_db_path(),
                             data_path=DATA_FILE,
-                            fitness_db_path=get_fitness_db_path(),
-                            mark_migrated=True
+                            include_free_text_notes=not journal_encrypted,
                         )
-                        if result.get("migrated_count", 0) > 0:
-                            print(f"Legacy migration: {result['migrated_count']} sessions migrated")
+                        if result.get("flagged_count", 0) > 0:
+                            migration_dirty = True
                         if result.get("errors"):
-                            print(f"Legacy migration warnings: {len(result['errors'])} issues")
-                except Exception as e:
-                    messagebox.showerror(
-                        "Migration Failed",
-                        f"Legacy fitness session migration failed:\n\n{e}\n\n"
-                        "Your data is safe. Backups were created if migration started."
-                    )
-            
+                            logging.warning(
+                                "Legacy migration completed with %s issue(s)",
+                                len(result["errors"]),
+                            )
+                    except Exception as e:
+                        messagebox.showerror(
+                            "Migration Failed",
+                            f"Legacy fitness session migration failed:\n\n{e}\n\n"
+                            "Your data is safe. Backups were created if migration started.",
+                        )
+
             self.milestones = merge_milestones(migrated.get("milestones"))
             self.journal = journal.normalize_journal(migrated.get("journal"))
             self.creative_projects = creative_projects.normalize_creative_projects(
@@ -805,7 +815,7 @@ class PersonalDevelopmentTracker:
             self.todos = todos.normalize_todos(migrated.get("todos"))
             self.practices = practices.normalize_practices(migrated.get("practices"))
             self.program_state = migrated.get("program_state", {})
-            dirty = False
+            dirty = migration_dirty
             if sync_fitness_sessions_to_entries(self.entries, self.settings.get("fitness")):
                 dirty = True
             qc_flags = dict(self.settings.get("quick_capture") or {})
