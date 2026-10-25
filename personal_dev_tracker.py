@@ -186,6 +186,7 @@ class PersonalDevelopmentTracker:
         self._more_menu_popup: Any | None = None
         self._footer_more_btn: ttk.Button | None = None
         self._content_build_generation = 0
+        self._content_build_busy: BusyIndicator | None = None
 
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
@@ -2000,6 +2001,16 @@ class PersonalDevelopmentTracker:
 
         def _build_stale() -> bool:
             return build_generation != self._content_build_generation
+
+        def _abort_stale_build() -> None:
+            busy.stop()
+            if self._content_build_busy is busy:
+                self._content_build_busy = None
+
+        prev_busy = self._content_build_busy
+        if prev_busy is not None:
+            prev_busy.stop()
+            self._content_build_busy = None
         
         for child in self._content_pane.winfo_children():
             child.destroy()
@@ -2013,6 +2024,7 @@ class PersonalDevelopmentTracker:
             theme=self.theme,
             delay_ms=180,
         )
+        self._content_build_busy = busy
         
         if DEBUG_DELAY_MS > 0:
             _perf_log(f"Applying debug delay: {DEBUG_DELAY_MS}ms")
@@ -2072,6 +2084,8 @@ class PersonalDevelopmentTracker:
 
         def _finish_content_build() -> None:
             busy.stop()
+            if self._content_build_busy is busy:
+                self._content_build_busy = None
             if build_errors:
                 _present_build_errors()
             else:
@@ -2084,6 +2098,7 @@ class PersonalDevelopmentTracker:
 
         def chunk_1_setup():
             if _build_stale():
+                _abort_stale_build()
                 return
             chunk_start = time.time()
             try:
@@ -2100,6 +2115,7 @@ class PersonalDevelopmentTracker:
 
         def chunk_2_build_log_bar():
             if _build_stale():
+                _abort_stale_build()
                 return
             nonlocal log_bar_built
             chunk_start = time.time()
@@ -2113,6 +2129,7 @@ class PersonalDevelopmentTracker:
 
         def chunk_3_finalize():
             if _build_stale():
+                _abort_stale_build()
                 return
             chunk_start = time.time()
             try:
