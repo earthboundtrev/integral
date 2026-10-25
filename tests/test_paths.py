@@ -42,6 +42,15 @@ def test_seed_loader_uses_app_resource(monkeypatch, tmp_path):
     assert data["source_book"] == "CC1"
 
 
+def test_dev_data_file_uses_canonical_user_dir(monkeypatch, tmp_path):
+    monkeypatch.setattr(paths, "is_frozen", lambda: False)
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    expected = os.path.join(str(home), ".integral", "data.json")
+    assert paths.data_file() == expected
+
+
 def test_user_data_dir_unchanged_when_frozen(monkeypatch):
     import profiles
     import sys

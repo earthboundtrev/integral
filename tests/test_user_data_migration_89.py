@@ -94,15 +94,50 @@ def test_both_present_does_not_overwrite(data_roots):
 def test_rerun_is_idempotent(data_roots):
     _write_profile_data(data_roots["legacy"], "once")
     udm.run_at_startup()
+    udm.consume_user_notices()
     udm._startup_lock = False
     first = (data_roots["canonical"] / "profiles" / "default" / "data.json").read_text(
         encoding="utf-8"
     )
+    state_path = data_roots["canonical"] / udm.STATE_FILE_NAME
+    state_bytes = state_path.read_bytes()
+    state_mtime = state_path.stat().st_mtime_ns
     udm.run_at_startup()
     second = (data_roots["canonical"] / "profiles" / "default" / "data.json").read_text(
         encoding="utf-8"
     )
     assert first == second
+    assert not udm.consume_user_notices()
+    assert state_path.read_bytes() == state_bytes
+    assert state_path.stat().st_mtime_ns == state_mtime
+
+
+def test_placeholder_source_does_not_cause_conflict_banner(data_roots):
+    legacy = data_roots["legacy"]
+    with open(legacy / "data.json", "w", encoding="utf-8") as handle:
+        json.dump({"schema_version": 2, "entries": {}}, handle)
+    _write_profile_data(data_roots["canonical"], "dest-only")
+    udm.run_at_startup()
+    assert not udm.consume_user_notices()
+    state = json.loads((data_roots["canonical"] / udm.STATE_FILE_NAME).read_text(encoding="utf-8"))
+    source_key = os.path.normpath(str(legacy))
+    assert state["sources"][source_key]["outcome"] in ("skipped_empty", "identical")
+
+
+def test_skips_transient_files_on_copy(data_roots):
+    legacy = data_roots["legacy"]
+    _write_profile_data(legacy, "keep-me")
+    (legacy / "profiles" / "default" / "data.json.bak").write_text("bak", encoding="utf-8")
+    logs = legacy / "logs"
+    logs.mkdir()
+    (logs / "integral.log").write_text("log line", encoding="utf-8")
+    (legacy / "integral_instance.lock").write_text("12345", encoding="utf-8")
+    udm.run_at_startup()
+    canonical_profile = data_roots["canonical"] / "profiles" / "default"
+    assert (canonical_profile / "data.json").is_file()
+    assert (canonical_profile / "data.json.bak").read_text(encoding="utf-8") == "bak"
+    assert not (data_roots["canonical"] / "logs").exists()
+    assert not (data_roots["canonical"] / "integral_instance.lock").exists()
 
 
 def test_encrypted_data_json_copied_as_bytes(data_roots, tmp_path):

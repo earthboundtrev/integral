@@ -21,6 +21,23 @@ _STATE_VERSION = 1
 _startup_lock = False
 _user_notices: list[str] = []
 
+# Transient runtime files — not part of user journal backups.
+_TRANSIENT_FILENAMES = frozenset(
+    {
+        "integral_instance.lock",
+        "pending_deep_link.txt",
+    }
+)
+_SOURCE_DONE_OUTCOMES = frozenset(
+    {
+        "copied",
+        "merged",
+        "conflict",
+        "identical",
+        "skipped_missing",
+    }
+)
+
 
 @dataclass
 class MigrationResult:
@@ -57,6 +74,10 @@ def _load_state(canonical: str) -> dict[str, Any]:
     data.setdefault("version", _STATE_VERSION)
     data.setdefault("sources", {})
     return data
+
+
+def _state_digest(state: dict[str, Any]) -> str:
+    return json.dumps(state, sort_keys=True, ensure_ascii=False)
 
 
 def _save_state(canonical: str, state: dict[str, Any]) -> None:
@@ -114,7 +135,7 @@ def _payload_has_user_data(data: dict[str, Any]) -> bool:
     if isinstance(creative, dict) and creative.get("projects"):
         return True
     youtube = data.get("youtube_history")
-    if isinstance(youtube, dict) and youtube.get("items"):
+    if isinstance(youtube, dict) and (youtube.get("items") or youtube.get("events")):
         return True
     settings = data.get("settings")
     if isinstance(settings, dict) and settings.get("onboarding_complete"):
@@ -185,7 +206,12 @@ def _path_has_user_artifacts(root: str) -> bool:
         "fitness.db",
         STATE_FILE_NAME,
     )
+    data_path = os.path.join(root, "data.json")
+    if os.path.isfile(data_path) and not _data_json_is_empty_placeholder(data_path):
+        return True
     for name in markers:
+        if name == "data.json":
+            continue
         if os.path.isfile(os.path.join(root, name)):
             return True
     profiles = os.path.join(root, "profiles")
@@ -222,7 +248,17 @@ def _resolve_dest_under_root(dest_root: str, *rel_parts: str) -> str | None:
     return dest_real
 
 
+def _is_transient_filename(name: str) -> bool:
+    if name == "data.json.bak":
+        return False
+    if name.endswith(".bak"):
+        return True
+    return name in _TRANSIENT_FILENAMES
+
+
 def _copy_file_if_absent(src_file: str, dest_file: str, conflicts: list[str]) -> bool:
+    if os.path.basename(src_file) == "data.json" and _data_json_is_empty_placeholder(src_file):
+        return False
     if os.path.exists(dest_file):
         if _file_digest(src_file) == _file_digest(dest_file):
             return False
@@ -242,7 +278,8 @@ def _copy_tree_non_destructive(src_root: str, dest_root: str) -> tuple[int, list
     conflicts: list[str] = []
     src_root = os.path.normpath(src_root)
     dest_root = os.path.normpath(dest_root)
-    for dirpath, _dirnames, filenames in os.walk(src_root, followlinks=False):
+    for dirpath, dirnames, filenames in os.walk(src_root, followlinks=False):
+        dirnames[:] = [d for d in dirnames if d != "logs"]
         rel = os.path.relpath(dirpath, src_root)
         if rel != "." and (rel.startswith("..") or os.path.isabs(rel)):
             continue
@@ -252,6 +289,8 @@ def _copy_tree_non_destructive(src_root: str, dest_root: str) -> tuple[int, list
             continue
         os.makedirs(dest_dir, exist_ok=True)
         for name in filenames:
+            if _is_transient_filename(name):
+                continue
             if name == STATE_FILE_NAME and dirpath == src_root:
                 continue
             src_file = os.path.join(dirpath, name)
@@ -283,7 +322,9 @@ def _record_source(
 def _migrate_from_source(canonical: str, source: str, state: dict[str, Any]) -> MigrationResult:
     source = os.path.normpath(source)
     prior = state.get("sources", {}).get(source)
-    if prior and prior.get("outcome") in ("copied", "merged"):
+    if prior and prior.get("outcome") in _SOURCE_DONE_OUTCOMES:
+        return MigrationResult(outcome="none", source=source)
+    if prior and prior.get("outcome") == "skipped_empty" and not _path_has_user_artifacts(source):
         return MigrationResult(outcome="none", source=source)
 
     if not os.path.isdir(source):
@@ -355,6 +396,7 @@ def run_at_startup() -> list[MigrationResult]:
     canonical = paths.user_data_dir()
     os.makedirs(canonical, exist_ok=True)
     state = _load_state(canonical)
+    state_before = _state_digest(state)
     results: list[MigrationResult] = []
 
     for legacy in legacy_user_data_directories():
@@ -364,5 +406,6 @@ def run_at_startup() -> list[MigrationResult]:
         if result.outcome not in ("none", "skipped"):
             results.append(result)
 
-    _save_state(canonical, state)
+    if _state_digest(state) != state_before:
+        _save_state(canonical, state)
     return results
