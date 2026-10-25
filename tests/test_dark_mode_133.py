@@ -100,77 +100,11 @@ class TestMenusAndThemeToggle(unittest.TestCase):
         self.assertEqual(int(lb.cget("borderwidth")), 2)
 
 
-def _mock_tracker_init(self, root):
-    """Minimal tracker init for dark-mode widget walks."""
-    from fitness.engine import load_program_definitions
-    import creative_projects
-    import day_plans
-    import journal
-    import practices
-    import todos
-    import youtube_takeout
-    from paths import data_file
+from tests.mock_tracker import mock_tracker_init as _mock_tracker_init
 
-    self.root = root
-    self.categories = self.get_default_categories()
-    self.entries = {}
-    self.settings = {"dark_mode": True}
-    self.sessions = []
-    self.milestones = []
-    self.journal = journal.empty_journal()
-    self.creative_projects = creative_projects.empty_creative_projects()
-    self.youtube_history = youtube_takeout.empty_youtube_history()
-    self.day_plans = day_plans.empty_day_plans()
-    self.program_state = {}
-    self.programs = load_program_definitions()
-    self.data_path = data_file()
-    self.vault_passphrase = None
-    self.theme = get_theme(True)
-    self._insights_cache = None
-    self._streak_cache = {}
-    self._session_counts_cache = None
-    self._save_after_id = None
-    self._pending_save_payload = None
-    self._fitness_state_dirty = False
-    self._dashboard_ready = False
-    self._categories_tab_built = False
-    self._theme_dark = None
-    self._log_bar = None
-    self._todays_log_filter = ""
-    self._todays_log_status = "all"
-    self._activity_grid = None
-    self._guidance_panel = None
-    self._streak_pill = None
-    self._date_label = None
-    self._overview_stats_label = None
-    self._reminder_scheduler = None
-    self._day_watch = None
-    self._categories_tab_frame = None
-    self._notebook = None
-    self._streak_details_window = None
-    self._deep_work_session = None
-    self._deep_work_after_id = None
-    self._deep_work_banner = None
-    self._deep_work_timer_label = None
-    self._quick_capture_win = None
-    from focus_shield import FocusShieldSession
 
-    self._focus_shield = FocusShieldSession()
-    self._focus_shield_after_id = None
-    self.todos = todos.empty_todos()
-    self.practices = practices.empty_practices()
-    self._nav_buttons = {}
-    self._nav_pack_order = []
-    self._nav_frame = None
-    self._shell_frame = None
-    self._shell_header = None
-    self._content_pane = None
-    self._shell_footer = None
-    self._banner_host = None
-    self._sidebar_slot = None
-    self._theme_reopen_banner = None
-    self._open_windows = {}
-    self._goto_window = None
+def _mock_tracker_init_dark(self, root):
+    _mock_tracker_init(self, root, dark_mode=True)
 
 
 class TestWidgetWalkDarkMode(unittest.TestCase):
@@ -181,7 +115,7 @@ class TestWidgetWalkDarkMode(unittest.TestCase):
             with patch.object(
                 personal_dev_tracker.PersonalDevelopmentTracker,
                 "__init__",
-                _mock_tracker_init,
+                _mock_tracker_init_dark,
             ):
                 tracker = personal_dev_tracker.PersonalDevelopmentTracker(root)
                 tracker.create_dashboard()
@@ -197,7 +131,7 @@ class TestWidgetWalkDarkMode(unittest.TestCase):
             with patch.object(
                 personal_dev_tracker.PersonalDevelopmentTracker,
                 "__init__",
-                _mock_tracker_init,
+                _mock_tracker_init_dark,
             ):
                 tracker = personal_dev_tracker.PersonalDevelopmentTracker(root)
                 tracker.create_dashboard()
@@ -220,7 +154,7 @@ class TestWidgetWalkDarkMode(unittest.TestCase):
             with patch.object(
                 personal_dev_tracker.PersonalDevelopmentTracker,
                 "__init__",
-                _mock_tracker_init,
+                _mock_tracker_init_dark,
             ):
                 tracker = personal_dev_tracker.PersonalDevelopmentTracker(root)
                 tracker.create_dashboard()
@@ -241,7 +175,7 @@ class TestWidgetWalkDarkMode(unittest.TestCase):
             with patch.object(
                 personal_dev_tracker.PersonalDevelopmentTracker,
                 "__init__",
-                _mock_tracker_init,
+                _mock_tracker_init_dark,
             ):
                 tracker = personal_dev_tracker.PersonalDevelopmentTracker(root)
                 tracker.create_dashboard()

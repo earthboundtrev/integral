@@ -134,13 +134,20 @@ class StatusBanner:
         undo_callback: Callable[[], None] | None = None,
         extra_actions: list[tuple[str, Callable[[], None]]] | None = None,
         closable: bool = False,
+        focusable_actions: bool = False,
+        actions_disabled: bool = False,
     ) -> None:
         if kind == _KIND_SUCCESS and self._kind == _KIND_ERROR and self._frame is not None:
             self._deferred_success = (message, undo_label, undo_callback)
             return
+        preserve_deferred = (
+            self._deferred_success
+            if kind == _KIND_ERROR and self._kind == _KIND_ERROR
+            else None
+        )
         self._clear_frame()
         if kind != _KIND_SUCCESS:
-            self._deferred_success = None
+            self._deferred_success = preserve_deferred
         self._kind = kind
         bg, fg, accent = _banner_colors(kind, self._theme)
         icon = _ICONS.get(kind, "")
@@ -187,7 +194,15 @@ class StatusBanner:
 
         if extra_actions:
             for label, cmd in extra_actions:
-                ttk.Button(actions, text=label, command=cmd, takefocus=0).pack(side=tk.LEFT, padx=(8, 0))
+                btn = ttk.Button(
+                    actions,
+                    text=label,
+                    command=cmd,
+                    takefocus=1 if focusable_actions and not actions_disabled else 0,
+                )
+                if actions_disabled:
+                    btn.state(["disabled"])
+                btn.pack(side=tk.LEFT, padx=(8, 0))
 
         if closable or kind == _KIND_ERROR:
 
@@ -219,11 +234,26 @@ class StatusBanner:
             undo_callback=undo_callback,
         )
 
-    def show_error(self, message: str, *, file_name: str | None = None) -> None:
+    def show_error(
+        self,
+        message: str,
+        *,
+        file_name: str | None = None,
+        extra_actions: list[tuple[str, Callable[[], None]]] | None = None,
+        focusable_actions: bool = False,
+        actions_disabled: bool = False,
+    ) -> None:
         text = message
         if file_name:
             text = f"{message} ({file_name})"
-        self._show(_KIND_ERROR, text, closable=True)
+        self._show(
+            _KIND_ERROR,
+            text,
+            closable=True,
+            extra_actions=extra_actions,
+            focusable_actions=focusable_actions,
+            actions_disabled=actions_disabled,
+        )
 
     def show_info(
         self,
