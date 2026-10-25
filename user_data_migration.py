@@ -256,6 +256,19 @@ def _is_transient_filename(name: str) -> bool:
     return name in _TRANSIENT_FILENAMES
 
 
+def _journal_sidecar_matches(dirpath: str, filename: str) -> bool:
+    """Only copy data.json.bak when it matches the journal envelope in the same folder."""
+    if filename != "data.json.bak":
+        return True
+    from vault import is_encrypted_file
+
+    journal_path = os.path.join(dirpath, "data.json")
+    sidecar_path = os.path.join(dirpath, filename)
+    if not os.path.isfile(journal_path) or not os.path.isfile(sidecar_path):
+        return True
+    return is_encrypted_file(journal_path) == is_encrypted_file(sidecar_path)
+
+
 def _copy_file_if_absent(src_file: str, dest_file: str, conflicts: list[str]) -> bool:
     if os.path.basename(src_file) == "data.json" and _data_json_is_empty_placeholder(src_file):
         return False
@@ -290,6 +303,8 @@ def _copy_tree_non_destructive(src_root: str, dest_root: str) -> tuple[int, list
         os.makedirs(dest_dir, exist_ok=True)
         for name in filenames:
             if _is_transient_filename(name):
+                continue
+            if not _journal_sidecar_matches(dirpath, name):
                 continue
             if name == STATE_FILE_NAME and dirpath == src_root:
                 continue

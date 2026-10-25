@@ -124,6 +124,46 @@ def test_placeholder_source_does_not_cause_conflict_banner(data_roots):
     assert state["sources"][source_key]["outcome"] in ("skipped_empty", "identical")
 
 
+def test_skips_mismatched_data_json_bak_sidecar(data_roots):
+    legacy = data_roots["legacy"]
+    profile_dir = legacy / "profiles" / "default"
+    profile_dir.mkdir(parents=True)
+    enc = {
+        "integral_encrypted": True,
+        "envelope_version": 1,
+        "salt": "abc",
+        "ciphertext": "token",
+    }
+    with open(profile_dir / "data.json", "w", encoding="utf-8") as handle:
+        json.dump(enc, handle)
+    with open(profile_dir / "data.json.bak", "w", encoding="utf-8") as handle:
+        json.dump({"entries": {"2020-01-01": {}}}, handle)
+    udm.run_at_startup()
+    dest_profile = data_roots["canonical"] / "profiles" / "default"
+    assert (dest_profile / "data.json").is_file()
+    assert not (dest_profile / "data.json.bak").exists()
+
+
+def test_copies_matching_data_json_bak_sidecar(data_roots):
+    legacy = data_roots["legacy"]
+    profile_dir = legacy / "profiles" / "default"
+    profile_dir.mkdir(parents=True)
+    enc = {
+        "integral_encrypted": True,
+        "envelope_version": 1,
+        "salt": "abc",
+        "ciphertext": "token",
+    }
+    with open(profile_dir / "data.json", "w", encoding="utf-8") as handle:
+        json.dump(enc, handle)
+    with open(profile_dir / "data.json.bak", "w", encoding="utf-8") as handle:
+        json.dump({**enc, "ciphertext": "older-token"}, handle)
+    udm.run_at_startup()
+    dest_profile = data_roots["canonical"] / "profiles" / "default"
+    assert (dest_profile / "data.json").is_file()
+    assert (dest_profile / "data.json.bak").is_file()
+
+
 def test_skips_transient_files_on_copy(data_roots):
     legacy = data_roots["legacy"]
     _write_profile_data(legacy, "keep-me")
