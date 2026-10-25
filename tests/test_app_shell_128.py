@@ -17,6 +17,7 @@ from unittest.mock import MagicMock, patch
 
 import personal_dev_tracker
 
+from tests.conftest import pump_tk
 from tests.mock_tracker import mock_tracker_init as _mock_tracker_init
 
 
@@ -251,8 +252,7 @@ def test_content_pane_children_rebuilt_on_refresh():
     with patch.object(personal_dev_tracker.PersonalDevelopmentTracker, "__init__", _mock_tracker_init):
         tracker = personal_dev_tracker.PersonalDevelopmentTracker(root)
         tracker.create_dashboard()
-        root.update_idletasks()  # Let initial chunked build complete
-        root.update_idletasks()  # Process any remaining callbacks
+        pump_tk(root)
         
         # Get initial log bar
         initial_log_bar = tracker._log_bar
@@ -260,8 +260,7 @@ def test_content_pane_children_rebuilt_on_refresh():
         
         # Refresh
         tracker.refresh_dashboard(full=False, recompute=True)
-        root.update_idletasks()  # Process chunked build
-        root.update_idletasks()  # Process any remaining callbacks
+        pump_tk(root)
         
         # New log bar should be created (content rebuilt)
         assert tracker._log_bar is not initial_log_bar, "Log bar not rebuilt on refresh"
@@ -278,7 +277,7 @@ def test_wheel_scroll_works_after_refreshes():
     with patch.object(personal_dev_tracker.PersonalDevelopmentTracker, "__init__", _mock_tracker_init):
         tracker = personal_dev_tracker.PersonalDevelopmentTracker(root)
         tracker.create_dashboard()
-        root.update_idletasks()
+        pump_tk(root)
         
         # Find the log bar canvas (Today's Log domain buttons scroll area)
         def find_canvas(widget):
@@ -302,7 +301,7 @@ def test_wheel_scroll_works_after_refreshes():
         # Refresh 3 times
         for _ in range(3):
             tracker.refresh_dashboard(full=False, recompute=True)
-            root.update_idletasks()
+            pump_tk(root)
         
         # Find canvas again after refreshes
         canvas_after = find_canvas(tracker._log_bar) if tracker._log_bar else None
@@ -330,7 +329,7 @@ def test_focus_preserved_across_content_rebuild():
     with patch.object(personal_dev_tracker.PersonalDevelopmentTracker, "__init__", _mock_tracker_init):
         tracker = personal_dev_tracker.PersonalDevelopmentTracker(root)
         tracker.create_dashboard()
-        root.update()
+        pump_tk(root)
         
         # Find a focusable widget in content pane
         def find_entry(widget):
@@ -350,10 +349,7 @@ def test_focus_preserved_across_content_rebuild():
         
         # Refresh content
         tracker._build_content(recompute=True)
-        root.update()
-        # Allow after(10) callback to run
-        root.after(50)
-        root.update()
+        pump_tk(root)
         
         # Focus should not be lost to root
         new_focus = root.focus_get()

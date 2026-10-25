@@ -39,9 +39,8 @@ def user_data_dir() -> str:
 
 
 def data_file() -> str:
-    if is_frozen():
-        return os.path.join(user_data_dir(), "data.json")
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "data.json")
+    """Primary journal path — always under the canonical user data folder (#89)."""
+    return os.path.join(user_data_dir(), "data.json")
 
 
 def programs_dir() -> str:
@@ -75,6 +74,9 @@ def app_log_file() -> str:
 
 
 def ensure_data_file() -> str:
+    import user_data_migration
+
+    user_data_migration.run_at_startup()
     path = data_file()
     os.makedirs(os.path.dirname(path), exist_ok=True)
 

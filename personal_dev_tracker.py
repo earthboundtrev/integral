@@ -195,6 +195,10 @@ class PersonalDevelopmentTracker:
 
         self._init_shell_state()
 
+        import user_data_migration
+
+        user_data_migration.run_at_startup()
+
         if is_encrypted_file(DATA_FILE) and not prompt_vault_unlock(self):
             messagebox.showerror("Locked", "Cannot open encrypted journal without passphrase.")
             root.destroy()
@@ -204,6 +208,10 @@ class PersonalDevelopmentTracker:
         self.apply_current_theme()
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self.create_dashboard()
+        import user_data_migration
+
+        for notice in user_data_migration.consume_user_notices():
+            self.ensure_status_banner().show_info(notice)
         self._start_day_watch()
         self._start_reminder_scheduler()
         self.sync_quick_capture_panel()
@@ -4296,6 +4304,10 @@ def main() -> None:
     import sys
 
     import deep_links
+
+    import user_data_migration
+
+    user_data_migration.run_at_startup()
 
     protocol_url = deep_links.extract_protocol_arg(sys.argv)
     owns_lock = deep_links.acquire_instance_lock()

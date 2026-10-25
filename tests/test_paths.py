@@ -1,3 +1,5 @@
+import os
+import sys
 from pathlib import Path
 
 import paths
@@ -40,11 +42,26 @@ def test_seed_loader_uses_app_resource(monkeypatch, tmp_path):
     assert data["source_book"] == "CC1"
 
 
+def test_dev_data_file_uses_canonical_user_dir(monkeypatch, tmp_path):
+    monkeypatch.setattr(paths, "is_frozen", lambda: False)
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    expected = os.path.join(str(home), ".integral", "data.json")
+    assert paths.data_file() == expected
+
+
 def test_user_data_dir_unchanged_when_frozen(monkeypatch):
     import profiles
+    import sys
 
     monkeypatch.setattr(paths, "is_frozen", lambda: True)
     app_dir = profiles.get_app_dir()
-    assert str(app_dir).endswith(".personal_dev_tracker")
+    if sys.platform == "win32":
+        assert app_dir.endswith(os.path.join("AppData", "Roaming", "Integral")) or app_dir.endswith(
+            "Integral"
+        )
+    else:
+        assert str(app_dir).endswith(".integral")
     assert "MEIPASS" not in str(app_dir)
     assert "dist" not in str(app_dir)
