@@ -76,6 +76,16 @@ class TestStatusBanner(unittest.TestCase):
         self.root.update()
         self.assertEqual(self.banner._kind, "error")
 
+    def test_set_theme_ignores_destroyed_frame(self):
+        theme2 = dict(self.banner._theme)
+        theme2["success_bg"] = "#111111"
+        self.banner.show_success("Saved.")
+        self.root.update()
+        self.assertIsNotNone(self.banner._frame)
+        self.banner._frame.destroy()
+        self.banner.set_theme(theme2)
+        self.root.update()
+
     def _find_close_button(self, parent: tk.Misc):
         for child in parent.winfo_children():
             try:

@@ -48,22 +48,31 @@ class StatusBanner:
 
     def set_theme(self, theme: dict) -> None:
         self._theme = theme
-        if self._frame is not None and self._kind is not None:
+        if not _widget_exists(self._host):
+            return
+        if self._frame is None or not _widget_exists(self._frame) or self._kind is None:
+            return
+        try:
             bg, fg, _ = _banner_colors(self._kind, theme)
+        except tk.TclError:
+            return
+        try:
             self._frame.configure(bg=bg)
+        except tk.TclError:
+            return
 
-            def _recolor_widget(widget: tk.Misc) -> None:
-                try:
-                    if isinstance(widget, tk.Frame):
-                        widget.configure(bg=bg)
-                    elif isinstance(widget, tk.Label):
-                        widget.configure(bg=bg, fg=fg)
-                except tk.TclError:
-                    pass
-                for child in widget.winfo_children():
-                    _recolor_widget(child)
+        def _recolor_widget(widget: tk.Misc) -> None:
+            try:
+                if isinstance(widget, tk.Frame):
+                    widget.configure(bg=bg)
+                elif isinstance(widget, tk.Label):
+                    widget.configure(bg=bg, fg=fg)
+            except tk.TclError:
+                pass
+            for child in widget.winfo_children():
+                _recolor_widget(child)
 
-            _recolor_widget(self._frame)
+        _recolor_widget(self._frame)
 
     def _cancel_hide(self) -> None:
         if self._hide_after_id is not None:

@@ -20,6 +20,37 @@ def pump_tk(root: tk.Misc, steps: int = 25) -> None:
             break
 
 
+def pump_tk_until(
+    root: tk.Misc,
+    predicate,
+    *,
+    timeout_s: float = 1.0,
+    step_s: float = 0.01,
+) -> bool:
+    """Pump Tk until ``predicate()`` is true or ``timeout_s`` elapses.
+
+    Uses short sleeps so ``after(ms)`` callbacks (e.g. focus restore) can run.
+    """
+    import time
+
+    deadline = time.perf_counter() + timeout_s
+    while time.perf_counter() < deadline:
+        try:
+            root.update_idletasks()
+            root.update()
+        except tk.TclError:
+            break
+        if predicate():
+            return True
+        time.sleep(step_s)
+    try:
+        root.update_idletasks()
+        root.update()
+    except tk.TclError:
+        pass
+    return bool(predicate())
+
+
 @pytest.fixture(autouse=True)
 def _isolated_user_data_home(tmp_path, monkeypatch):
     """Never touch the developer's real home directory during pytest (#89)."""

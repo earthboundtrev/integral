@@ -15,9 +15,11 @@ import time
 import tkinter as tk
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 import personal_dev_tracker
 
-from tests.conftest import pump_tk
+from tests.conftest import pump_tk, pump_tk_until
 from tests.mock_tracker import mock_tracker_init as _mock_tracker_init
 
 
@@ -319,41 +321,154 @@ def test_wheel_scroll_works_after_refreshes():
     root.destroy()
 
 
-def test_focus_preserved_across_content_rebuild():
-    """AC4: Focus should not be lost to root after content rebuild."""
+def test_theme_toggle_preserves_inline_todo_draft_and_focus():
+    """Re-test B3: theme toggle keeps inline todo draft and focus (#128)."""
     root = tk.Tk()
-    # Don't withdraw - focus only works on mapped windows
     root.geometry("800x600+0+0")
     root.update()
-    
+
     with patch.object(personal_dev_tracker.PersonalDevelopmentTracker, "__init__", _mock_tracker_init):
         tracker = personal_dev_tracker.PersonalDevelopmentTracker(root)
         tracker.create_dashboard()
         pump_tk(root)
-        
-        # Find a focusable widget in content pane
-        def find_entry(widget):
-            if widget.winfo_class() in ("TEntry", "Entry"):
-                return widget
-            for child in widget.winfo_children():
-                result = find_entry(child)
-                if result:
-                    return result
-            return None
-        
-        entry = find_entry(tracker._content_pane) if tracker._content_pane else None
-        if entry:
-            entry.focus_set()
-            root.update()
-            assert root.focus_get() == entry, "Could not set initial focus"
-        
-        # Refresh content
-        tracker._build_content(recompute=True)
+
+        entry = tracker._inline_todo_entry
+        var = tracker._inline_todo_var
+        assert entry is not None and var is not None
+
+        entry.focus_set()
+        if tracker._inline_todo_placeholder_shown:
+            var.set("")
+            tracker._inline_todo_placeholder_shown = False
+            entry.config(foreground=tracker.theme["fg"])
+        var.set("halftyped")
+        root.update()
+        assert root.focus_get() == entry
+
+        tracker.toggle_dark_mode()
         pump_tk(root)
-        
-        # Focus should not be lost to root
-        new_focus = root.focus_get()
-        assert new_focus is not root, "Focus lost to root after content rebuild"
-        assert new_focus is not None, "Focus is None after content rebuild"
-    
+
+        assert tracker._inline_todo_var.get() == "halftyped"
+        assert tracker._inline_todo_placeholder_shown is False
+        assert root.focus_get() == tracker._inline_todo_entry
+        assert root.focus_get() is not root
+
+    root.destroy()
+
+
+def test_back_to_back_refresh_single_log_bar():
+    """Re-test B4: stale chunked builds must not stack duplicate log bars (#128)."""
+    root = tk.Tk()
+    root.withdraw()
+
+    with patch.object(personal_dev_tracker.PersonalDevelopmentTracker, "__init__", _mock_tracker_init):
+        tracker = personal_dev_tracker.PersonalDevelopmentTracker(root)
+        tracker.create_dashboard()
+        pump_tk(root)
+
+        count_after_first = _count_widgets_recursive(root)
+        log_bars_before = sum(
+            1
+            for child in tracker._content_pane.winfo_children()
+            if getattr(child, "winfo_class", lambda: "")() == "TLabelframe"
+            and "Today's Log" in str(child.cget("text"))
+        )
+
+        for _ in range(5):
+            tracker.refresh_dashboard(full=False, recompute=True)
+
+        pump_tk(root)
+
+        log_bars_after = sum(
+            1
+            for child in tracker._content_pane.winfo_children()
+            if getattr(child, "winfo_class", lambda: "")() == "TLabelframe"
+            and "Today's Log" in str(child.cget("text"))
+        )
+        count_after = _count_widgets_recursive(root)
+
+        assert log_bars_after == 1, f"Expected one log bar, found {log_bars_after}"
+        assert log_bars_after == log_bars_before
+        assert abs(count_after - count_after_first) <= 5, (
+            f"Widget count drifted {count_after_first} -> {count_after}"
+        )
+
+    root.destroy()
+
+
+def _assert_focus_survives_content_rebuild(root: tk.Tk, tracker) -> None:
+    """Focus inline todo, rebuild content, wait for after(10) restore."""
+    entry = tracker._inline_todo_entry
+    assert entry is not None
+
+    if tracker._inline_todo_placeholder_shown:
+        tracker._inline_todo_var.set("")
+        tracker._inline_todo_placeholder_shown = False
+        entry.config(foreground=tracker.theme["fg"])
+
+    entry.focus_set()
+    pump_tk(root, steps=5)
+    if root.focus_get() != entry:
+        pytest.skip("Mapped window could not take keyboard focus in this environment")
+
+    tracker._build_content(recompute=True)
+    pump_tk(root, steps=10)
+
+    def focus_restored() -> bool:
+        focus = root.focus_get()
+        return focus is not None and focus is not root
+
+    assert pump_tk_until(root, focus_restored, timeout_s=1.0), (
+        "Focus lost to root after content rebuild (pending after callbacks)"
+    )
+
+
+def test_focus_preserved_across_content_rebuild():
+    """AC4: Focus should not be lost to root after content rebuild."""
+    root = tk.Tk()
+    root.geometry("800x600+0+0")
+    root.update()
+
+    with patch.object(personal_dev_tracker.PersonalDevelopmentTracker, "__init__", _mock_tracker_init):
+        tracker = personal_dev_tracker.PersonalDevelopmentTracker(root)
+        tracker.create_dashboard()
+        pump_tk(root)
+        _assert_focus_survives_content_rebuild(root, tracker)
+
+    root.destroy()
+
+
+def test_focus_preserved_across_content_rebuild_ten_times():
+    """AC4 stability: same focus restore must succeed 10 consecutive rebuilds."""
+    root = tk.Tk()
+    root.geometry("800x600+0+0")
+    root.update()
+
+    with patch.object(personal_dev_tracker.PersonalDevelopmentTracker, "__init__", _mock_tracker_init):
+        tracker = personal_dev_tracker.PersonalDevelopmentTracker(root)
+        tracker.create_dashboard()
+        pump_tk(root)
+
+        for attempt in range(10):
+            _assert_focus_survives_content_rebuild(root, tracker)
+
+    root.destroy()
+
+
+def test_theme_toggle_with_status_banner_does_not_raise():
+    """Theme rebuild must not TclError on a stale StatusBanner host/frame."""
+    root = tk.Tk()
+    root.geometry("800x600+0+0")
+    root.update()
+
+    with patch.object(personal_dev_tracker.PersonalDevelopmentTracker, "__init__", _mock_tracker_init):
+        tracker = personal_dev_tracker.PersonalDevelopmentTracker(root)
+        tracker.create_dashboard()
+        pump_tk(root)
+        tracker.ensure_status_banner().show_success("Saved.")
+        pump_tk(root)
+        tracker.toggle_dark_mode()
+        pump_tk(root)
+        assert tracker._shell_frame is not None and tracker._shell_frame.winfo_exists()
+
     root.destroy()
