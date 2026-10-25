@@ -185,6 +185,7 @@ class PersonalDevelopmentTracker:
         self._open_windows: dict[str, tk.Toplevel] = {}  # Track windows for raise-if-open
         self._more_menu_popup: Any | None = None
         self._footer_more_btn: ttk.Button | None = None
+        self._content_build_generation = 0
 
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
@@ -668,6 +669,8 @@ class PersonalDevelopmentTracker:
     def toggle_dark_mode(self) -> None:
         self.settings["dark_mode"] = not self.settings.get("dark_mode", False)
         self.save_data()
+        # Preserve inline todo draft/focus across shell rebuild (#128 B3).
+        self._snapshot_inline_todo_state()
         # Force full shell rebuild for theme changes (chrome colors + mode button label)
         if self._shell_frame is not None:
             try:
@@ -1991,6 +1994,12 @@ class PersonalDevelopmentTracker:
         focused_path = str(focused_widget) if focused_widget else None
 
         self._snapshot_inline_todo_state()
+
+        self._content_build_generation += 1
+        build_generation = self._content_build_generation
+
+        def _build_stale() -> bool:
+            return build_generation != self._content_build_generation
         
         for child in self._content_pane.winfo_children():
             child.destroy()
@@ -2016,9 +2025,15 @@ class PersonalDevelopmentTracker:
         build_error_state = self._today_build_error_state
         build_errors: list[tuple[str, Exception]] = []
 
-        def _restore_inline_todo_focus() -> None:
+        def _schedule_content_focus_restore() -> None:
+            should_restore = bool(getattr(self, "_content_focus_restore_target", None))
             if focused_path and focused_path.startswith(str(self._content_pane)):
+                should_restore = True
+            if should_restore:
                 self.root.after(10, lambda: self._restore_content_focus())
+
+        def _restore_inline_todo_focus() -> None:
+            _schedule_content_focus_restore()
 
         def do_retry() -> None:
             show_today_build_banner(
@@ -2068,6 +2083,8 @@ class PersonalDevelopmentTracker:
                 _perf_log(f"  - {name}: {duration*1000:.1f}ms")
 
         def chunk_1_setup():
+            if _build_stale():
+                return
             chunk_start = time.time()
             try:
                 if recompute:
@@ -2082,6 +2099,8 @@ class PersonalDevelopmentTracker:
                 self.root.after_idle(chunk_2_build_log_bar)
 
         def chunk_2_build_log_bar():
+            if _build_stale():
+                return
             nonlocal log_bar_built
             chunk_start = time.time()
             try:
@@ -2093,10 +2112,11 @@ class PersonalDevelopmentTracker:
             self.root.after_idle(chunk_3_finalize)
 
         def chunk_3_finalize():
+            if _build_stale():
+                return
             chunk_start = time.time()
             try:
-                if focused_path and focused_path.startswith(str(self._content_pane)):
-                    self.root.after(10, lambda: self._restore_content_focus())
+                _schedule_content_focus_restore()
             except Exception as e:
                 _note_build_error(e, "finalize")
             chunk_times.append(("finalize", time.time() - chunk_start))

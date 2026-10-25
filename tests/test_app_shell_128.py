@@ -319,6 +319,81 @@ def test_wheel_scroll_works_after_refreshes():
     root.destroy()
 
 
+def test_theme_toggle_preserves_inline_todo_draft_and_focus():
+    """Re-test B3: theme toggle keeps inline todo draft and focus (#128)."""
+    root = tk.Tk()
+    root.geometry("800x600+0+0")
+    root.update()
+
+    with patch.object(personal_dev_tracker.PersonalDevelopmentTracker, "__init__", _mock_tracker_init):
+        tracker = personal_dev_tracker.PersonalDevelopmentTracker(root)
+        tracker.create_dashboard()
+        pump_tk(root)
+
+        entry = tracker._inline_todo_entry
+        var = tracker._inline_todo_var
+        assert entry is not None and var is not None
+
+        entry.focus_set()
+        if tracker._inline_todo_placeholder_shown:
+            var.set("")
+            tracker._inline_todo_placeholder_shown = False
+            entry.config(foreground=tracker.theme["fg"])
+        var.set("halftyped")
+        root.update()
+        assert root.focus_get() == entry
+
+        tracker.toggle_dark_mode()
+        pump_tk(root)
+
+        assert tracker._inline_todo_var.get() == "halftyped"
+        assert tracker._inline_todo_placeholder_shown is False
+        assert root.focus_get() == tracker._inline_todo_entry
+        assert root.focus_get() is not root
+
+    root.destroy()
+
+
+def test_back_to_back_refresh_single_log_bar():
+    """Re-test B4: stale chunked builds must not stack duplicate log bars (#128)."""
+    root = tk.Tk()
+    root.withdraw()
+
+    with patch.object(personal_dev_tracker.PersonalDevelopmentTracker, "__init__", _mock_tracker_init):
+        tracker = personal_dev_tracker.PersonalDevelopmentTracker(root)
+        tracker.create_dashboard()
+        pump_tk(root)
+
+        count_after_first = _count_widgets_recursive(root)
+        log_bars_before = sum(
+            1
+            for child in tracker._content_pane.winfo_children()
+            if getattr(child, "winfo_class", lambda: "")() == "TLabelframe"
+            and "Today's Log" in str(child.cget("text"))
+        )
+
+        for _ in range(5):
+            tracker.refresh_dashboard(full=False, recompute=True)
+
+        pump_tk(root)
+
+        log_bars_after = sum(
+            1
+            for child in tracker._content_pane.winfo_children()
+            if getattr(child, "winfo_class", lambda: "")() == "TLabelframe"
+            and "Today's Log" in str(child.cget("text"))
+        )
+        count_after = _count_widgets_recursive(root)
+
+        assert log_bars_after == 1, f"Expected one log bar, found {log_bars_after}"
+        assert log_bars_after == log_bars_before
+        assert abs(count_after - count_after_first) <= 5, (
+            f"Widget count drifted {count_after_first} -> {count_after}"
+        )
+
+    root.destroy()
+
+
 def test_focus_preserved_across_content_rebuild():
     """AC4: Focus should not be lost to root after content rebuild."""
     root = tk.Tk()
