@@ -47,22 +47,12 @@ def test_user_data_dir_unchanged_when_frozen(monkeypatch):
     import sys
 
     monkeypatch.setattr(paths, "is_frozen", lambda: True)
+    app_dir = profiles.get_app_dir()
     if sys.platform == "win32":
-        monkeypatch.setenv("APPDATA", "/tmp/integral-appdata-test")
-        monkeypatch.setattr(
-            paths,
-            "user_data_dir",
-            lambda: os.path.join(os.environ["APPDATA"], paths.APP_SLUG),
+        assert app_dir.endswith(os.path.join("AppData", "Roaming", "Integral")) or app_dir.endswith(
+            "Integral"
         )
-        app_dir = profiles.get_app_dir()
-        assert app_dir.endswith("Integral")
     else:
-        monkeypatch.setattr(
-            paths,
-            "user_data_dir",
-            lambda: os.path.join(os.path.expanduser("~"), ".integral"),
-        )
-        app_dir = profiles.get_app_dir()
         assert str(app_dir).endswith(".integral")
     assert "MEIPASS" not in str(app_dir)
     assert "dist" not in str(app_dir)

@@ -113,9 +113,8 @@ def _data_json_is_empty_placeholder(path: str) -> bool:
         return False
     if data.get("sessions"):
         return False
-    if data.get("journal"):
-        return False
-    if data.get("milestones"):
+    journal = data.get("journal")
+    if isinstance(journal, dict) and journal.get("entries"):
         return False
     return True
 

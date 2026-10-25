@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
+import sys
 import tkinter as tk
 
 import pytest
-
-import paths
 
 
 def pump_tk(root: tk.Misc, steps: int = 25) -> None:
@@ -21,10 +20,14 @@ def pump_tk(root: tk.Misc, steps: int = 25) -> None:
 
 @pytest.fixture(autouse=True)
 def _isolated_user_data_home(tmp_path, monkeypatch):
-    """Never touch the developer's real ~/.integral during pytest."""
-    home = tmp_path / "integral-user-data"
+    """Never touch the developer's real home directory during pytest."""
+    home = tmp_path / "pytest-home"
     home.mkdir()
-    monkeypatch.setattr(paths, "user_data_dir", lambda: str(home))
+    monkeypatch.setenv("HOME", str(home))
+    if sys.platform == "win32":
+        appdata = tmp_path / "AppData" / "Roaming"
+        appdata.mkdir(parents=True)
+        monkeypatch.setenv("APPDATA", str(appdata))
 
 
 @pytest.fixture(autouse=True)

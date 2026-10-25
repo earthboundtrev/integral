@@ -133,7 +133,14 @@ def test_profiles_migrate_after_folder_migration(data_roots, monkeypatch):
 
 def test_placeholder_dest_data_json_replaced_by_legacy(data_roots):
     """Simulates first launch that wrote an empty stub before migration ran."""
-    stub = {"schema_version": 2, "categories": {}, "entries": {}}
+    stub = {
+        "schema_version": 2,
+        "categories": {"Body & Presence": {"checklist": [], "metrics": []}},
+        "entries": {},
+        "sessions": [],
+        "journal": {"prompts": ["How was today?"], "entries": []},
+        "milestones": [{"title": "Untitled", "status": "open", "progress": 0}],
+    }
     dest_stub = data_roots["canonical"] / "data.json"
     with open(dest_stub, "w", encoding="utf-8") as handle:
         json.dump(stub, handle)
@@ -164,18 +171,8 @@ def test_placeholder_root_data_json_sidelined_when_legacy_has_root(data_roots):
 
 def test_user_data_dir_frozen_points_at_integral(monkeypatch):
     monkeypatch.setattr(paths, "is_frozen", lambda: True)
+    resolved = paths.user_data_dir()
     if sys.platform == "win32":
-        monkeypatch.setenv("APPDATA", "/tmp/appdata")
-        monkeypatch.setattr(
-            paths,
-            "user_data_dir",
-            lambda: os.path.join(os.environ["APPDATA"], paths.APP_SLUG),
-        )
-        assert paths.user_data_dir().endswith("Integral")
+        assert resolved.endswith("Integral")
     else:
-        monkeypatch.setattr(
-            paths,
-            "user_data_dir",
-            lambda: os.path.join(os.path.expanduser("~"), ".integral"),
-        )
-        assert paths.user_data_dir().endswith(".integral")
+        assert resolved.endswith(".integral")
