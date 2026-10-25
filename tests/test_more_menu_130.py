@@ -187,15 +187,21 @@ def test_quick_capture_row_shows_shortcut_hint(more_menu_env):
 
 def test_esc_closes_and_returns_focus_to_anchor(more_menu_env):
     tracker, anchor, root = more_menu_env
-    focus_calls = 0
-    real_focus_set = anchor.focus_set
+    anchor.configure(takefocus=1)
+    anchor.focus_force()
+    root.update_idletasks()
+    root.update()
+    reports_focus = root.focus_get() == anchor
 
-    def counting_focus_set() -> None:
-        nonlocal focus_calls
-        focus_calls += 1
-        real_focus_set()
+    force_calls = 0
+    real_focus_force = anchor.focus_force
 
-    anchor.focus_set = counting_focus_set
+    def counting_focus_force() -> None:
+        nonlocal force_calls
+        force_calls += 1
+        return real_focus_force()
+
+    anchor.focus_force = counting_focus_force
     toggle_more_menu(tracker, anchor)
     root.update()
     popup: MoreMenuPopup = tracker._more_menu_popup
@@ -206,7 +212,9 @@ def test_esc_closes_and_returns_focus_to_anchor(more_menu_env):
         root.update_idletasks()
         root.update()
     assert tracker._more_menu_popup is None
-    assert focus_calls >= 1
+    assert force_calls >= 1
+    if reports_focus:
+        assert root.focus_get() == anchor
 
 
 def test_outside_click_closes_menu(more_menu_env):
@@ -377,6 +385,45 @@ def test_show_export_dialog_uses_banner_not_messagebox():
         root.update()
         assert banner._kind == "success"
         assert "Export complete" in banner._message_var.get()
+    finally:
+        root.destroy()
+
+
+def test_edit_categories_save_close_uses_banner_not_messagebox():
+    import personal_dev_tracker
+    from tests.mock_tracker import mock_tracker_init
+
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        with patch.object(
+            personal_dev_tracker.PersonalDevelopmentTracker, "__init__", mock_tracker_init
+        ):
+            tracker = personal_dev_tracker.PersonalDevelopmentTracker(root)
+            tracker._banner_host = ttk.Frame(root)
+            tracker._banner_host.pack()
+            tracker.save_data = MagicMock()
+            tracker.refresh_dashboard = MagicMock()
+            tracker.show_settings()
+            root.update()
+            editor = next(
+                w for w in root.winfo_children() if isinstance(w, tk.Toplevel) and w.winfo_exists()
+            )
+            save_close = None
+            for child in editor.winfo_children():
+                if isinstance(child, ttk.Frame):
+                    for btn in child.winfo_children():
+                        if isinstance(btn, ttk.Button) and btn.cget("text") == "Save & Close":
+                            save_close = btn
+                            break
+            assert save_close is not None
+            with patch("tkinter.messagebox.showinfo") as show_info:
+                save_close.invoke()
+                show_info.assert_not_called()
+            root.update()
+            banner = tracker.ensure_status_banner()
+            assert banner._kind == "success"
+            assert "Categories updated" in banner._message_var.get()
     finally:
         root.destroy()
 

@@ -635,10 +635,6 @@ class MoreMenuPopup:
         if getattr(self.tracker, "_more_menu_popup", None) is not self:
             return None
         self.close(focus_anchor=True)
-        try:
-            self.anchor.focus_set()
-        except tk.TclError:
-            pass
         return "break"
 
     def _on_return(self, _event: tk.Event) -> str | None:
@@ -773,7 +769,7 @@ class MoreMenuPopup:
 
             def _return_focus() -> None:
                 try:
-                    anchor.focus_set()
+                    anchor.focus_force()
                 except tk.TclError:
                     pass
 
