@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import fcntl
 import json
 import os
 import sys
@@ -18,6 +17,7 @@ import pytest
 import paths
 import personal_dev_tracker
 from data_payload_registry import (
+    assert_load_registry_parity,
     assert_payload_registry_parity,
     clear_ephemeral_top_level_keys,
     extract_extra_top_level,
@@ -102,6 +102,7 @@ def tk_root():
 
 def test_registry_parity():
     assert_payload_registry_parity()
+    assert_load_registry_parity()
 
 
 def test_backup_prefix_cannot_be_registered():
@@ -124,17 +125,37 @@ def test_restore_backup_drops_backup_prefixed_keys(tmp_path):
     assert restored["sleep_log"] == {"kept": True}
 
 
-def test_migrate_v1_carries_unknown_keys():
+def test_migrate_v1_carries_unknown_keys_and_registered_fields():
     programs = load_program_definitions()
     legacy = {
         "categories": {},
         "entries": {},
         "settings": {"dark_mode": False},
         "sleep_log": _unknown_extras()["sleep_log"],
+        "journal": {"prompts": [], "entries": [{"id": "abc", "body": "x"}]},
     }
     migrated = migrate_data(legacy, programs)
     assert migrated["schema_version"] == 2
     assert migrated["sleep_log"] == legacy["sleep_log"]
+    assert migrated["journal"]["entries"][0]["id"] == "abc"
+
+
+def test_migrate_v1_unknown_key_survives_tracker_save(tk_root):
+    programs = load_program_definitions()
+    legacy = {
+        "categories": {},
+        "entries": {},
+        "settings": {"dark_mode": False, "onboarding_complete": True},
+        "sleep_log": _unknown_extras()["sleep_log"],
+    }
+    data_path = paths.data_file()
+    os.makedirs(os.path.dirname(data_path), exist_ok=True)
+    save_data_file(data_path, legacy, encrypted=False, passphrase=None)
+    tracker = personal_dev_tracker.PersonalDevelopmentTracker(tk_root)
+    assert tracker._extra_top_level["sleep_log"] == legacy["sleep_log"]
+    tracker.save_data(flush=True)
+    reloaded = json.loads(open(data_path, encoding="utf-8").read())
+    assert reloaded["sleep_log"] == legacy["sleep_log"]
 
 
 def test_extract_extra_top_level():
@@ -172,15 +193,27 @@ def test_frozen_user_data_path_same_behavior(monkeypatch, tmp_path, tk_root):
     appdata.mkdir(parents=True)
     monkeypatch.setattr(paths, "is_frozen", lambda: True)
     monkeypatch.setattr(paths, "user_data_dir", lambda: str(appdata))
-    assert paths.data_file() == os.path.join(str(appdata), "data.json")
+    data_path = paths.data_file()
+    monkeypatch.setattr(personal_dev_tracker, "DATA_FILE", data_path)
+    assert data_path == os.path.join(str(appdata), "data.json")
 
     expected_extra = _unknown_extras()
-    _seed_data_file(_minimal_v2_payload(**expected_extra))
+    save_data_file(data_path, _minimal_v2_payload(**expected_extra), encrypted=False, passphrase=None)
     tracker = personal_dev_tracker.PersonalDevelopmentTracker(tk_root)
     tracker.settings["dark_mode"] = not tracker.settings.get("dark_mode", False)
     tracker.save_data(flush=True)
-    reloaded = json.loads(open(paths.data_file(), encoding="utf-8").read())
+    reloaded = json.loads(open(data_path, encoding="utf-8").read())
     assert reloaded["sleep_log"] == expected_extra["sleep_log"]
+
+
+def test_encrypted_file_has_no_plaintext_extra_keys(tk_root):
+    passphrase = "test-pass-phrase"
+    expected_extra = _unknown_extras()
+    payload = _minimal_v2_payload(**expected_extra)
+    payload["settings"]["encryption_enabled"] = True
+    data_path = _seed_data_file(payload, encrypted=True, passphrase=passphrase)
+    raw = open(data_path, encoding="utf-8").read()
+    assert "sleep_log" not in raw
 
 
 def test_encrypted_file_preserves_unknown_keys(tk_root):
@@ -201,6 +234,25 @@ def test_encrypted_file_preserves_unknown_keys(tk_root):
     reloaded = load_data_file(paths.data_file(), passphrase)
     assert reloaded["sleep_log"] == expected_extra["sleep_log"]
     assert "sleep_log" in reloaded
+
+
+@pytest.mark.allow_tk_messagebox
+def test_tracker_bak_recovery_preserves_extras(tk_root, tmp_path, monkeypatch):
+    data_path = paths.data_file()
+    os.makedirs(os.path.dirname(data_path), exist_ok=True)
+    bak_path = f"{data_path}.bak"
+    expected_extra = _unknown_extras()
+    good = _minimal_v2_payload(**expected_extra)
+    save_data_file(bak_path, good, encrypted=False, passphrase=None)
+    with open(data_path, "w", encoding="utf-8") as handle:
+        handle.write("{not valid json")
+
+    with patch("tkinter.messagebox.askyesno", return_value=True):
+        tracker = personal_dev_tracker.PersonalDevelopmentTracker(tk_root)
+    assert tracker._extra_top_level == expected_extra
+    tracker.save_data(flush=True)
+    reloaded = json.loads(open(data_path, encoding="utf-8").read())
+    assert reloaded["sleep_log"] == expected_extra["sleep_log"]
 
 
 def test_bak_recovery_preserves_extras(tmp_path, monkeypatch):
@@ -248,24 +300,41 @@ def test_flush_save_async_writes_extras(tk_root):
 
 def test_locked_file_keeps_extras_in_memory_and_writes_after_release(tk_root):
     if sys.platform == "win32":
-        pytest.skip("fcntl file locking test is for POSIX CI")
+        pytest.skip("Windows exclusive lock AC requires manual PowerShell verification")
 
     expected_extra = _unknown_extras()
     data_path = _seed_data_file(_minimal_v2_payload(**expected_extra))
     tracker = personal_dev_tracker.PersonalDevelopmentTracker(tk_root)
-    lock_handle = open(data_path, "r+")
-    fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
-    try:
-        with patch("personal_dev_tracker.save_data_file", side_effect=OSError("locked")):
-            tracker.save_data(flush=True)
-        assert tracker._extra_top_level == expected_extra
-    finally:
-        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
-        lock_handle.close()
+    with patch("personal_dev_tracker.save_data_file", side_effect=OSError("locked")):
+        tracker.save_data(flush=True)
+    pump_tk(tk_root, steps=5)
+    assert tracker._extra_top_level == expected_extra
+    assert tracker._status_banner is not None
+    assert tracker._status_banner._kind == "error"
 
     tracker.save_data(flush=True)
     reloaded = json.loads(open(data_path, encoding="utf-8").read())
     assert reloaded["sleep_log"] == expected_extra["sleep_log"]
+
+
+def test_full_backup_zip_roundtrip_unknown_key(tk_root, tmp_path):
+    expected_extra = _unknown_extras()
+    _seed_data_file(_minimal_v2_payload(**expected_extra))
+    tracker = personal_dev_tracker.PersonalDevelopmentTracker(tk_root)
+    zip_path = tmp_path / "full.zip"
+    target_data = tmp_path / "restored" / "data.json"
+    from integral_io import restore_backup_file, write_full_backup
+
+    write_full_backup(tracker._payload(), str(zip_path), creative_root=None, fitness_db_path=None)
+    restore_backup_file(
+        str(zip_path),
+        str(target_data),
+        creative_root=None,
+        fitness_db_path=None,
+        make_copy=False,
+    )
+    restored = json.loads(target_data.read_text(encoding="utf-8"))
+    assert restored["sleep_log"] == expected_extra["sleep_log"]
 
 
 def test_backup_export_restore_roundtrip_unknown_key(tk_root, tmp_path):

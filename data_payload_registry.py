@@ -32,6 +32,18 @@ _TRACKER_ATTR: dict[str, str] = {
 # Test-only extensions (parity / round-trip); cleared between tests.
 _EPHEMERAL: dict[str, str] = {}
 
+# Registered keys loaded outside hydrate_registered_from_migrated (ordering / side effects).
+_LOAD_SPECIAL_KEYS: frozenset[str] = frozenset(
+    {"schema_version", "categories", "entries", "settings", "sessions"}
+)
+
+# Keys applied by hydrate_registered_from_migrated (must stay in sync with REGISTERED_TOP_LEVEL_KEYS).
+_HYDRATE_KEYS: tuple[str, ...] = tuple(
+    key
+    for key in REGISTERED_TOP_LEVEL_KEYS
+    if key not in _LOAD_SPECIAL_KEYS
+)
+
 
 def validate_registry_key_name(name: str) -> None:
     """Reject keys that collide with backup restore stripping (integral_io.restore_backup_to_path)."""
@@ -84,9 +96,8 @@ def carry_forward_unknown_keys(
 ) -> dict[str, Any]:
     """Preserve forward-compatible keys when building a new v2 dict from schema v1."""
     consumed_set = frozenset(consumed)
-    registered = registered_top_level_key_names()
     for key, value in source.items():
-        if key in consumed_set or key in registered:
+        if key in consumed_set:
             continue
         if key not in target:
             target[key] = value
@@ -113,6 +124,56 @@ def apply_ephemeral_from_migrated(tracker: Any, migrated: dict[str, Any]) -> Non
     for key, attr in _EPHEMERAL.items():
         if key in migrated:
             setattr(tracker, attr, migrated[key])
+
+
+def hydrate_registered_from_migrated(tracker: Any, migrated: dict[str, Any]) -> None:
+    """Load registered top-level keys that do not need pre-migration side effects."""
+    import creative_projects
+    import day_plans
+    import journal
+    import practices
+    import todos
+    import youtube_takeout
+
+    from milestones import merge_milestones
+
+    tracker.milestones = merge_milestones(migrated.get("milestones"))
+    tracker.journal = journal.normalize_journal(migrated.get("journal"))
+    tracker.creative_projects = creative_projects.normalize_creative_projects(
+        migrated.get("creative_projects")
+    )
+    tracker.youtube_history = youtube_takeout.normalize_youtube_history(
+        migrated.get("youtube_history")
+    )
+    tracker.day_plans = day_plans.normalize_day_plans(migrated.get("day_plans"))
+    tracker.todos = todos.normalize_todos(migrated.get("todos"))
+    tracker.practices = practices.normalize_practices(migrated.get("practices"))
+    tracker.program_state = migrated.get("program_state", {})
+    levels = migrated.get("user_levels")
+    tracker.user_levels = dict(levels) if isinstance(levels, dict) else {}
+
+
+def merge_extra_top_level_into_payload(
+    payload: dict[str, Any],
+    extra: dict[str, Any],
+) -> dict[str, Any]:
+    registered = registered_top_level_key_names()
+    for key, value in extra.items():
+        if key not in registered:
+            payload[key] = value
+    return payload
+
+
+def assert_load_registry_parity() -> None:
+    """Every registered key must be loaded via load_data (special or hydrate)."""
+    covered = set(_LOAD_SPECIAL_KEYS) | set(_HYDRATE_KEYS)
+    expected = set(REGISTERED_TOP_LEVEL_KEYS)
+    if covered != expected:
+        missing = expected - covered
+        extra = covered - expected
+        raise AssertionError(
+            f"Load registry parity failed: missing={missing!r}, extra={extra!r}"
+        )
 
 
 def assert_payload_registry_parity() -> None:
@@ -145,3 +206,8 @@ def assert_payload_registry_parity() -> None:
         raise AssertionError(
             f"Registry parity failed: missing in build={missing!r}, extra in build={extra!r}"
         )
+
+
+for _registered_key in REGISTERED_TOP_LEVEL_KEYS:
+    if _registered_key != "schema_version":
+        validate_registry_key_name(_registered_key)

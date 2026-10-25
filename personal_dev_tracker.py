@@ -84,6 +84,8 @@ from data_payload_registry import (
     apply_ephemeral_from_migrated,
     build_known_top_level_payload,
     extract_extra_top_level,
+    hydrate_registered_from_migrated,
+    merge_extra_top_level_into_payload,
 )
 from vault import is_encrypted_file, load_data_file, load_data_file_with_recovery, save_data_file
 from entry_payload import (
@@ -818,19 +820,7 @@ class PersonalDevelopmentTracker:
                             "Your data is safe. Backups were created if migration started.",
                         )
 
-            self.milestones = merge_milestones(migrated.get("milestones"))
-            self.journal = journal.normalize_journal(migrated.get("journal"))
-            self.creative_projects = creative_projects.normalize_creative_projects(
-                migrated.get("creative_projects")
-            )
-            self.youtube_history = youtube_takeout.normalize_youtube_history(
-                migrated.get("youtube_history")
-            )
-            self.day_plans = day_plans.normalize_day_plans(migrated.get("day_plans"))
-            self.todos = todos.normalize_todos(migrated.get("todos"))
-            self.practices = practices.normalize_practices(migrated.get("practices"))
-            self.program_state = migrated.get("program_state", {})
-            self.user_levels = dict(migrated.get("user_levels") or {})
+            hydrate_registered_from_migrated(self, migrated)
             apply_ephemeral_from_migrated(self, migrated)
             self._extra_top_level = extract_extra_top_level(migrated)
             dirty = migration_dirty
@@ -881,7 +871,7 @@ class PersonalDevelopmentTracker:
             self.program_state = compute_program_state(self.programs, self.sessions, self.settings)
             self._fitness_state_dirty = False
         payload = build_known_top_level_payload(self)
-        payload.update(self._extra_top_level)
+        merge_extra_top_level_into_payload(payload, self._extra_top_level)
         return payload
 
     def save_data(
