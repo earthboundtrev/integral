@@ -129,6 +129,18 @@ def test_theme_menu_label_follows_mode():
     assert theme_menu_label(tracker) == "Light Mode"
 
 
+def test_more_menu_opens_during_deep_work(more_menu_env):
+    """Regression: Deep Work hint must not use tuple pady on Label (#130 B2)."""
+    tracker, anchor, root = more_menu_env
+    tracker._deep_work_session = MagicMock(running=True)
+    toggle_more_menu(tracker, anchor)
+    root.update()
+    popup: MoreMenuPopup = tracker._more_menu_popup
+    assert popup is not None
+    assert popup.window.winfo_exists()
+    close_more_menu(tracker)
+
+
 def test_deep_work_hides_distractions_in_more_menu():
     tracker = MagicMock()
     tracker.settings = {"dark_mode": False}

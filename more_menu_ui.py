@@ -382,21 +382,30 @@ class MoreMenuPopup:
         self._row_widgets: list[tk.Frame] = []
         self._label_widgets: list[tk.Label] = []
         self._hint_widgets: list[tk.Label | None] = []
-        self._build_rows()
-        self._place_near_anchor()
-        self.window.deiconify()
         try:
-            self.window.grab_set()
-            self._had_grab = True
+            self._build_rows()
+            self._place_near_anchor()
+            self.window.deiconify()
+            try:
+                self.window.grab_set()
+                self._had_grab = True
+            except tk.TclError:
+                self._had_grab = False
+            self._bind_events()
+            self._highlight_focus()
+            try:
+                self.window.focus_force()
+            except tk.TclError:
+                pass
+            self._bind_func(self.window, "<FocusOut>", self._on_focus_out)
         except tk.TclError:
-            self._had_grab = False
-        self._bind_events()
-        self._highlight_focus()
-        try:
-            self.window.focus_force()
-        except tk.TclError:
-            pass
-        self._bind_func(self.window, "<FocusOut>", self._on_focus_out)
+            tracker._more_menu_popup = None
+            try:
+                if self.window.winfo_exists():
+                    self.window.destroy()
+            except tk.TclError:
+                pass
+            raise
 
     def _build_rows(self) -> None:
         last_group: str | None = None
@@ -463,9 +472,8 @@ class MoreMenuPopup:
                 fg=self.theme["muted"],
                 font=FONTS["hint"],
                 padx=self._PAD,
-                pady=(4, 0),
             )
-            dw_hint.pack(fill=tk.X)
+            dw_hint.pack(fill=tk.X, pady=(4, 0))
         nav_hint = tk.Label(
             self._body,
             text="↑↓ · Enter · Esc",
