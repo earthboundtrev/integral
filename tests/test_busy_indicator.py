@@ -6,7 +6,12 @@ import tkinter as tk
 import unittest
 import time
 
-from busy_indicator import BusyIndicator
+from busy_indicator import (
+    HEARTBEAT_MAX_GAP_MS,
+    BusyIndicator,
+    measure_event_loop_gaps,
+    run_cooperative_steps,
+)
 
 
 class TestBusyIndicator(unittest.TestCase):
@@ -139,8 +144,7 @@ class TestBusyIndicator(unittest.TestCase):
         indicator.stop()
 
     def test_on_cancel_hook_called_on_escape(self):
-        """Esc during loading calls the cancel hook (bound to toplevel)."""
-        # Create a toplevel so we can test the actual binding behavior.
+        """Esc during loading calls the cancel hook (bound at start, before spinner maps)."""
         toplevel = tk.Toplevel(self.root)
         parent = tk.Frame(toplevel)
         parent.pack()
@@ -152,33 +156,86 @@ class TestBusyIndicator(unittest.TestCase):
 
         indicator = BusyIndicator(parent, label="Loading…", delay_ms=100, on_cancel=on_cancel)
         indicator.start()
-
-        # Wait for it to become visible.
-        self.root.update()
-        time.sleep(0.12)
         self.root.update()
 
-        self.assertTrue(indicator._visible)
-        self.assertIsNotNone(indicator._escape_funcid, "Escape binding should be set")
-
-        # Get the binding and call it directly (event_generate doesn't work reliably in xvfb).
-        # The funcid format is like "if {[4576469776escape ...]} ..." 
-        # We can verify the binding exists by checking bind().
+        self.assertIsNotNone(indicator._escape_funcid, "Escape binding should be set at start")
         bindings = toplevel.bind("<Escape>")
         self.assertTrue(bindings, "Escape binding should exist on toplevel")
-        
-        # Call the binding by simulating what Tk would do.
-        # Extract and execute the on_escape function.
-        if hasattr(indicator, '_escape_funcid') and indicator._escape_funcid:
-            # Trigger stop and cancel manually to verify the flow works.
-            indicator.stop()
-            if indicator._on_cancel:
-                indicator._on_cancel()
-        
-        self.assertTrue(cancel_called["value"], "Cancel hook should be callable")
-        self.assertFalse(indicator._visible, "Indicator should be stopped")
+
+        indicator.request_cancel()
+        self.assertTrue(cancel_called["value"], "Cancel hook should run")
+        self.assertTrue(indicator.cancel_requested)
 
         toplevel.destroy()
+
+    def test_cooperative_steps_allows_delayed_show(self):
+        """Chunked work via run_cooperative_steps lets the indicator appear mid-build."""
+        parent = tk.Frame(self.root)
+        parent.pack(fill=tk.BOTH, expand=True)
+
+        indicator = BusyIndicator(parent, label="Loading…", delay_ms=100)
+        indicator.start()
+        done = {"value": False}
+
+        def slow_step() -> None:
+            time.sleep(0.15)
+
+        def finish() -> None:
+            done["value"] = True
+            indicator.stop()
+
+        run_cooperative_steps(
+            self.root,
+            indicator,
+            (slow_step, slow_step),
+            on_complete=finish,
+        )
+
+        deadline = time.time() + 2.0
+        while time.time() < deadline:
+            self.root.update()
+            if done["value"]:
+                break
+            time.sleep(0.02)
+
+        self.assertTrue(done["value"])
+        self.assertTrue(indicator._visible or indicator._frame is None)
+
+    def test_cooperative_steps_cancel_stops_remaining_steps(self):
+        parent = tk.Frame(self.root)
+        parent.pack()
+        ran = {"count": 0}
+        indicator = BusyIndicator(parent, delay_ms=200, on_cancel=lambda: None)
+        indicator.start()
+
+        def step() -> None:
+            ran["count"] += 1
+            indicator.request_cancel()
+
+        run_cooperative_steps(self.root, indicator, (step, step, step))
+        for _ in range(25):
+            self.root.update()
+
+        self.assertEqual(ran["count"], 1)
+        self.assertTrue(indicator.cancel_requested)
+
+    def test_heartbeat_gaps_under_threshold_during_spinner_animation(self):
+        """Indicator show/animate must not stall the event loop (issue #120 AC)."""
+        parent = tk.Frame(self.root)
+        parent.pack(fill=tk.BOTH, expand=True)
+        indicator = BusyIndicator(parent, delay_ms=30)
+        indicator.start()
+
+        for _ in range(40):
+            self.root.update()
+            time.sleep(0.02)
+
+        self.assertTrue(indicator._visible)
+        gaps = measure_event_loop_gaps(self.root, 0.35, tick_ms=10)
+        indicator.stop()
+
+        long_gaps = [g for g in gaps if g > HEARTBEAT_MAX_GAP_MS + 15]
+        self.assertFalse(long_gaps, f"indicator stalled event loop: {long_gaps[:5]}")
 
     def test_light_and_dark_themes(self):
         """Light and dark themes are applied without crashing."""

@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import time
 import tkinter as tk
 from tkinter import ttk
-from typing import Callable
+from collections.abc import Callable, Sequence
+from typing import Any
 
 # Trevor's decision (Oct 14 2026, issue #120 comment): 180 ms threshold.
 DEFAULT_DELAY_MS = 180
+
+# Heartbeat harness: indicator work must not stall the event loop longer than this.
+HEARTBEAT_MAX_GAP_MS = 50
 
 
 class BusyIndicator:
@@ -22,6 +27,7 @@ class BusyIndicator:
     Optional:
         indicator.step("Building charts…")  # Update label during long operations.
         indicator = BusyIndicator(..., on_cancel=lambda: stop_work())  # Esc support.
+        run_cooperative_steps(win, indicator, [step1, step2], on_complete=done)
 
     Design:
         - start() arms a timer; the spinner appears only after delay_ms elapses.
@@ -60,6 +66,12 @@ class BusyIndicator:
         self._spinner: ttk.Progressbar | None = None
         self._label_var: tk.StringVar | None = None
         self._escape_funcid: str | None = None
+        self._cancel_requested = False
+
+    @property
+    def cancel_requested(self) -> bool:
+        """True after Esc/cancel hook fired; cooperative steps should stop."""
+        return self._cancel_requested
 
     def start(self, label: str | None = None) -> None:
         """Arm the timer. If work completes before delay_ms, nothing is shown.
@@ -69,6 +81,8 @@ class BusyIndicator:
         """
         if label is not None:
             self._label_text = label
+
+        self._cancel_requested = False
 
         # Cancel any existing timer.
         if self._timer_id:
@@ -81,6 +95,9 @@ class BusyIndicator:
         # Hide if already visible (restarting).
         if self._visible:
             self._hide()
+
+        # Esc is armed immediately so cancel works before the spinner maps.
+        self._bind_escape()
 
         # Validate delay_ms.
         if self._delay_ms < 0:
@@ -98,6 +115,8 @@ class BusyIndicator:
                 pass
             self._timer_id = None
 
+        self._unbind_escape()
+
         if self._visible:
             self._hide()
 
@@ -111,9 +130,43 @@ class BusyIndicator:
         if self._label_var:
             self._label_var.set(text)
 
+    def request_cancel(self) -> None:
+        """Programmatic cancel (same path as Esc)."""
+        if self._cancel_requested:
+            return
+        self._cancel_requested = True
+        self.stop()
+        if self._on_cancel:
+            self._on_cancel()
+
+    def _bind_escape(self) -> None:
+        if not self._on_cancel:
+            return
+        if self._escape_funcid is not None:
+            return
+        try:
+            toplevel = self._parent.winfo_toplevel()
+        except tk.TclError:
+            return
+
+        def on_escape(_e: Any) -> None:
+            self.request_cancel()
+
+        self._escape_funcid = toplevel.bind("<Escape>", on_escape, add="+")
+
+    def _unbind_escape(self) -> None:
+        if not self._escape_funcid:
+            return
+        try:
+            toplevel = self._parent.winfo_toplevel()
+            toplevel.unbind("<Escape>", self._escape_funcid)
+        except (tk.TclError, TypeError):
+            pass
+        self._escape_funcid = None
+
     def _show(self) -> None:
         """Internal: create and show the indicator widgets."""
-        if self._visible:
+        if self._visible or self._cancel_requested:
             return
 
         # Check parent is still alive.
@@ -154,33 +207,10 @@ class BusyIndicator:
         )
         label.pack()
 
-        # Wire Esc to cancel hook on the toplevel (not just _frame).
-        if self._on_cancel:
-            toplevel = self._frame.winfo_toplevel()
-            
-            def on_escape(_e):
-                self.stop()
-                if self._on_cancel:
-                    self._on_cancel()
-            
-            # Store the funcid returned by bind(), not the callable.
-            self._escape_funcid = toplevel.bind("<Escape>", on_escape, add="+")
-        else:
-            self._escape_funcid = None
-
     def _hide(self) -> None:
         """Internal: destroy the indicator widgets."""
         if not self._visible:
             return
-
-        # Unbind escape from toplevel before setting _visible False.
-        if self._escape_funcid and self._frame:
-            try:
-                toplevel = self._frame.winfo_toplevel()
-                toplevel.unbind("<Escape>", self._escape_funcid)
-            except (tk.TclError, TypeError):
-                pass
-            self._escape_funcid = None
 
         self._visible = False
 
@@ -199,6 +229,93 @@ class BusyIndicator:
             self._frame = None
 
         self._label_var = None
+
+
+def run_cooperative_steps(
+    scheduler: tk.Misc,
+    indicator: BusyIndicator,
+    steps: Sequence[Callable[[], None]],
+    *,
+    on_complete: Callable[[], None] | None = None,
+    on_step_error: Callable[[BaseException], None] | None = None,
+) -> None:
+    """Run UI build steps with after_idle between each so the indicator can show.
+
+    Long synchronous work inside a single ``after`` callback blocks the delayed
+    spinner and Esc handling. Split work into steps and schedule them here
+    (same pattern as Today chunked build, issue #135).
+    """
+    index = 0
+
+    def _widget_alive() -> bool:
+        try:
+            return scheduler.winfo_exists()
+        except tk.TclError:
+            return False
+
+    def run_next() -> None:
+        nonlocal index
+        if indicator.cancel_requested or not _widget_alive():
+            indicator.stop()
+            return
+
+        if index >= len(steps):
+            if on_complete:
+                on_complete()
+            return
+
+        step = steps[index]
+        index += 1
+        try:
+            step()
+        except tk.TclError:
+            indicator.stop()
+            return
+        except BaseException as exc:
+            indicator.stop()
+            if on_step_error:
+                on_step_error(exc)
+            else:
+                raise
+            return
+
+        if indicator.cancel_requested or not _widget_alive():
+            indicator.stop()
+            return
+
+        scheduler.after_idle(run_next)
+
+    scheduler.after_idle(run_next)
+
+
+def measure_event_loop_gaps(
+    root: tk.Misc,
+    duration_s: float,
+    *,
+    tick_ms: int = 10,
+) -> list[float]:
+    """Return gaps (ms) between heartbeat ticks while the event loop runs."""
+    gaps: list[float] = []
+    last = time.perf_counter()
+    end = last + duration_s
+
+    def tick() -> None:
+        nonlocal last
+        now = time.perf_counter()
+        if now >= end:
+            return
+        gap_ms = (now - last) * 1000.0
+        gaps.append(gap_ms)
+        last = now
+        root.after(tick_ms, tick)
+
+    root.after(tick_ms, tick)
+    while time.perf_counter() < end:
+        try:
+            root.update()
+        except tk.TclError:
+            break
+    return gaps
 
 
 def _default_theme() -> dict:
