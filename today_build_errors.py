@@ -48,6 +48,12 @@ def show_inline_error_panel(parent: tk.Misc, theme: dict) -> ttk.Frame:
     return frame
 
 
+def _stop_retry_spinner(state: TodayBuildErrorState) -> None:
+    if state._retry_busy is not None:
+        state._retry_busy.stop()
+        state._retry_busy = None
+
+
 def show_today_build_banner(
     tracker: PersonalDevelopmentTracker,
     state: TodayBuildErrorState,
@@ -56,6 +62,7 @@ def show_today_build_banner(
     on_details: Callable[[], None],
     retrying: bool = False,
 ) -> None:
+    _stop_retry_spinner(state)
     message = BANNER_REPEAT if state.repeat_failure else BANNER_FIRST
     banner = tracker.ensure_status_banner()
     if retrying:

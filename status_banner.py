@@ -140,9 +140,14 @@ class StatusBanner:
         if kind == _KIND_SUCCESS and self._kind == _KIND_ERROR and self._frame is not None:
             self._deferred_success = (message, undo_label, undo_callback)
             return
+        preserve_deferred = (
+            self._deferred_success
+            if kind == _KIND_ERROR and self._kind == _KIND_ERROR
+            else None
+        )
         self._clear_frame()
         if kind != _KIND_SUCCESS:
-            self._deferred_success = None
+            self._deferred_success = preserve_deferred
         self._kind = kind
         bg, fg, accent = _banner_colors(kind, self._theme)
         icon = _ICONS.get(kind, "")
