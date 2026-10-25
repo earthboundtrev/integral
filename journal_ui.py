@@ -959,9 +959,16 @@ def show_journal_window(
             )
         else:
             try:
-                _fill_entry_list(select_index=select_index, apply_selection=True)
+                _fill_entry_list_batch(0, total)
+                if _journal_win_alive() and select_index is not None:
+                    entry_list.selection_set(select_index)
+                    entry_list.see(select_index)
             finally:
                 entry_list_filling[0] = False
+                if _journal_win_alive():
+                    width = entry_list.winfo_width()
+                    if width > 1:
+                        entry_list_last_width[0] = width
             _complete_cooperative_fill()
 
     if deferred_host:

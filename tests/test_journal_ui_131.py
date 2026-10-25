@@ -80,6 +80,49 @@ def test_large_journal_fill_does_not_reentrant_configure_storm():
     root.destroy()
 
 
+def test_small_deferred_journal_fill_populates_list():
+    root = tk.Tk()
+    root.withdraw()
+    tracker = _tracker_with_entries(root, 5)
+    win = tk.Toplevel(root)
+    win.geometry("1040x760")
+
+    from deferred_toplevel import run_deferred_toplevel_build
+    from journal_ui import show_journal_window
+
+    done = False
+
+    def build() -> None:
+        nonlocal done
+        show_journal_window(tracker, host=win)
+        done = True
+
+    run_deferred_toplevel_build(
+        win,
+        theme=tracker.theme,
+        busy_label="Loading Journal…",
+        build=build,
+    )
+    def _find_listbox(widget: tk.Misc) -> tk.Listbox | None:
+        for child in widget.winfo_children():
+            if isinstance(child, tk.Listbox):
+                return child
+            nested = _find_listbox(child)
+            if nested is not None:
+                return nested
+        return None
+
+    assert pump_tk_until(root, lambda: done, timeout_s=3.0)
+
+    def _list_has_five() -> bool:
+        listbox = _find_listbox(win)
+        return listbox is not None and listbox.size() == 5
+
+    assert pump_tk_until(root, _list_has_five, timeout_s=3.0)
+    win.destroy()
+    root.destroy()
+
+
 def test_journal_destroy_mid_cooperative_fill_no_tclerror():
     root = tk.Tk()
     root.withdraw()
