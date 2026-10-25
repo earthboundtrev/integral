@@ -7,7 +7,12 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 from typing import TYPE_CHECKING
 
-from busy_indicator import BusyIndicator, run_cooperative_steps
+from busy_indicator import (
+    BusyIndicator,
+    DEFAULT_COOPERATIVE_BATCH_SIZE,
+    cooperative_batch_steps,
+    run_cooperative_steps,
+)
 import deep_work as dw
 import focus_shield
 import quick_capture
@@ -118,10 +123,17 @@ def open_quick_capture_panel(tracker: PersonalDevelopmentTracker) -> tk.Toplevel
             return
 
         qc = _QuickCaptureBuild(tracker, win, theme, on_close)
+        build_steps: list = [
+            qc._phase_shell,
+            qc._phase_deep_work,
+            qc._phase_todos,
+            qc._phase_rest,
+            lambda: qc.append_todo_phases(build_steps),
+        ]
         run_cooperative_steps(
             win,
             indicator,
-            qc.steps(),
+            build_steps,
             on_complete=_finish_build,
             on_step_error=_on_build_error,
         )
@@ -144,14 +156,95 @@ class _QuickCaptureBuild:
         self.canvas = None
         self.refresh_dw_timer = None
         self.rebuild_todo_lists = None
+        self.today_list = None
+        self.upcoming_list = None
+        self._today_items: list = []
+        self._upcoming_items: list = []
+        self._today_ids: list = []
+        self._upcoming_ids: list = []
+        self._edit_categories: list = []
 
-    def steps(self):
-        return (
-            self._phase_shell,
-            self._phase_deep_work,
-            self._phase_todos,
-            self._phase_rest,
+    def append_todo_phases(self, steps: list) -> None:
+        """Append batched todo row steps after chrome phases (items known post-todos)."""
+        steps.extend(
+            [
+                self._clear_todo_lists,
+                *self._todo_row_batch_steps(),
+                self._finish_todo_lists,
+                self._phase_finalize,
+            ]
         )
+
+    def _clear_todo_lists(self) -> None:
+        for child in self.today_list.winfo_children():
+            child.destroy()
+        for child in self.upcoming_list.winfo_children():
+            child.destroy()
+
+    def _todo_row_batch_steps(self) -> tuple:
+        win = self.win
+        tracker = self.tracker
+
+        def today_batch(start: int, end: int) -> None:
+            for item in self._today_items[start:end]:
+                _todo_row(
+                    self.today_list,
+                    tracker,
+                    item,
+                    self._persist_todos,
+                    self.rebuild_todo_lists,
+                    win,
+                    sibling_ids=self._today_ids,
+                    categories=self._edit_categories,
+                )
+
+        def upcoming_batch(start: int, end: int) -> None:
+            for item in self._upcoming_items[start:end]:
+                _todo_row(
+                    self.upcoming_list,
+                    tracker,
+                    item,
+                    self._persist_todos,
+                    self.rebuild_todo_lists,
+                    win,
+                    upcoming=True,
+                    sibling_ids=self._upcoming_ids,
+                    categories=self._edit_categories,
+                )
+
+        steps = cooperative_batch_steps(
+            len(self._today_items),
+            DEFAULT_COOPERATIVE_BATCH_SIZE,
+            today_batch,
+        )
+        steps.extend(
+            cooperative_batch_steps(
+                len(self._upcoming_items),
+                DEFAULT_COOPERATIVE_BATCH_SIZE,
+                upcoming_batch,
+            )
+        )
+        return tuple(steps)
+
+    def _finish_todo_lists(self) -> None:
+        if not self.today_list.winfo_children():
+            ttk.Label(self.today_list, text="No todos for today.", style="Muted.TLabel").pack(
+                anchor="w"
+            )
+        if not self.upcoming_list.winfo_children():
+            ttk.Label(
+                self.upcoming_list,
+                text="Nothing scheduled ahead.",
+                style="Muted.TLabel",
+            ).pack(anchor="w")
+        self.win.update_idletasks()
+        refresh_scroll_region(self.canvas, self.inner)
+
+    def _phase_finalize(self) -> None:
+        self.refresh_dw_timer()
+        self.win.update_idletasks()
+        refresh_scroll_region(self.canvas, self.inner)
+        self.canvas.yview_moveto(0)
 
     def _phase_shell(self) -> None:
         win = self.win
@@ -283,8 +376,8 @@ class _QuickCaptureBuild:
             apply_visibility()
             return body
 
-        today_list = _make_section("Today’s todos", "today")
-        upcoming_list = _make_section("Upcoming (scheduled)", "upcoming")
+        self.today_list = _make_section("Today’s todos", "today")
+        self.upcoming_list = _make_section("Upcoming (scheduled)", "upcoming")
 
         add_frame = ttk.Frame(self.pad)
         add_frame.pack(fill=tk.X, pady=(0, 10))
@@ -324,9 +417,9 @@ class _QuickCaptureBuild:
             tracker.save_data(flush=True)
 
         def rebuild_todo_lists() -> None:
-            for child in today_list.winfo_children():
+            for child in self.today_list.winfo_children():
                 child.destroy()
-            for child in upcoming_list.winfo_children():
+            for child in self.upcoming_list.winfo_children():
                 child.destroy()
             today = tracker.today_str()
             edit_categories = list(tracker.categories.keys())
@@ -334,27 +427,51 @@ class _QuickCaptureBuild:
             today_ids = [i["id"] for i in today_items]
             for item in today_items:
                 _todo_row(
-                    today_list, tracker, item, persist_todos, rebuild_todo_lists, win,
-                    sibling_ids=today_ids, categories=edit_categories,
+                    self.today_list,
+                    tracker,
+                    item,
+                    persist_todos,
+                    rebuild_todo_lists,
+                    win,
+                    sibling_ids=today_ids,
+                    categories=edit_categories,
                 )
             upcoming = todos.upcoming_items(tracker.todos, today)
             upcoming_ids = [i["id"] for i in upcoming]
             for item in upcoming:
                 _todo_row(
-                    upcoming_list, tracker, item, persist_todos, rebuild_todo_lists, win,
-                    upcoming=True, sibling_ids=upcoming_ids, categories=edit_categories,
+                    self.upcoming_list,
+                    tracker,
+                    item,
+                    persist_todos,
+                    rebuild_todo_lists,
+                    win,
+                    upcoming=True,
+                    sibling_ids=upcoming_ids,
+                    categories=edit_categories,
                 )
-            if not today_list.winfo_children():
-                ttk.Label(today_list, text="No todos for today.", style="Muted.TLabel").pack(anchor="w")
-            if not upcoming_list.winfo_children():
-                ttk.Label(upcoming_list, text="Nothing scheduled ahead.", style="Muted.TLabel").pack(
-                    anchor="w"
-                )
+            if not self.today_list.winfo_children():
+                ttk.Label(
+                    self.today_list, text="No todos for today.", style="Muted.TLabel"
+                ).pack(anchor="w")
+            if not self.upcoming_list.winfo_children():
+                ttk.Label(
+                    self.upcoming_list,
+                    text="Nothing scheduled ahead.",
+                    style="Muted.TLabel",
+                ).pack(anchor="w")
             win.update_idletasks()
             refresh_scroll_region(self.canvas, self.inner)
 
-        # Store rebuild callback for external refresh
+        self._persist_todos = persist_todos
+        self.rebuild_todo_lists = rebuild_todo_lists
         tracker._qc_rebuild_todos = rebuild_todo_lists
+        today = tracker.today_str()
+        self._today_items = todos.items_for_day(tracker.todos, today)
+        self._today_ids = [i["id"] for i in self._today_items]
+        self._upcoming_items = todos.upcoming_items(tracker.todos, today)
+        self._upcoming_ids = [i["id"] for i in self._upcoming_items]
+        self._edit_categories = list(tracker.categories.keys())
 
         def add_todo() -> None:
             text = new_text.get().strip()
@@ -548,11 +665,6 @@ class _QuickCaptureBuild:
             anchor="w", pady=(6, 0)
         )
 
-        self.rebuild_todo_lists()
-        self.refresh_dw_timer()
-        win.update_idletasks()
-        refresh_scroll_region(self.canvas, self.inner)
-        self.canvas.yview_moveto(0)
 
 def _todo_row(
     parent, tracker, item, persist, rebuild, win,

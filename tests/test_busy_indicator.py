@@ -176,8 +176,11 @@ class TestBusyIndicator(unittest.TestCase):
         indicator = BusyIndicator(parent, label="Loading…", delay_ms=100)
         indicator.start()
         done = {"value": False}
+        saw_visible = {"value": False}
 
         def slow_step() -> None:
+            if indicator._visible:
+                saw_visible["value"] = True
             time.sleep(0.15)
 
         def finish() -> None:
@@ -187,19 +190,21 @@ class TestBusyIndicator(unittest.TestCase):
         run_cooperative_steps(
             self.root,
             indicator,
-            (slow_step, slow_step),
+            [slow_step, slow_step],
             on_complete=finish,
         )
 
         deadline = time.time() + 2.0
         while time.time() < deadline:
             self.root.update()
+            if indicator._visible:
+                saw_visible["value"] = True
             if done["value"]:
                 break
             time.sleep(0.02)
 
         self.assertTrue(done["value"])
-        self.assertTrue(indicator._visible or indicator._frame is None)
+        self.assertTrue(saw_visible["value"], "indicator should map during chunked work")
 
     def test_cooperative_steps_cancel_stops_remaining_steps(self):
         parent = tk.Frame(self.root)

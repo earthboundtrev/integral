@@ -13,6 +13,8 @@ DEFAULT_DELAY_MS = 180
 
 # Heartbeat harness: indicator work must not stall the event loop longer than this.
 HEARTBEAT_MAX_GAP_MS = 50
+# Batched UI work should yield to the event loop often enough for the delay timer.
+DEFAULT_COOPERATIVE_BATCH_SIZE = 15
 
 
 class BusyIndicator:
@@ -231,10 +233,29 @@ class BusyIndicator:
         self._label_var = None
 
 
+def cooperative_batch_steps(
+    total: int,
+    batch_size: int,
+    run_batch: Callable[[int, int], None],
+) -> list[Callable[[], None]]:
+    """Build step callables that process ``total`` items in ``batch_size`` chunks."""
+    if total <= 0:
+        return []
+    steps: list[Callable[[], None]] = []
+    for start in range(0, total, batch_size):
+        end = min(start + batch_size, total)
+
+        def step(s: int = start, e: int = end) -> None:
+            run_batch(s, e)
+
+        steps.append(step)
+    return steps
+
+
 def run_cooperative_steps(
     scheduler: tk.Misc,
     indicator: BusyIndicator,
-    steps: Sequence[Callable[[], None]],
+    steps: list[Callable[[], None]] | Sequence[Callable[[], None]],
     *,
     on_complete: Callable[[], None] | None = None,
     on_step_error: Callable[[BaseException], None] | None = None,
@@ -245,6 +266,9 @@ def run_cooperative_steps(
     spinner and Esc handling. Split work into steps and schedule them here
     (same pattern as Today chunked build, issue #135).
     """
+    step_list: list[Callable[[], None]] = (
+        steps if isinstance(steps, list) else list(steps)
+    )
     index = 0
 
     def _widget_alive() -> bool:
@@ -259,12 +283,12 @@ def run_cooperative_steps(
             indicator.stop()
             return
 
-        if index >= len(steps):
+        if index >= len(step_list):
             if on_complete:
                 on_complete()
             return
 
-        step = steps[index]
+        step = step_list[index]
         index += 1
         try:
             step()
@@ -280,6 +304,13 @@ def run_cooperative_steps(
             return
 
         if indicator.cancel_requested or not _widget_alive():
+            indicator.stop()
+            return
+
+        try:
+            scheduler.update_idletasks()
+            scheduler.update()
+        except tk.TclError:
             indicator.stop()
             return
 
