@@ -104,6 +104,7 @@ def bind_sidebar_nav_keyboard(
     buttons_by_id: dict[str, tk.Button],
 ) -> None:
     """Up/Down moves focus among visible nav rows; Return activates."""
+    accent = tracker.theme.get("accent", "#2F7A7B")
 
     def on_nav_key(event: tk.Event, nav_id: str) -> str | None:
         if handle_sidebar_nav_key(tracker, nav_id, event.keysym):
@@ -111,10 +112,35 @@ def bind_sidebar_nav_keyboard(
         return None
 
     for nav_id, btn in buttons_by_id.items():
+        try:
+            btn.configure(highlightthickness=0)
+        except tk.TclError:
+            pass
+
+        def on_focus_in(_event: tk.Event, nid: str = nav_id, b: tk.Button = btn) -> None:
+            if getattr(tracker, "_sidebar_active_id", None) == nid:
+                return
+            try:
+                b.configure(
+                    highlightthickness=1,
+                    highlightbackground=accent,
+                    highlightcolor=accent,
+                )
+            except tk.TclError:
+                pass
+
+        def on_focus_out(_event: tk.Event, b: tk.Button = btn) -> None:
+            try:
+                b.configure(highlightthickness=0)
+            except tk.TclError:
+                pass
+
         btn.bind("<Key-Up>", lambda e, nid=nav_id: on_nav_key(e, nid), add="+")
         btn.bind("<Key-Down>", lambda e, nid=nav_id: on_nav_key(e, nid), add="+")
         btn.bind("<Return>", lambda e, b=btn: (b.invoke(), "break")[1], add="+")
         btn.bind("<KP_Enter>", lambda e, b=btn: (b.invoke(), "break")[1], add="+")
+        btn.bind("<FocusIn>", on_focus_in, add="+")
+        btn.bind("<FocusOut>", on_focus_out, add="+")
 
 
 def attach_sidebar_hover(

@@ -1,0 +1,114 @@
+"""Regression tests for journal list fill performance (#131 PR tester)."""
+
+from __future__ import annotations
+
+import tkinter as tk
+from datetime import date
+from unittest.mock import patch
+
+import journal
+import personal_dev_tracker
+
+from tests.conftest import pump_tk_until
+from tests.mock_tracker import mock_tracker_init
+
+
+def _tracker_with_entries(root: tk.Tk, count: int):
+    with patch.object(
+        personal_dev_tracker.PersonalDevelopmentTracker,
+        "__init__",
+        mock_tracker_init,
+    ):
+        tracker = personal_dev_tracker.PersonalDevelopmentTracker(root)
+        tracker._ensure_shell()
+        tracker.journal = journal.empty_journal()
+        today = date.today().isoformat()
+        for idx in range(count):
+            journal.upsert_entry(
+                tracker.journal,
+                journal.create_entry(
+                    today,
+                    f"Body {idx}",
+                    title=f"Entry title {idx} with extra words for truncation",
+                    entry_id=f"entry-{idx:05d}",
+                ),
+            )
+        return tracker
+
+
+def test_large_journal_fill_does_not_reentrant_configure_storm():
+    """One cooperative fill — not triple refill from Configure during pump."""
+    root = tk.Tk()
+    root.withdraw()
+    tracker = _tracker_with_entries(root, 120)
+    win = tk.Toplevel(root)
+    win.geometry("1040x760")
+
+    clear_count = 0
+    original_delete = tk.Listbox.delete
+
+    def counting_delete(self, *args):
+        nonlocal clear_count
+        if args == (0, tk.END):
+            clear_count += 1
+        return original_delete(self, *args)
+
+    from deferred_toplevel import run_deferred_toplevel_build
+    from journal_ui import show_journal_window
+
+    done = False
+
+    def build() -> None:
+        nonlocal done
+        show_journal_window(tracker, host=win)
+        done = True
+
+    with patch.object(tk.Listbox, "delete", counting_delete):
+        run_deferred_toplevel_build(
+            win,
+            theme=tracker.theme,
+            busy_label="Loading Journal…",
+            build=build,
+        )
+        assert pump_tk_until(root, lambda: done, timeout_s=5.0)
+    # Pre-fix storm was ~3× entry count (configure re-entry during pump).
+    assert clear_count <= 3, f"expected at most 3 list clears, got {clear_count}"
+    try:
+        win.destroy()
+    except tk.TclError:
+        pass
+    root.destroy()
+
+
+def test_journal_destroy_mid_cooperative_fill_no_tclerror():
+    root = tk.Tk()
+    root.withdraw()
+    tracker = _tracker_with_entries(root, 80)
+    win = tk.Toplevel(root)
+    win.geometry("1040x760")
+
+    from deferred_toplevel import run_deferred_toplevel_build
+    from journal_ui import show_journal_window
+
+    def build() -> None:
+        show_journal_window(tracker, host=win)
+
+    run_deferred_toplevel_build(
+        win,
+        theme=tracker.theme,
+        busy_label="Loading Journal…",
+        build=build,
+    )
+
+    def destroy_when_busy() -> bool:
+        try:
+            if win.winfo_exists():
+                win.destroy()
+                return True
+        except tk.TclError:
+            return True
+        return False
+
+    pump_tk_until(root, destroy_when_busy, timeout_s=2.0)
+    pump_tk_until(root, lambda: True, timeout_s=0.5)
+    root.destroy()

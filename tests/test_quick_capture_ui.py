@@ -38,8 +38,10 @@ class TestQuickCaptureUi(unittest.TestCase):
             tracker._quick_capture_win = None
 
             win = quick_capture_ui.open_quick_capture_panel(tracker)
-            # Pump the event loop to allow the after(1) build to run.
-            win.update()
+            # Pump the event loop for cooperative chunked build (issue #120).
+            for _ in range(40):
+                root.update_idletasks()
+                root.update()
 
             texts: list[str] = []
 

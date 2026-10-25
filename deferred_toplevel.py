@@ -43,6 +43,7 @@ def run_deferred_toplevel_build(
     )
     indicator_holder.append(indicator)
     win.protocol("WM_DELETE_WINDOW", on_close)
+    win._deferred_busy_indicator = indicator
 
     indicator.start()
 
@@ -57,6 +58,8 @@ def run_deferred_toplevel_build(
             busy_host.destroy()
         except tk.TclError:
             pass
+
+    win._deferred_finish_build = finish_after_build
 
     def do_build() -> None:
         try:
@@ -77,7 +80,8 @@ def run_deferred_toplevel_build(
             else:
                 raise
             return
-        finish_after_build()
+        if not getattr(win, "_deferred_build_async", False):
+            finish_after_build()
 
     win.after(1, do_build)
     return indicator

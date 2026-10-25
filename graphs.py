@@ -8,7 +8,7 @@ from typing import Callable
 
 import mpl_tk
 import tkinter as tk
-from busy_indicator import pump_event_loop
+from busy_indicator import pump_event_loop, run_cooperative_steps
 from tkinter import messagebox, ttk
 
 DEFAULT_DASHBOARD_COUNT = 8
@@ -160,7 +160,6 @@ class GraphWindow:
         initial_tab: str | None = None,
         host: tk.Toplevel | None = None,
     ) -> None:
-        mpl_tk.ensure_matplotlib()
         self.entries = entries
         self.categories = categories
         self.theme = theme
@@ -176,33 +175,33 @@ class GraphWindow:
             self._deferred_host = True
             self.window = host
             pump_event_loop(self.window)
-        else:
-            self._deferred_host = False
-            self.window = tk.Toplevel(parent)
-            self.window.title("Graphing & Progress")
-            self.window.geometry("1180x820")
-            self.window.configure(bg=theme["bg"])
+            notebook = ttk.Notebook(self.window)
+            notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+            self._notebook = notebook
+            self._schedule_deferred_graph_build(entries, initial_tab)
+            return
+
+        self._deferred_host = False
+        mpl_tk.ensure_matplotlib()
+        self.window = tk.Toplevel(parent)
+        self.window.title("Graphing & Progress")
+        self.window.geometry("1180x820")
+        self.window.configure(bg=theme["bg"])
 
         notebook = ttk.Notebook(self.window)
         notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         self._notebook = notebook
+        self._populate_graph_tabs(entries)
+        self._select_initial_graph_tab(initial_tab)
 
+    def _populate_graph_tabs(self, entries: dict) -> None:
+        notebook = self._notebook
         if entries:
             self._add_dashboard_tab(notebook)
-            if self._deferred_host:
-                pump_event_loop(self.window)
             self._add_ratings_tab(notebook)
-            if self._deferred_host:
-                pump_event_loop(self.window)
             self._add_metrics_tab(notebook)
-            if self._deferred_host:
-                pump_event_loop(self.window)
             self._add_heatmap_tab(notebook)
-            if self._deferred_host:
-                pump_event_loop(self.window)
             self._add_radar_tab(notebook)
-            if self._deferred_host:
-                pump_event_loop(self.window)
         else:
             empty = ttk.Frame(notebook, padding=20)
             notebook.add(empty, text="Charts")
@@ -214,15 +213,42 @@ class GraphWindow:
             ).pack(anchor="w")
 
         self._add_ai_insight_tab(notebook)
-        if self._deferred_host:
-            pump_event_loop(self.window)
 
+    def _select_initial_graph_tab(self, initial_tab: str | None) -> None:
+        notebook = self._notebook
         if initial_tab == "ai_insight":
             notebook.select(self._tab_index["ai_insight"])
         elif initial_tab == "ratings" and "ratings" in self._tab_index:
             notebook.select(self._tab_index["ratings"])
         elif "dashboard" in self._tab_index:
             notebook.select(self._tab_index["dashboard"])
+
+    def _schedule_deferred_graph_build(self, entries: dict, initial_tab: str | None) -> None:
+        indicator = getattr(self.window, "_deferred_busy_indicator", None)
+        finish_build = getattr(self.window, "_deferred_finish_build", None)
+        self.window._deferred_build_async = True
+
+        def _import_matplotlib() -> None:
+            mpl_tk.ensure_matplotlib()
+
+        def _build_tabs() -> None:
+            self._populate_graph_tabs(entries)
+
+        def _select_tab() -> None:
+            self._select_initial_graph_tab(initial_tab)
+
+        def _complete() -> None:
+            self.window._deferred_build_async = False
+            if finish_build is not None:
+                finish_build()
+
+        steps = [_import_matplotlib, _build_tabs, _select_tab]
+        if indicator is not None:
+            run_cooperative_steps(self.window, indicator, steps, on_complete=_complete)
+        else:
+            for step in steps:
+                step()
+            _complete()
 
     def _register_tab(self, notebook: ttk.Notebook, frame: ttk.Frame, key: str) -> None:
         self._tab_index[key] = notebook.index(frame)
