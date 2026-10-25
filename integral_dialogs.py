@@ -70,27 +70,20 @@ def show_export_dialog(tracker: PersonalDevelopmentTracker) -> None:
         milestone_rows = export_milestones_csv(tracker.milestones, milestone_path)
         journal_rows = export_journal_csv(tracker.journal, journal_path)
         creative_files = export_creative_documents_zip(creative_projects_dir(), creative_path)
-        youtube_rows = 0
-        youtube_line = "\n\n(No imported YouTube history — skipped YouTube CSV.)"
+        youtube_suffix = " YouTube history skipped."
         if getattr(tracker, "youtube_history", None) and (
             youtube_takeout.normalize_youtube_history(tracker.youtube_history).get("events")
         ):
             youtube_rows = export_youtube_history_csv(tracker.youtube_history, youtube_path)
-            youtube_line = f"\n\n{youtube_path}\n({youtube_rows} YouTube watches)"
-        messagebox.showinfo(
-            "Export complete",
-            f"Spreadsheet exports:\n{life_path}\n({life_rows} life rows)\n\n"
-            f"{fitness_path}\n({fitness_rows} fitness rows)\n\n"
-            f"{milestone_path}\n({milestone_rows} milestones)\n\n"
-            f"{journal_path}\n({journal_rows} journal entries)\n\n"
-            f"Writing documents:\n{creative_path}\n({creative_files} files)"
-            f"{youtube_line}\n\n"
-            "For a full restore (library index + manuscripts + life data), use Backup → Export Backup (zip).\n"
-            "CSV/zip export here is for copies and spreadsheets — todos, day plans, and settings "
-            "are included in Backup, not in these CSV files.",
+            youtube_suffix = f" {youtube_rows} YouTube watches exported."
+        tracker.ensure_status_banner().show_success(
+            f"Export complete — {life_rows} life rows, {fitness_rows} fitness sessions, "
+            f"{milestone_rows} milestones, {journal_rows} journal entries, "
+            f"{creative_files} writing files saved under {folder}.{youtube_suffix} "
+            "For full restore use Backup → Export Backup (zip)."
         )
     except OSError as exc:
-        messagebox.showerror("Export failed", str(exc))
+        tracker.ensure_status_banner().show_error(f"Export failed: {exc}")
 
 
 def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
@@ -130,14 +123,13 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
                 creative_root=creative_projects_dir(),
                 fitness_db_path=_active_fitness_db_path(tracker),
             )
-            messagebox.showinfo(
-                "Backup saved",
-                f"Full backup written to:\n{path}\n\n"
-                f"Creative files: {manifest.get('creative_file_count', 0)}\n"
-                f"Fitness DB: {'yes' if manifest.get('has_fitness') else 'no'}",
+            fitness_note = "with fitness DB" if manifest.get("has_fitness") else "no fitness DB"
+            tracker.ensure_status_banner().show_success(
+                f"Backup saved to {path} "
+                f"({manifest.get('creative_file_count', 0)} creative files, {fitness_note})."
             )
         except OSError as exc:
-            messagebox.showerror("Backup failed", str(exc))
+            tracker.ensure_status_banner().show_error(f"Backup failed: {exc}")
 
     def restore_now() -> None:
         path = filedialog.askopenfilename(

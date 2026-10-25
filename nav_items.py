@@ -189,7 +189,7 @@ MORE_MENU_ITEM_IDS: frozenset[str] = frozenset(
     if "more" in item.surfaces and item.id != "goto_palette"
 )
 
-THEME_MENU_LABELS: frozenset[str] = frozenset({"Dark Mode", "Light Mode"})
+THEME_MENU_LABELS: frozenset[str] = frozenset({"Dark mode", "Light mode"})
 
 
 def nav_item_for_id(item_id: str) -> NavItem | None:

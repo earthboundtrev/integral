@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import tkinter as tk
-from unittest.mock import MagicMock
+from tkinter import ttk
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -124,9 +125,9 @@ def test_legacy_footer_and_today_more_reachability():
 def test_theme_menu_label_follows_mode():
     tracker = MagicMock()
     tracker.settings = {"dark_mode": False}
-    assert theme_menu_label(tracker) == "Dark Mode"
+    assert theme_menu_label(tracker) == "Dark mode"
     tracker.settings = {"dark_mode": True}
-    assert theme_menu_label(tracker) == "Light Mode"
+    assert theme_menu_label(tracker) == "Light mode"
 
 
 def test_more_menu_opens_during_deep_work(more_menu_env):
@@ -186,15 +187,26 @@ def test_quick_capture_row_shows_shortcut_hint(more_menu_env):
 
 def test_esc_closes_and_returns_focus_to_anchor(more_menu_env):
     tracker, anchor, root = more_menu_env
+    focus_calls = 0
+    real_focus_set = anchor.focus_set
+
+    def counting_focus_set() -> None:
+        nonlocal focus_calls
+        focus_calls += 1
+        real_focus_set()
+
+    anchor.focus_set = counting_focus_set
     toggle_more_menu(tracker, anchor)
     root.update()
     popup: MoreMenuPopup = tracker._more_menu_popup
-    popup.window.event_generate("<Escape>")
+    root.focus_set()
     root.update()
+    popup.window.event_generate("<Escape>")
+    for _ in range(5):
+        root.update_idletasks()
+        root.update()
     assert tracker._more_menu_popup is None
-    focus = root.focus_get()
-    if focus is not None:
-        assert focus == anchor
+    assert focus_calls >= 1
 
 
 def test_outside_click_closes_menu(more_menu_env):
@@ -286,3 +298,130 @@ def test_home_end_move_focus(more_menu_env):
     popup.window.event_generate("<Home>")
     root.update()
     assert popup._focus_index == 0
+
+
+def test_more_menu_theme_row_sentence_case(more_menu_env):
+    tracker, _anchor, _root = more_menu_env
+    labels = [row.label for row in build_more_menu_rows(tracker)]
+    assert "Dark mode" in labels
+
+
+def test_failed_popup_open_after_bind_events_calls_close(more_menu_env):
+    tracker, anchor, root = more_menu_env
+    with patch.object(MoreMenuPopup, "_highlight_focus", side_effect=tk.TclError("simulated")):
+        with pytest.raises(tk.TclError, match="simulated"):
+            MoreMenuPopup(tracker, anchor)
+    assert tracker._more_menu_popup is None
+    toggle_more_menu(tracker, anchor)
+    root.update()
+    assert tracker._more_menu_popup is not None
+
+
+def test_more_menu_export_backup_wire_integral_dialogs(more_menu_env):
+    tracker, anchor, root = more_menu_env
+    with patch("more_menu_ui.show_export_dialog") as mock_export:
+        with patch("more_menu_ui.show_backup_dialog") as mock_backup:
+            toggle_more_menu(tracker, anchor)
+            root.update()
+            rows = tracker._more_menu_popup.rows
+            next(r for r in rows if r.item_id == "export").action()
+            next(r for r in rows if r.item_id == "backup").action()
+            mock_export.assert_called_once_with(tracker)
+            mock_backup.assert_called_once_with(tracker)
+    close_more_menu(tracker)
+
+
+def _banner_tracker(root: tk.Tk):
+    from status_banner import StatusBanner
+    from theme import get_theme
+
+    host = tk.Frame(root)
+    host.pack()
+    theme = get_theme(False)
+    banner = StatusBanner(host, theme)
+    tracker = MagicMock()
+    tracker.root = root
+    tracker.theme = theme
+    tracker.entries = {}
+    tracker.categories = {}
+    tracker.sessions = []
+    tracker.programs = {}
+    tracker.milestones = []
+    tracker.journal = {}
+    tracker.youtube_history = None
+    tracker.ensure_status_banner = MagicMock(return_value=banner)
+    tracker._payload = MagicMock(return_value={})
+    return tracker, banner
+
+
+def test_show_export_dialog_uses_banner_not_messagebox():
+    from integral_dialogs import show_export_dialog
+
+    root = tk.Tk()
+    root.withdraw()
+    tracker, banner = _banner_tracker(root)
+    try:
+        with patch("integral_dialogs.filedialog.askdirectory", return_value="/tmp/export"):
+            with patch("integral_dialogs.export_life_entries_csv", return_value=1):
+                with patch("integral_dialogs.export_fitness_sessions_csv", return_value=2):
+                    with patch("integral_dialogs.export_milestones_csv", return_value=3):
+                        with patch("integral_dialogs.export_journal_csv", return_value=4):
+                            with patch(
+                                "integral_dialogs.export_creative_documents_zip", return_value=5
+                            ):
+                                with patch("tkinter.messagebox.showinfo") as show_info:
+                                    with patch("tkinter.messagebox.showerror") as show_error:
+                                        show_export_dialog(tracker)
+                                        show_info.assert_not_called()
+                                        show_error.assert_not_called()
+        root.update()
+        assert banner._kind == "success"
+        assert "Export complete" in banner._message_var.get()
+    finally:
+        root.destroy()
+
+
+def test_show_backup_export_uses_banner_not_messagebox():
+    from integral_dialogs import show_backup_dialog
+
+    root = tk.Tk()
+    root.withdraw()
+    tracker, banner = _banner_tracker(root)
+    try:
+        with patch("integral_dialogs.filedialog.asksaveasfilename", return_value="/tmp/backup.zip"):
+            with patch(
+                "integral_dialogs.write_full_backup",
+                return_value={"creative_file_count": 2, "has_fitness": True},
+            ):
+                with patch("integral_dialogs.creative_projects_dir", return_value="/tmp/creative"):
+                    with patch(
+                        "integral_dialogs._active_fitness_db_path", return_value=None
+                    ):
+                        show_backup_dialog(tracker)
+                        root.update()
+                        backup_btn = None
+                        for win in root.winfo_children():
+                            if isinstance(win, tk.Toplevel):
+                                for child in win.winfo_children():
+                                    if isinstance(child, ttk.Frame):
+                                        for btn in child.winfo_children():
+                                            if isinstance(btn, ttk.Button) and btn.cget("text") == "Export Backup…":
+                                                backup_btn = btn
+                                                break
+                        assert backup_btn is not None
+                        with patch("tkinter.messagebox.showinfo") as show_info:
+                            with patch("tkinter.messagebox.showerror") as show_error:
+                                backup_btn.invoke()
+                                show_info.assert_not_called()
+                                show_error.assert_not_called()
+        root.update()
+        assert banner._kind == "success"
+        assert "Backup saved" in banner._message_var.get()
+    finally:
+        for win in list(root.winfo_children()):
+            try:
+                if isinstance(win, tk.Toplevel):
+                    win.destroy()
+            except tk.TclError:
+                pass
+        root.destroy()
