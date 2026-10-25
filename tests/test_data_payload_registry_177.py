@@ -164,6 +164,22 @@ def test_extract_extra_top_level():
     assert extra == _unknown_extras()
 
 
+def test_extras_present_before_merge_categories_autosave(tk_root):
+    """merge_categories_with_defaults can save during load; extras must be set first."""
+    expected_extra = _unknown_extras()
+    payload = _minimal_v2_payload(**expected_extra)
+    payload["categories"] = {"Money/Freedom": {"checklist": [], "metrics": []}}
+    _seed_data_file(payload)
+    tracker = personal_dev_tracker.PersonalDevelopmentTracker(tk_root)
+    assert tracker._extra_top_level == expected_extra
+    assert tracker._payload()["sleep_log"] == expected_extra["sleep_log"]
+    pump_tk(tk_root, steps=40)
+    time.sleep(0.3)
+    pump_tk(tk_root, steps=10)
+    reloaded = json.loads(open(paths.data_file(), encoding="utf-8").read())
+    assert reloaded["sleep_log"] == expected_extra["sleep_log"]
+
+
 def test_unknown_keys_survive_save_and_reload(tk_root):
     expected_extra = _unknown_extras()
     payload = _minimal_v2_payload(**expected_extra)

@@ -769,6 +769,9 @@ class PersonalDevelopmentTracker:
                 raise
                 
             migrated = migrate_data(data, self.programs)
+            self._extra_top_level = extract_extra_top_level(migrated)
+            hydrate_registered_from_migrated(self, migrated)
+            apply_ephemeral_from_migrated(self, migrated)
             self.categories = self.merge_categories_with_defaults(migrated.get("categories"))
             self.entries = migrated.get("entries", {})
             self.settings = normalize_notification_settings(
@@ -820,9 +823,6 @@ class PersonalDevelopmentTracker:
                             "Your data is safe. Backups were created if migration started.",
                         )
 
-            hydrate_registered_from_migrated(self, migrated)
-            apply_ephemeral_from_migrated(self, migrated)
-            self._extra_top_level = extract_extra_top_level(migrated)
             dirty = migration_dirty
             if sync_fitness_sessions_to_entries(self.entries, self.settings.get("fitness")):
                 dirty = True

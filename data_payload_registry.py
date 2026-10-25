@@ -126,8 +126,7 @@ def apply_ephemeral_from_migrated(tracker: Any, migrated: dict[str, Any]) -> Non
             setattr(tracker, attr, migrated[key])
 
 
-def hydrate_registered_from_migrated(tracker: Any, migrated: dict[str, Any]) -> None:
-    """Load registered top-level keys that do not need pre-migration side effects."""
+def _hydrate_normalizers() -> dict[str, Any]:
     import creative_projects
     import day_plans
     import journal
@@ -137,20 +136,28 @@ def hydrate_registered_from_migrated(tracker: Any, migrated: dict[str, Any]) -> 
 
     from milestones import merge_milestones
 
-    tracker.milestones = merge_milestones(migrated.get("milestones"))
-    tracker.journal = journal.normalize_journal(migrated.get("journal"))
-    tracker.creative_projects = creative_projects.normalize_creative_projects(
-        migrated.get("creative_projects")
-    )
-    tracker.youtube_history = youtube_takeout.normalize_youtube_history(
-        migrated.get("youtube_history")
-    )
-    tracker.day_plans = day_plans.normalize_day_plans(migrated.get("day_plans"))
-    tracker.todos = todos.normalize_todos(migrated.get("todos"))
-    tracker.practices = practices.normalize_practices(migrated.get("practices"))
-    tracker.program_state = migrated.get("program_state", {})
-    levels = migrated.get("user_levels")
-    tracker.user_levels = dict(levels) if isinstance(levels, dict) else {}
+    def _user_levels(raw: Any) -> dict:
+        return dict(raw) if isinstance(raw, dict) else {}
+
+    return {
+        "milestones": merge_milestones,
+        "journal": journal.normalize_journal,
+        "creative_projects": creative_projects.normalize_creative_projects,
+        "youtube_history": youtube_takeout.normalize_youtube_history,
+        "day_plans": day_plans.normalize_day_plans,
+        "todos": todos.normalize_todos,
+        "practices": practices.normalize_practices,
+        "program_state": lambda raw: raw if isinstance(raw, dict) else {},
+        "user_levels": _user_levels,
+    }
+
+
+def hydrate_registered_from_migrated(tracker: Any, migrated: dict[str, Any]) -> None:
+    """Load registered top-level keys that do not need pre-migration side effects."""
+    normalizers = _hydrate_normalizers()
+    for key in _HYDRATE_KEYS:
+        normalizer = normalizers[key]
+        setattr(tracker, _TRACKER_ATTR[key], normalizer(migrated.get(key)))
 
 
 def merge_extra_top_level_into_payload(
