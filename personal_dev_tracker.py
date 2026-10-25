@@ -529,7 +529,14 @@ class PersonalDevelopmentTracker:
         apply_theme(self.root, self.theme)
         status_banner = getattr(self, "_status_banner", None)
         if status_banner is not None:
-            status_banner.set_theme(self.theme)
+            try:
+                host = status_banner._host
+                if host is not None and int(host.winfo_exists()) == 1:
+                    status_banner.set_theme(self.theme)
+                else:
+                    self._status_banner = None
+            except tk.TclError:
+                self._status_banner = None
         self._retheme_open_windows()
 
     def _retheme_open_windows(self) -> None:
