@@ -63,6 +63,7 @@ a = Analysis(
         "journal_ui",
         "reflect_page_ui",
         "entry_payload",
+        "data_payload_registry",
         "external_edit",
         "youtube_takeout",
         "richtext",
