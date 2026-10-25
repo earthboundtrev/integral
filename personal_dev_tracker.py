@@ -80,6 +80,13 @@ from today_build_errors import (
     show_inline_error_panel,
     show_today_build_banner,
 )
+from data_payload_registry import (
+    apply_ephemeral_from_migrated,
+    build_known_top_level_payload,
+    extract_extra_top_level,
+    hydrate_registered_from_migrated,
+    merge_extra_top_level_into_payload,
+)
 from vault import is_encrypted_file, load_data_file, load_data_file_with_recovery, save_data_file
 from entry_payload import (
     build_entry_payload,
@@ -172,6 +179,8 @@ class PersonalDevelopmentTracker:
         self._focus_shield_after_id: str | None = None
         self.todos: dict = todos.empty_todos()
         self.practices: dict = practices.empty_practices()
+        self.user_levels: dict = {}
+        self._extra_top_level: dict = {}
         self._nav_buttons: dict[str, ttk.Widget] = {}
         self._nav_pack_order: list[str] = []
         self._nav_frame: ttk.Frame | None = None
@@ -760,6 +769,9 @@ class PersonalDevelopmentTracker:
                 raise
                 
             migrated = migrate_data(data, self.programs)
+            self._extra_top_level = extract_extra_top_level(migrated)
+            hydrate_registered_from_migrated(self, migrated)
+            apply_ephemeral_from_migrated(self, migrated)
             self.categories = self.merge_categories_with_defaults(migrated.get("categories"))
             self.entries = migrated.get("entries", {})
             self.settings = normalize_notification_settings(
@@ -811,18 +823,6 @@ class PersonalDevelopmentTracker:
                             "Your data is safe. Backups were created if migration started.",
                         )
 
-            self.milestones = merge_milestones(migrated.get("milestones"))
-            self.journal = journal.normalize_journal(migrated.get("journal"))
-            self.creative_projects = creative_projects.normalize_creative_projects(
-                migrated.get("creative_projects")
-            )
-            self.youtube_history = youtube_takeout.normalize_youtube_history(
-                migrated.get("youtube_history")
-            )
-            self.day_plans = day_plans.normalize_day_plans(migrated.get("day_plans"))
-            self.todos = todos.normalize_todos(migrated.get("todos"))
-            self.practices = practices.normalize_practices(migrated.get("practices"))
-            self.program_state = migrated.get("program_state", {})
             dirty = migration_dirty
             if sync_fitness_sessions_to_entries(self.entries, self.settings.get("fitness")):
                 dirty = True
@@ -862,28 +862,17 @@ class PersonalDevelopmentTracker:
             self.todos = todos.empty_todos()
             self.practices = practices.empty_practices()
             self.program_state = compute_program_state(self.programs, self.sessions, self.settings)
+            self.user_levels = {}
+            self._extra_top_level = {}
             self.save_data(flush=True)
 
     def _payload(self, *, recompute_fitness: bool = False) -> dict:
         if recompute_fitness or self._fitness_state_dirty or not self.program_state:
             self.program_state = compute_program_state(self.programs, self.sessions, self.settings)
             self._fitness_state_dirty = False
-        return {
-            "schema_version": 2,
-            "categories": self.categories,
-            "entries": self.entries,
-            "settings": self.settings,
-            "sessions": self.sessions,
-            "milestones": self.milestones,
-            "journal": self.journal,
-            "creative_projects": self.creative_projects,
-            "youtube_history": self.youtube_history,
-            "day_plans": self.day_plans,
-            "todos": self.todos,
-            "practices": self.practices,
-            "program_state": self.program_state,
-            "user_levels": {},
-        }
+        payload = build_known_top_level_payload(self)
+        merge_extra_top_level_into_payload(payload, self._extra_top_level)
+        return payload
 
     def save_data(
         self,

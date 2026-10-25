@@ -383,6 +383,8 @@ def default_fitness_payload() -> dict[str, Any]:
 
 
 def migrate_data(payload: dict[str, Any], programs: dict[str, dict]) -> dict[str, Any]:
+    from data_payload_registry import carry_forward_unknown_keys
+
     if payload.get("schema_version", 1) >= 2:
         payload.setdefault("sessions", [])
         payload.setdefault("milestones", [])
@@ -411,4 +413,17 @@ def migrate_data(payload: dict[str, Any], programs: dict[str, dict]) -> dict[str
     }
     migrated["settings"]["fitness"] = get_fitness_settings(migrated["settings"])
     migrated["program_state"] = compute_program_state(programs, migrated["sessions"], migrated["settings"])
+    carry_forward_unknown_keys(
+        payload,
+        migrated,
+        consumed=(
+            "schema_version",
+            "categories",
+            "entries",
+            "settings",
+            "sessions",
+            "milestones",
+            "user_levels",
+        ),
+    )
     return migrated
