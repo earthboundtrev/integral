@@ -4379,7 +4379,7 @@ class PersonalDevelopmentTracker:
             self._invalidate_caches()
             self.save_data()
             editor.destroy()
-            messagebox.showinfo("Saved", "Categories updated.")
+            self.show_save_success_banner("Categories updated.")
             self.refresh_dashboard()
 
         def reset_defaults() -> None:

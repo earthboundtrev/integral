@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 import nav_items
+from integral_dialogs import show_backup_dialog, show_export_dialog
 from keyboard_shortcuts import MORE_ITEM_SHORTCUT_HINTS, show_keyboard_shortcuts
 from theme import FONTS
 
@@ -62,7 +63,7 @@ LEGACY_FOOTER_LABELS: tuple[str, ...] = (
     "Backup",
     "Edit Categories",
     "Data & Security",
-    "Dark Mode",
+    "Dark mode",
 )
 
 TODAY_MORE_MENU_LABELS: tuple[str, ...] = (
@@ -86,7 +87,7 @@ SIDEBAR_NAV_LABELS: tuple[str, ...] = tuple(
     item.label for item in nav_items.sidebar_nav_items()
 )
 
-THEME_LABEL_ALIASES: frozenset[str] = frozenset({"Dark Mode", "Light Mode"})
+THEME_LABEL_ALIASES: frozenset[str] = frozenset({"Dark mode", "Light mode"})
 
 GOTO_THEME_LABEL = "Toggle Dark / Light Mode"
 
@@ -102,7 +103,7 @@ class MoreMenuRow:
 
 
 def theme_menu_label(tracker: Any) -> str:
-    return "Light Mode" if tracker.settings.get("dark_mode") else "Dark Mode"
+    return "Light mode" if tracker.settings.get("dark_mode") else "Dark mode"
 
 
 def _action_for_id(tracker: Any, item_id: str) -> Callable[[], None]:
@@ -116,8 +117,8 @@ def _action_for_id(tracker: Any, item_id: str) -> Callable[[], None]:
         "quick_capture": tracker.toggle_quick_capture,
         "writing_projects": tracker.show_writing_projects,
         "deep_work": tracker.show_deep_work,
-        "export": tracker.show_export,
-        "backup": tracker.show_backup,
+        "export": lambda: show_export_dialog(tracker),
+        "backup": lambda: show_backup_dialog(tracker),
         "settings": tracker.show_settings,
         "security": tracker.show_security,
         "toggle_theme": tracker.toggle_dark_mode,
@@ -233,8 +234,8 @@ _REACHABILITY: dict[str, frozenset[str]] = {
     "Edit Categories": frozenset({"more", "goto"}),
     "Data & Security": frozenset({"more", "goto"}),
     "Keyboard shortcuts": frozenset({"more"}),
-    "Dark Mode": frozenset({"more", "goto"}),
-    "Light Mode": frozenset({"more", "goto"}),
+    "Dark mode": frozenset({"more", "goto"}),
+    "Light mode": frozenset({"more", "goto"}),
     "AI Insight": frozenset({"more", "today_more", "goto"}),
     "Plan Tomorrow": frozenset({"today_more", "goto"}),
     "Log Exercise": frozenset({"today_more", "goto"}),
@@ -382,21 +383,25 @@ class MoreMenuPopup:
         self._row_widgets: list[tk.Frame] = []
         self._label_widgets: list[tk.Label] = []
         self._hint_widgets: list[tk.Label | None] = []
-        self._build_rows()
-        self._place_near_anchor()
-        self.window.deiconify()
         try:
-            self.window.grab_set()
-            self._had_grab = True
+            self._build_rows()
+            self._place_near_anchor()
+            self.window.deiconify()
+            try:
+                self.window.grab_set()
+                self._had_grab = True
+            except tk.TclError:
+                self._had_grab = False
+            self._bind_events()
+            self._highlight_focus()
+            try:
+                self.window.focus_force()
+            except tk.TclError:
+                pass
+            self._bind_func(self.window, "<FocusOut>", self._on_focus_out)
         except tk.TclError:
-            self._had_grab = False
-        self._bind_events()
-        self._highlight_focus()
-        try:
-            self.window.focus_force()
-        except tk.TclError:
-            pass
-        self._bind_func(self.window, "<FocusOut>", self._on_focus_out)
+            self.close()
+            raise
 
     def _build_rows(self) -> None:
         last_group: str | None = None
@@ -463,9 +468,8 @@ class MoreMenuPopup:
                 fg=self.theme["muted"],
                 font=FONTS["hint"],
                 padx=self._PAD,
-                pady=(4, 0),
             )
-            dw_hint.pack(fill=tk.X)
+            dw_hint.pack(fill=tk.X, pady=(4, 0))
         nav_hint = tk.Label(
             self._body,
             text="↑↓ · Enter · Esc",
@@ -760,10 +764,19 @@ class MoreMenuPopup:
         except tk.TclError:
             pass
         if focus_anchor:
+            anchor = self.anchor
+            root = self.root
+
+            def _return_focus() -> None:
+                try:
+                    anchor.focus_force()
+                except tk.TclError:
+                    pass
+
             try:
-                self.anchor.focus_set()
+                root.after_idle(_return_focus)
             except tk.TclError:
-                pass
+                _return_focus()
 
 
 def toggle_more_menu(tracker: Any, anchor: tk.Widget) -> None:
