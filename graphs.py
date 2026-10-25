@@ -8,7 +8,7 @@ from typing import Callable
 
 import mpl_tk
 import tkinter as tk
-from busy_indicator import pump_event_loop, run_cooperative_steps
+from busy_indicator import pump_event_loop, pump_until_indicator_visible, run_cooperative_steps
 from tkinter import messagebox, ttk
 
 DEFAULT_DASHBOARD_COUNT = 8
@@ -232,6 +232,10 @@ class GraphWindow:
             pump_event_loop(self.window)
 
         def _import_matplotlib() -> None:
+            if indicator is not None:
+                pump_until_indicator_visible(self.window, indicator)
+            else:
+                pump_event_loop(self.window)
             mpl_tk.ensure_matplotlib()
 
         def _select_tab() -> None:

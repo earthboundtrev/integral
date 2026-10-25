@@ -172,12 +172,14 @@ def test_journal_730_entry_cold_fill_under_budget():
     root.destroy()
 
 
-def test_journal_esc_cancels_deferred_fill():
+def test_journal_escape_from_focused_child_cancels_and_closes():
+    """Real Esc path: focused listbox child must cancel fill and destroy the window."""
     root = tk.Tk()
     root.deiconify()
     tracker = _tracker_with_entries(root, 200)
     win = tk.Toplevel(root)
     win.geometry("1040x760")
+    win.deiconify()
 
     from deferred_toplevel import run_deferred_toplevel_build
     from journal_ui import show_journal_window
@@ -185,21 +187,34 @@ def test_journal_esc_cancels_deferred_fill():
     def build() -> None:
         show_journal_window(tracker, host=win)
 
-    indicator = run_deferred_toplevel_build(
+    run_deferred_toplevel_build(
         win,
         theme=tracker.theme,
         busy_label="Loading Journal…",
         build=build,
     )
 
-    def cancel_when_busy() -> bool:
-        if indicator.is_visible:
-            indicator.request_cancel()
-            return True
-        return False
+    def _find_listbox(widget: tk.Misc) -> tk.Listbox | None:
+        for child in widget.winfo_children():
+            if isinstance(child, tk.Listbox):
+                return child
+            nested = _find_listbox(child)
+            if nested is not None:
+                return nested
+        return None
 
-    pump_tk_until(root, cancel_when_busy, timeout_s=3.0)
-    pump_tk_until(root, lambda: not win.winfo_exists(), timeout_s=2.0)
+    def listbox_ready() -> bool:
+        lb = _find_listbox(win)
+        return lb is not None
+
+    assert pump_tk_until(root, listbox_ready, timeout_s=3.0)
+    listbox = _find_listbox(win)
+    assert listbox is not None
+    listbox.focus_set()
+    root.update_idletasks()
+    listbox.event_generate("<KeyPress-Escape>")
+    root.update()
+    assert pump_tk_until(root, lambda: not win.winfo_exists(), timeout_s=2.0)
     root.destroy()
 
 

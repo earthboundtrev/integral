@@ -240,6 +240,21 @@ class BusyIndicator:
         self._label_var = None
 
 
+def pump_until_indicator_visible(
+    widget: tk.Misc,
+    indicator: BusyIndicator,
+    *,
+    min_delay_ms: float = DEFAULT_DELAY_MS,
+    extra_ms: float = 20.0,
+) -> None:
+    """Pump Tk until the delayed indicator is visible or ``min_delay_ms`` elapses."""
+    deadline = time.perf_counter() + (min_delay_ms + extra_ms) / 1000.0
+    while time.perf_counter() < deadline:
+        pump_event_loop(widget)
+        if indicator.is_visible:
+            return
+
+
 def pump_event_loop(widget: tk.Misc) -> None:
     """Yield to Tk so delayed BusyIndicator timers and animations can run."""
     try:

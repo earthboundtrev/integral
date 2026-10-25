@@ -334,6 +334,7 @@ def show_journal_window(
     list_tooltip_label: tk.Label | None = None
     list_tooltip_idx: list[int | None] = [None]
     entry_list_last_width: list[int] = [0]
+    entry_list_width_at_fill: list[int] = [0]
     entry_list_filling: list[bool] = [False]
     configure_reflow_after_id: list[str | None] = [None]
     entry_list_font = tkfont.Font(font=entry_list.cget("font"))
@@ -426,6 +427,11 @@ def show_journal_window(
                 entry_list.yview_moveto(yview[0])
         finally:
             entry_list_filling[0] = False
+            if _journal_win_alive():
+                width = entry_list.winfo_width()
+                if width > 1:
+                    entry_list_width_at_fill[0] = width
+                    entry_list_last_width[0] = width
 
     def refresh_list(select_id: str | None = None) -> None:
         nonlocal indexed_entries
@@ -491,6 +497,9 @@ def show_journal_window(
         width = entry_list.winfo_width()
         if width <= 1 or width == entry_list_last_width[0]:
             return
+        if entry_list_width_at_fill[0] > 1 and width == entry_list_width_at_fill[0]:
+            entry_list_last_width[0] = width
+            return
         entry_list_last_width[0] = width
         cur = entry_list.curselection()
         yview = entry_list.yview()
@@ -512,6 +521,8 @@ def show_journal_window(
             return
         width = entry_list.winfo_width()
         if width <= 1 or width == entry_list_last_width[0]:
+            return
+        if entry_list_width_at_fill[0] > 1 and width == entry_list_width_at_fill[0]:
             return
         pending = configure_reflow_after_id[0]
         if pending is not None:
@@ -966,17 +977,25 @@ def show_journal_window(
         head = min(visible, total)
         fill_order = list(range(head)) + list(range(head, total))
 
+        def _record_fill_width() -> None:
+            if not _journal_win_alive():
+                return
+            width = entry_list.winfo_width()
+            if width > 1:
+                entry_list_width_at_fill[0] = width
+                entry_list_last_width[0] = width
+
         def _complete_cooperative_fill_guarded() -> None:
             entry_list_filling[0] = False
-            if _journal_win_alive():
-                width = entry_list.winfo_width()
-                if width > 1:
-                    entry_list_last_width[0] = width
+            _record_fill_width()
             _complete_cooperative_fill()
 
         def _abort_cooperative_fill() -> None:
             entry_list_filling[0] = False
             win._deferred_build_async = False
+            indicator_ref = getattr(win, "_deferred_busy_indicator", None)
+            if indicator_ref is not None:
+                indicator_ref.request_cancel()
 
         if indicator is not None and total > 0:
             run_timeboxed_index_work(
@@ -997,13 +1016,21 @@ def show_journal_window(
                     entry_list.see(select_index)
             finally:
                 entry_list_filling[0] = False
-                if _journal_win_alive():
-                    width = entry_list.winfo_width()
-                    if width > 1:
-                        entry_list_last_width[0] = width
+                _record_fill_width()
             _complete_cooperative_fill()
 
     if deferred_host:
+        from deferred_toplevel import apply_toplevel_escape_to_descendants, install_toplevel_escape
+
+        def _on_journal_escape() -> None:
+            indicator_ref = getattr(win, "_deferred_busy_indicator", None)
+            if getattr(win, "_deferred_build_async", False) and indicator_ref is not None:
+                indicator_ref.request_cancel()
+                return
+            request_close()
+
+        install_toplevel_escape(win, _on_journal_escape)
+        apply_toplevel_escape_to_descendants(win)
         _cooperative_fill_entry_list(entry_id)
     else:
         refresh_list(select_id=entry_id)

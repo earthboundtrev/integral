@@ -8,6 +8,39 @@ from typing import Callable
 from busy_indicator import BusyIndicator, pump_event_loop
 
 
+def install_toplevel_escape(win: tk.Misc, handler: Callable[[], None]) -> str:
+    """Bind Escape on ``win`` and descendants via a shared bindtag (#131)."""
+    tag = f"IntegralEsc{win.winfo_id()}"
+    setattr(win, "_integral_escape_tag", tag)
+
+    def on_escape(_event: tk.Event) -> str:
+        handler()
+        return "break"
+
+    win.bind_class(tag, "<Escape>", on_escape)
+    apply_toplevel_escape_to_descendants(win)
+    return tag
+
+
+def apply_toplevel_escape_to_descendants(win: tk.Misc) -> None:
+    """Tag new widgets so Escape reaches the toplevel handler."""
+    tag = getattr(win, "_integral_escape_tag", None)
+    if not tag:
+        return
+
+    def walk(widget: tk.Misc) -> None:
+        try:
+            tags = widget.bindtags()
+            if tag not in tags:
+                widget.bindtags((tag, *tuple(tags)))
+        except tk.TclError:
+            return
+        for child in widget.winfo_children():
+            walk(child)
+
+    walk(win)
+
+
 def run_deferred_toplevel_build(
     win: tk.Toplevel,
     *,
@@ -46,6 +79,11 @@ def run_deferred_toplevel_build(
     win._deferred_busy_indicator = indicator
 
     indicator.start()
+
+    def on_escape() -> None:
+        indicator.request_cancel()
+
+    install_toplevel_escape(win, on_escape)
 
     def finish_after_build() -> None:
         try:
