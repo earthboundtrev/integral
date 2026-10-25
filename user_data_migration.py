@@ -120,6 +120,8 @@ def _data_json_is_empty_placeholder(path: str) -> bool:
 
 
 def _sideline_placeholder_dest(dest_file: str) -> bool:
+    if os.path.basename(dest_file) != "data.json":
+        return False
     if not _data_json_is_empty_placeholder(dest_file):
         return False
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
