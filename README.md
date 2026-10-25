@@ -127,7 +127,7 @@ User data: `%APPDATA%\Integral\data.json` (encrypted optional via Data & Securit
 | **Creative/Mental Work** | Open Writing Projects from the category log; **Log writing session** marks creative progress for the day |
 | **Deep Work** | Focus timer (25 / 50 / 90 / custom); quieter nav; optional open a writing project; +10 min or end early |
 | **Activity** | GitHub-style contribution grid; click any day; smooth horizontal scroll |
-| **Save feedback** | Top-of-window success/error banners (truthful after disk write; errors stay until ✕); inline validation on Save and focus-out; post-reflection guidance as a dismissable banner with **Don't show again** (re-enable in Settings); workout save uses **Undo** instead of a delete-confirm modal |
+| **Save feedback** | Top-of-window success/error banners (truthful after disk write; errors stay until ✕); inline validation on Save and focus-out; post-reflection guidance as a dismissable banner with **Don't show again** (re-enable in Settings); workout save uses **Undo** instead of a delete-confirm modal; if Today's Log fails to build, a non-modal inline message plus **Today didn't fully load · Retry · Details** banner (traceback in `integral.log`, no blocking error dialog) |
 | **Snappy UI** | Soft Overview refresh (no full rebuild on Refresh/save paths); cached fitness day counts; footer / Today's Log scroll coalesced so fast flicks do not ghost buttons |
 | **Streak** | Overall streak counts life log, journal, or fitness for the day; updates as soon as you save; mid-day grace if today is still empty; **click the header streak pill (· details)** to open Overview & Categories in a full window (activity grid, guidance, domain cards) so the main dashboard stays Today's Log-focused |
 | **Quick Capture** | Optional always-on-top panel (off by default): open from **Today's Log** (next to Journal / More…) or the footer nav; today's todos + scheduled backlog with collapsible sections, inline edit, and drag-free ↑/↓ reordering; **finish always logs to a life domain** (prompts for category if missing — same idea as Link → day entry / YouTube); link starters; Journal now; quick-log opener; **domain typeahead** on category pickers; Deep Work timer + Windows focus shield (minimize chosen apps) |
@@ -138,7 +138,7 @@ User data: `%APPDATA%\Integral\data.json` (encrypted optional via Data & Securit
 | **Reminders** | Windows toasts while Integral is running; optional Start with Windows + minimize-on-close so reminders keep working |
 | **AI Insight (optional)** | Local Ollama review of recent logs — see below |
 
-Tests: `python -m pytest tests/ -q`
+Tests: `python -m pytest tests/ -q --timeout=60`
 
 ### Writing Projects & Deep Work
 

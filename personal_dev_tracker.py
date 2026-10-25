@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Callable
+from typing import Any, Callable
 import os
 import sys
 import threading
@@ -72,6 +72,14 @@ from inline_validation import (
     wire_focusout_validation,
 )
 from status_banner import StatusBanner, attach_banner_to_main
+from today_build_errors import (
+    TodayBuildErrorState,
+    begin_retry_spinner,
+    dismiss_today_load_banner,
+    open_details_dialog,
+    show_inline_error_panel,
+    show_today_build_banner,
+)
 from vault import is_encrypted_file, load_data_file, load_data_file_with_recovery, save_data_file
 from entry_payload import (
     build_entry_payload,
@@ -107,16 +115,13 @@ def _perf_log(message: str) -> None:
 
 
 class PersonalDevelopmentTracker:
-    def __init__(self, root: tk.Tk) -> None:
-        self.root = root
-        self.root.title(f"{APP_NAME} {APP_VERSION}")
-        self.root.geometry("1200x800")
-        self.root.minsize(900, 600)
-        self._apply_window_icon()
-
+    def _init_tracker_state(self, *, dark_mode: bool | None = None) -> None:
+        """Initialize in-memory state without loading data or building UI (tests reuse this)."""
+        if dark_mode is None:
+            dark_mode = False
         self.categories: dict = {}
         self.entries: dict = {}
-        self.settings: dict = {"dark_mode": False}
+        self.settings: dict = {"dark_mode": dark_mode}
         self.sessions: list = []
         self.milestones: list = []
         self.journal: dict = journal.empty_journal()
@@ -127,8 +132,9 @@ class PersonalDevelopmentTracker:
         self.programs: dict = load_program_definitions()
         self.data_path = DATA_FILE
         self.vault_passphrase: str | None = None
-        self.theme = get_theme(False)
+        self.theme = get_theme(dark_mode)
         self._insights_cache = None
+        self.insights: list = []
         self._streak_cache: dict[str, int] = {}
         self._session_counts_cache: dict[str, int] | None = None
         self._save_after_id: str | None = None
@@ -136,6 +142,7 @@ class PersonalDevelopmentTracker:
         self._save_after_callbacks: list[Callable[[bool, BaseException | None], None]] = []
         self._save_write_in_progress = False
         self._status_banner: StatusBanner | None = None
+        self._today_build_error_state = TodayBuildErrorState()
         self._fitness_state_dirty = False
         self._dashboard_ready = False
         self._categories_tab_built = False
@@ -180,6 +187,14 @@ class PersonalDevelopmentTracker:
         self._open_windows: dict[str, tk.Toplevel] = {}  # Track windows for raise-if-open
         self._more_menu_popup: Any | None = None
         self._footer_more_btn: ttk.Button | None = None
+
+    def __init__(self, root: tk.Tk) -> None:
+        self.root = root
+        self.root.title(f"{APP_NAME} {APP_VERSION}")
+        self.root.geometry("1200x800")
+        self.root.minsize(900, 600)
+        self._apply_window_icon()
+        self._init_tracker_state()
 
         if is_encrypted_file(DATA_FILE) and not prompt_vault_unlock(self):
             messagebox.showerror("Locked", "Cannot open encrypted journal without passphrase.")
@@ -1980,60 +1995,96 @@ class PersonalDevelopmentTracker:
         
         chunk_times = []
         
+        log_bar_built = False
+        build_error_state = self._today_build_error_state
+        build_errors: list[tuple[str, Exception]] = []
+
+        def _restore_inline_todo_focus() -> None:
+            if focused_path and focused_path.startswith(str(self._content_pane)):
+                self.root.after(10, lambda: self._restore_content_focus())
+
+        def do_retry() -> None:
+            show_today_build_banner(
+                self,
+                build_error_state,
+                on_retry=do_retry,
+                on_details=do_details,
+                retrying=True,
+            )
+            begin_retry_spinner(self, build_error_state)
+            self.refresh_dashboard(full=False, recompute=True)
+
+        def do_details() -> None:
+            open_details_dialog(
+                self.root,
+                self.theme,
+                build_error_state.log_path,
+                build_error_state.traceback_text,
+            )
+
+        def _note_build_error(error: Exception, chunk: str) -> None:
+            build_errors.append((chunk, error))
+            build_error_state.record(error, chunk=chunk)
+
+        def _present_build_errors() -> None:
+            if not log_bar_built:
+                show_inline_error_panel(self._content_pane, self.theme)
+            show_today_build_banner(
+                self,
+                build_error_state,
+                on_retry=do_retry,
+                on_details=do_details,
+            )
+            build_error_state.repeat_failure = True
+            _restore_inline_todo_focus()
+
+        def _finish_content_build() -> None:
+            busy.stop()
+            if build_errors:
+                _present_build_errors()
+            else:
+                build_error_state.clear()
+                dismiss_today_load_banner(self)
+            total_time = time.time() - build_start_time
+            _perf_log(f"Content build complete: {total_time*1000:.1f}ms total")
+            for name, duration in chunk_times:
+                _perf_log(f"  - {name}: {duration*1000:.1f}ms")
+
         def chunk_1_setup():
             chunk_start = time.time()
-            if recompute:
-                self._invalidate_caches()
-                self.insights = self._get_insights()
+            try:
+                if recompute:
+                    self._invalidate_caches()
+                    self.insights = self._get_insights()
+            except Exception as e:
+                _note_build_error(e, "setup")
             chunk_times.append(("setup", time.time() - chunk_start))
             if DEBUG_DELAY_MS > 0:
                 self.root.after(DEBUG_DELAY_MS, chunk_2_build_log_bar)
             else:
                 self.root.after_idle(chunk_2_build_log_bar)
-        
+
         def chunk_2_build_log_bar():
+            nonlocal log_bar_built
             chunk_start = time.time()
             try:
                 self.create_todays_log_bar()
+                log_bar_built = True
             except Exception as e:
-                busy.stop()
-                _show_build_error(e)
-                return
+                _note_build_error(e, "log_bar")
             chunk_times.append(("log_bar", time.time() - chunk_start))
             self.root.after_idle(chunk_3_finalize)
-        
+
         def chunk_3_finalize():
             chunk_start = time.time()
-            if focused_path and focused_path.startswith(str(self._content_pane)):
-                self.root.after(10, lambda: self._restore_content_focus())
+            try:
+                if focused_path and focused_path.startswith(str(self._content_pane)):
+                    self.root.after(10, lambda: self._restore_content_focus())
+            except Exception as e:
+                _note_build_error(e, "finalize")
             chunk_times.append(("finalize", time.time() - chunk_start))
-            busy.stop()
-            total_time = time.time() - build_start_time
-            _perf_log(f"Content build complete: {total_time*1000:.1f}ms total")
-            for name, duration in chunk_times:
-                _perf_log(f"  - {name}: {duration*1000:.1f}ms")
-        
-        def _show_build_error(error):
-            error_frame = ttk.Frame(self._content_pane, style="Surface.TFrame")
-            error_frame.pack(fill=tk.BOTH, expand=True, padx=16, pady=16)
-            ttk.Label(
-                error_frame,
-                text="Couldn't load today's log.",
-                style="OnSurfaceError.TLabel",
-            ).pack(pady=(0, 8))
-            ttk.Label(
-                error_frame,
-                text=str(error),
-                style="OnSurfaceMuted.TLabel",
-                wraplength=600,
-            ).pack(pady=(0, 16))
-            ttk.Button(
-                error_frame,
-                text="Retry",
-                command=lambda: self.refresh_dashboard(full=False, recompute=True),
-            ).pack()
-            messagebox.showerror("Build Error", f"Couldn't load today's log:\n\n{error}")
-        
+            _finish_content_build()
+
         self.root.after_idle(chunk_1_setup)
 
     def _build_overview_tab(self, parent: ttk.Frame) -> None:
