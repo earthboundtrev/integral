@@ -67,6 +67,9 @@ def run_deferred_toplevel_build(
         pump_event_loop(win)
         try:
             build()
+        except tk.TclError:
+            indicator.stop()
+            return
         except Exception as exc:
             indicator.stop()
             if on_build_error is not None:
