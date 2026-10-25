@@ -61,6 +61,9 @@ def creative_projects_dir() -> str:
 
 
 def ensure_data_file() -> str:
+    import user_data_migration
+
+    user_data_migration.run_at_startup()
     path = data_file()
     os.makedirs(os.path.dirname(path), exist_ok=True)
 

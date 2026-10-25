@@ -1,0 +1,140 @@
+"""Regression tests for #89 — legacy user-data folder discovery and safe copy."""
+
+from __future__ import annotations
+
+import json
+import os
+import sys
+
+import pytest
+
+import paths
+import profiles
+import user_data_migration as udm
+
+
+@pytest.fixture(autouse=True)
+def reset_migration_guard():
+    udm._startup_lock = False
+    udm._user_notices.clear()
+    yield
+    udm._startup_lock = False
+    udm._user_notices.clear()
+
+
+@pytest.fixture
+def data_roots(tmp_path, monkeypatch):
+    canonical = tmp_path / "canonical"
+    legacy = tmp_path / "legacy_pdt"
+    canonical.mkdir()
+    legacy.mkdir()
+
+    monkeypatch.setattr(paths, "user_data_dir", lambda: str(canonical))
+    monkeypatch.setattr(
+        udm,
+        "legacy_user_data_directories",
+        lambda: [str(legacy)],
+    )
+    return {"canonical": canonical, "legacy": legacy}
+
+
+def _write_profile_data(root, entries_marker: str):
+    profile_dir = root / "profiles" / "default"
+    profile_dir.mkdir(parents=True)
+    payload = {
+        "categories": {},
+        "entries": {"2020-01-01": {"Body & Presence": {"rating": 5, "notes": entries_marker}}},
+    }
+    data_path = profile_dir / "data.json"
+    with open(data_path, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle)
+    with open(profile_dir / "data.json.bak", "w", encoding="utf-8") as handle:
+        json.dump({"backup": True}, handle)
+    (profile_dir / "fitness.db").write_bytes(b"sqlite-placeholder")
+
+
+def test_fresh_install_no_legacy_data(data_roots):
+    results = udm.run_at_startup()
+    assert not any(r.outcome == "copied" for r in results)
+    assert not list(data_roots["canonical"].rglob("data.json"))
+
+
+def test_old_folder_only_copies_and_preserves_legacy(data_roots):
+    _write_profile_data(data_roots["legacy"], "from-legacy")
+    results = udm.run_at_startup()
+    assert any(r.outcome in ("copied", "merged") for r in results)
+    dest = data_roots["canonical"] / "profiles" / "default" / "data.json"
+    assert dest.is_file()
+    with open(dest, encoding="utf-8") as handle:
+        data = json.load(handle)
+    assert data["entries"]["2020-01-01"]["Body & Presence"]["notes"] == "from-legacy"
+    legacy_file = data_roots["legacy"] / "profiles" / "default" / "data.json"
+    assert legacy_file.is_file()
+    assert udm.consume_user_notices()
+
+
+def test_new_folder_only_no_copy(data_roots):
+    _write_profile_data(data_roots["canonical"], "already-here")
+    results = udm.run_at_startup()
+    assert not any(r.outcome == "copied" for r in results)
+
+
+def test_both_present_does_not_overwrite(data_roots):
+    _write_profile_data(data_roots["legacy"], "legacy-wins-never")
+    _write_profile_data(data_roots["canonical"], "canonical-kept")
+    udm.run_at_startup()
+    with open(
+        data_roots["canonical"] / "profiles" / "default" / "data.json",
+        encoding="utf-8",
+    ) as handle:
+        data = json.load(handle)
+    assert data["entries"]["2020-01-01"]["Body & Presence"]["notes"] == "canonical-kept"
+
+
+def test_rerun_is_idempotent(data_roots):
+    _write_profile_data(data_roots["legacy"], "once")
+    udm.run_at_startup()
+    udm._startup_lock = False
+    first = (data_roots["canonical"] / "profiles" / "default" / "data.json").read_text(
+        encoding="utf-8"
+    )
+    udm.run_at_startup()
+    second = (data_roots["canonical"] / "profiles" / "default" / "data.json").read_text(
+        encoding="utf-8"
+    )
+    assert first == second
+
+
+def test_encrypted_data_json_copied_as_bytes(data_roots, tmp_path):
+    legacy = data_roots["legacy"]
+    enc = {
+        "integral_encrypted": True,
+        "envelope_version": 1,
+        "salt": "abc",
+        "ciphertext": "token",
+    }
+    profile_dir = legacy / "profiles" / "default"
+    profile_dir.mkdir(parents=True)
+    with open(profile_dir / "data.json", "w", encoding="utf-8") as handle:
+        json.dump(enc, handle)
+    udm.run_at_startup()
+    dest = data_roots["canonical"] / "profiles" / "default" / "data.json"
+    assert dest.read_text(encoding="utf-8") == json.dumps(enc)
+
+
+def test_profiles_migrate_after_folder_migration(data_roots, monkeypatch):
+    _write_profile_data(data_roots["legacy"], "profile-chain")
+    udm.run_at_startup()
+    monkeypatch.setattr(profiles, "get_app_dir", lambda: str(data_roots["canonical"]))
+    profiles.ensure_app_structure()
+    migrated = data_roots["canonical"] / "profiles" / "default" / "data.json"
+    assert migrated.is_file()
+
+
+def test_user_data_dir_frozen_points_at_integral(monkeypatch):
+    monkeypatch.setattr(paths, "is_frozen", lambda: True)
+    if sys.platform == "win32":
+        monkeypatch.setenv("APPDATA", "/tmp/appdata")
+        assert paths.user_data_dir().endswith(os.path.join("Integral"))
+    else:
+        assert paths.user_data_dir().endswith(".integral")

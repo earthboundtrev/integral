@@ -190,6 +190,10 @@ class PersonalDevelopmentTracker:
         self.apply_current_theme()
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self.create_dashboard()
+        import user_data_migration
+
+        for notice in user_data_migration.consume_user_notices():
+            self.ensure_status_banner().show_info(notice)
         self._start_day_watch()
         self._start_reminder_scheduler()
         self.sync_quick_capture_panel()

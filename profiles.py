@@ -112,6 +112,9 @@ def create_profile(name: str, profile_id: str | None = None) -> dict:
 
 
 def ensure_app_structure() -> None:
+    import user_data_migration
+
+    user_data_migration.run_at_startup()
     os.makedirs(get_profiles_root(), exist_ok=True)
     migrate_legacy_layout_if_needed()
 

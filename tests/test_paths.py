@@ -45,6 +45,6 @@ def test_user_data_dir_unchanged_when_frozen(monkeypatch):
 
     monkeypatch.setattr(paths, "is_frozen", lambda: True)
     app_dir = profiles.get_app_dir()
-    assert str(app_dir).endswith(".personal_dev_tracker")
+    assert str(app_dir).endswith(".integral")
     assert "MEIPASS" not in str(app_dir)
     assert "dist" not in str(app_dir)
