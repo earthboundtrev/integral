@@ -6,7 +6,7 @@ import journal
 
 
 def test_create_entry_requires_body():
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="empty"):
         journal.create_entry("2026-07-05", "   ")
 
 

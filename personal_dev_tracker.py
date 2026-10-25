@@ -107,13 +107,8 @@ def _perf_log(message: str) -> None:
 
 
 class PersonalDevelopmentTracker:
-    def __init__(self, root: tk.Tk) -> None:
-        self.root = root
-        self.root.title(f"{APP_NAME} {APP_VERSION}")
-        self.root.geometry("1200x800")
-        self.root.minsize(900, 600)
-        self._apply_window_icon()
-
+    def _init_shell_state(self) -> None:
+        """Initialize in-memory tracker fields before load_data (shared with test mocks)."""
         self.categories: dict = {}
         self.entries: dict = {}
         self.settings: dict = {"dark_mode": False}
@@ -180,6 +175,15 @@ class PersonalDevelopmentTracker:
         self._open_windows: dict[str, tk.Toplevel] = {}  # Track windows for raise-if-open
         self._more_menu_popup: Any | None = None
         self._footer_more_btn: ttk.Button | None = None
+
+    def __init__(self, root: tk.Tk) -> None:
+        self.root = root
+        self.root.title(f"{APP_NAME} {APP_VERSION}")
+        self.root.geometry("1200x800")
+        self.root.minsize(900, 600)
+        self._apply_window_icon()
+
+        self._init_shell_state()
 
         if is_encrypted_file(DATA_FILE) and not prompt_vault_unlock(self):
             messagebox.showerror("Locked", "Cannot open encrypted journal without passphrase.")
