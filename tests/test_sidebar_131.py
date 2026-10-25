@@ -7,8 +7,7 @@ import pytest
 
 import personal_dev_tracker
 
-
-from tests.tracker_fixtures import mock_tracker_init as _mock_tracker_init
+from tests.mock_tracker import mock_tracker_init as _mock_tracker_init
 
 
 @pytest.fixture

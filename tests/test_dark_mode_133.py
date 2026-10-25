@@ -100,12 +100,11 @@ class TestMenusAndThemeToggle(unittest.TestCase):
         self.assertEqual(int(lb.cget("borderwidth")), 2)
 
 
-from tests.tracker_fixtures import mock_tracker_init as _base_mock_tracker_init
+from tests.mock_tracker import mock_tracker_init as _mock_tracker_init
 
 
-def _mock_tracker_init(self, root):
-    """Minimal tracker init for dark-mode widget walks."""
-    _base_mock_tracker_init(self, root, dark_mode=True)
+def _mock_tracker_init_dark(self, root):
+    _mock_tracker_init(self, root, dark_mode=True)
 
 
 class TestWidgetWalkDarkMode(unittest.TestCase):
@@ -116,7 +115,7 @@ class TestWidgetWalkDarkMode(unittest.TestCase):
             with patch.object(
                 personal_dev_tracker.PersonalDevelopmentTracker,
                 "__init__",
-                _mock_tracker_init,
+                _mock_tracker_init_dark,
             ):
                 tracker = personal_dev_tracker.PersonalDevelopmentTracker(root)
                 tracker.create_dashboard()
@@ -132,7 +131,7 @@ class TestWidgetWalkDarkMode(unittest.TestCase):
             with patch.object(
                 personal_dev_tracker.PersonalDevelopmentTracker,
                 "__init__",
-                _mock_tracker_init,
+                _mock_tracker_init_dark,
             ):
                 tracker = personal_dev_tracker.PersonalDevelopmentTracker(root)
                 tracker.create_dashboard()
@@ -155,7 +154,7 @@ class TestWidgetWalkDarkMode(unittest.TestCase):
             with patch.object(
                 personal_dev_tracker.PersonalDevelopmentTracker,
                 "__init__",
-                _mock_tracker_init,
+                _mock_tracker_init_dark,
             ):
                 tracker = personal_dev_tracker.PersonalDevelopmentTracker(root)
                 tracker.create_dashboard()
@@ -176,7 +175,7 @@ class TestWidgetWalkDarkMode(unittest.TestCase):
             with patch.object(
                 personal_dev_tracker.PersonalDevelopmentTracker,
                 "__init__",
-                _mock_tracker_init,
+                _mock_tracker_init_dark,
             ):
                 tracker = personal_dev_tracker.PersonalDevelopmentTracker(root)
                 tracker.create_dashboard()

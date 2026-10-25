@@ -115,13 +115,11 @@ def _perf_log(message: str) -> None:
 
 
 class PersonalDevelopmentTracker:
-    def _init_tracker_state(self, *, dark_mode: bool | None = None) -> None:
-        """Initialize in-memory state without loading data or building UI (tests reuse this)."""
-        if dark_mode is None:
-            dark_mode = False
+    def _init_shell_state(self) -> None:
+        """Initialize in-memory tracker fields before load_data (shared with test mocks)."""
         self.categories: dict = {}
         self.entries: dict = {}
-        self.settings: dict = {"dark_mode": dark_mode}
+        self.settings: dict = {"dark_mode": False}
         self.sessions: list = []
         self.milestones: list = []
         self.journal: dict = journal.empty_journal()
@@ -132,7 +130,7 @@ class PersonalDevelopmentTracker:
         self.programs: dict = load_program_definitions()
         self.data_path = DATA_FILE
         self.vault_passphrase: str | None = None
-        self.theme = get_theme(dark_mode)
+        self.theme = get_theme(False)
         self._insights_cache = None
         self.insights: list = []
         self._streak_cache: dict[str, int] = {}
@@ -194,7 +192,8 @@ class PersonalDevelopmentTracker:
         self.root.geometry("1200x800")
         self.root.minsize(900, 600)
         self._apply_window_icon()
-        self._init_tracker_state()
+
+        self._init_shell_state()
 
         if is_encrypted_file(DATA_FILE) and not prompt_vault_unlock(self):
             messagebox.showerror("Locked", "Cannot open encrypted journal without passphrase.")

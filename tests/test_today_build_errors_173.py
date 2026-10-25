@@ -10,7 +10,7 @@ import pytest
 
 import personal_dev_tracker
 from status_banner import StatusBanner
-from tests.tracker_fixtures import mock_tracker_init
+from tests.mock_tracker import mock_tracker_init
 from today_build_errors import BANNER_FIRST, BANNER_REPEAT, INLINE_PANEL_TEXT
 
 

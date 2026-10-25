@@ -14,8 +14,7 @@ from reflect_page_ui import (
     save_reflect_page,
 )
 
-
-from tests.tracker_fixtures import mock_tracker_init as _mock_tracker_init
+from tests.mock_tracker import mock_tracker_init as _mock_tracker_init
 
 
 @pytest.fixture
