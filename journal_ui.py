@@ -12,11 +12,10 @@ import integral_links
 import journal
 import richtext
 from busy_indicator import (
-    DEFAULT_COOPERATIVE_BATCH_SIZE,
     BusyIndicator,
-    cooperative_batch_steps,
+    DEFAULT_TIME_BOX_MS,
     pump_event_loop,
-    run_cooperative_steps,
+    run_timeboxed_index_work,
 )
 from theme import FONTS, style_listbox, style_text_widget
 
@@ -61,40 +60,37 @@ def _truncate_text_to_px(text: str, font: tkfont.Font, max_width: int) -> str:
     return f"{trimmed}{_ELLIPSIS}" if trimmed else _ELLIPSIS
 
 
-_TRUNCATE_LIST_CACHE: dict[tuple[str, int, tuple], str] = {}
-_TRUNCATE_CACHE_MAX = 8192
+class _ListboxWidthTruncator:
+    """Truncate list rows using one font.measure sample per width (no per-row measure)."""
 
+    __slots__ = ("_max_chars",)
 
-def _font_measure_key(font: tkfont.Font) -> tuple:
-    return (str(font.cget("family")), int(font.cget("size")), str(font.cget("weight")))
+    def __init__(self, font: tkfont.Font, max_width: int) -> None:
+        if max_width <= 0:
+            self._max_chars = 10_000
+            return
+        ellipsis_w = font.measure(_ELLIPSIS)
+        if ellipsis_w > max_width:
+            self._max_chars = 0
+            return
+        sample_w = font.measure(
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+        )
+        char_w = (sample_w / 62.0) if sample_w else 6.0
+        self._max_chars = max(1, int((max_width - ellipsis_w) / char_w))
+
+    def truncate(self, text: str) -> str:
+        if len(text) <= self._max_chars:
+            return text
+        if self._max_chars <= 0:
+            return _ELLIPSIS
+        trimmed = text[: self._max_chars].rstrip()
+        return f"{trimmed}{_ELLIPSIS}" if trimmed else _ELLIPSIS
 
 
 def _truncate_text_for_listbox(text: str, font: tkfont.Font, max_width: int) -> str:
-    """Fast truncation for large entry lists (cached; avoids repeated binary search)."""
-    if max_width <= 0:
-        return text
-    cache_key = (text, max_width, _font_measure_key(font))
-    cached = _TRUNCATE_LIST_CACHE.get(cache_key)
-    if cached is not None:
-        return cached
-    if len(_TRUNCATE_LIST_CACHE) >= _TRUNCATE_CACHE_MAX:
-        _TRUNCATE_LIST_CACHE.clear()
-    if font.measure(text) <= max_width:
-        _TRUNCATE_LIST_CACHE[cache_key] = text
-        return text
-    ellipsis_w = font.measure(_ELLIPSIS)
-    if ellipsis_w > max_width:
-        result = _ELLIPSIS
-    else:
-        unit = font.measure("n") or 6
-        est = max(1, int((max_width - ellipsis_w) / unit))
-        candidate = text[:est].rstrip() + _ELLIPSIS
-        if font.measure(candidate) <= max_width:
-            result = candidate
-        else:
-            result = _truncate_text_to_px(text, font, max_width)
-    _TRUNCATE_LIST_CACHE[cache_key] = result
-    return result
+    """Fast truncation for list labels (sync paths / tests)."""
+    return _ListboxWidthTruncator(font, max_width).truncate(text)
 
 
 def apply_integral_link_tags(
@@ -356,30 +352,50 @@ def show_journal_window(
             width = 220
         return max(width - 12, _ENTRY_LIST_MIN_DISPLAY_PX)
 
-    def _fill_entry_list_batch(start: int, end: int) -> None:
-        if not _journal_win_alive():
-            return
-        if start == 0:
-            entry_list.delete(0, tk.END)
-            entry_list_full_labels.clear()
-            width = entry_list.winfo_width()
-            if width > 1:
-                entry_list_last_width[0] = width
-        if not indexed_entries or start >= end:
-            return
+    def _estimate_visible_row_count() -> int:
+        try:
+            height = entry_list.winfo_height()
+            if height <= 1:
+                height = list_panel.winfo_height()
+            if height <= 1:
+                return 24
+            line_px = entry_list_font.metrics("linespace") + 2
+            return max(12, min(total if (total := len(indexed_entries)) else 24, height // line_px + 3))
+        except tk.TclError:
+            return 24
+
+    def _prepare_entry_list_labels() -> tuple[list[str], list[str], _ListboxWidthTruncator]:
         max_px = _entry_list_display_width_px()
-        for index in range(start, min(end, len(indexed_entries))):
-            if not _journal_win_alive():
-                return
-            item = indexed_entries[index]
+        truncator = _ListboxWidthTruncator(entry_list_font, max_px)
+        full_labels: list[str] = []
+        display_labels: list[str] = []
+        for item in indexed_entries:
             label = item.get("title") or item.get("prompt") or "Journal"
             suffix = " ↩" if item.get("backdate_reason") else ""
             full = f"{item['entry_date']}  {label}{suffix}"
-            entry_list_full_labels.append(full)
-            entry_list.insert(
-                tk.END,
-                _truncate_text_for_listbox(full, entry_list_font, max_px),
-            )
+            full_labels.append(full)
+            display_labels.append(truncator.truncate(full))
+        return full_labels, display_labels, truncator
+
+    prepared_full_labels: list[str] = []
+    prepared_display_labels: list[str] = []
+
+    def _reset_entry_list_for_fill() -> None:
+        if not _journal_win_alive():
+            return
+        entry_list.delete(0, tk.END)
+        entry_list_full_labels.clear()
+        width = entry_list.winfo_width()
+        if width > 1:
+            entry_list_last_width[0] = width
+
+    def _insert_entry_list_index(index: int) -> None:
+        if not _journal_win_alive():
+            return
+        if index < 0 or index >= len(prepared_display_labels):
+            return
+        entry_list.insert(tk.END, prepared_display_labels[index])
+        entry_list_full_labels.append(prepared_full_labels[index])
 
     def _fill_entry_list(
         *,
@@ -392,9 +408,15 @@ def show_journal_window(
         if entry_list_filling[0]:
             return
         entry_list_filling[0] = True
+        nonlocal prepared_full_labels, prepared_display_labels
         try:
             yview = restore_yview if restore_yview is not None else entry_list.yview()
-            _fill_entry_list_batch(0, len(indexed_entries))
+            prepared_full_labels, prepared_display_labels, _ = _prepare_entry_list_labels()
+            _reset_entry_list_for_fill()
+            for index in range(len(prepared_display_labels)):
+                if not _journal_win_alive():
+                    return
+                _insert_entry_list_index(index)
             if not _journal_win_alive():
                 return
             if apply_selection and select_index is not None:
@@ -927,7 +949,6 @@ def show_journal_window(
             return
 
         win._deferred_build_async = True
-        batch_size = DEFAULT_COOPERATIVE_BATCH_SIZE
         pending = configure_reflow_after_id[0]
         if pending is not None:
             try:
@@ -937,10 +958,13 @@ def show_journal_window(
             configure_reflow_after_id[0] = None
         entry_list_filling[0] = True
 
-        def _run_batch(start: int, end: int) -> None:
-            _fill_entry_list_batch(start, end)
+        nonlocal prepared_full_labels, prepared_display_labels
+        prepared_full_labels, prepared_display_labels, _ = _prepare_entry_list_labels()
+        _reset_entry_list_for_fill()
 
-        steps = cooperative_batch_steps(total, batch_size, _run_batch)
+        visible = _estimate_visible_row_count()
+        head = min(visible, total)
+        fill_order = list(range(head)) + list(range(head, total))
 
         def _complete_cooperative_fill_guarded() -> None:
             entry_list_filling[0] = False
@@ -950,16 +974,24 @@ def show_journal_window(
                     entry_list_last_width[0] = width
             _complete_cooperative_fill()
 
-        if indicator is not None and len(steps) > 1:
-            run_cooperative_steps(
+        def _abort_cooperative_fill() -> None:
+            entry_list_filling[0] = False
+            win._deferred_build_async = False
+
+        if indicator is not None and total > 0:
+            run_timeboxed_index_work(
                 win,
                 indicator,
-                steps,
+                indices=fill_order,
+                consume=_insert_entry_list_index,
+                budget_ms=DEFAULT_TIME_BOX_MS,
                 on_complete=_complete_cooperative_fill_guarded,
+                on_cancel=_abort_cooperative_fill,
             )
         else:
             try:
-                _fill_entry_list_batch(0, total)
+                for index in range(total):
+                    _insert_entry_list_index(index)
                 if _journal_win_alive() and select_index is not None:
                     entry_list.selection_set(select_index)
                     entry_list.see(select_index)

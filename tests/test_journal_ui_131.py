@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 import tkinter as tk
 from datetime import date
 from unittest.mock import patch
@@ -120,6 +121,85 @@ def test_small_deferred_journal_fill_populates_list():
 
     assert pump_tk_until(root, _list_has_five, timeout_s=3.0)
     win.destroy()
+    root.destroy()
+
+
+def test_journal_730_entry_cold_fill_under_budget():
+    """Cold cache: 730-row deferred fill should stay well under the old ~11s path."""
+    root = tk.Tk()
+    root.deiconify()
+    tracker = _tracker_with_entries(root, 730)
+    win = tk.Toplevel(root)
+    win.geometry("1040x760")
+    win.deiconify()
+
+    from deferred_toplevel import run_deferred_toplevel_build
+    from journal_ui import show_journal_window
+
+    started = time.perf_counter()
+
+    def build() -> None:
+        show_journal_window(tracker, host=win)
+
+    indicator = run_deferred_toplevel_build(
+        win,
+        theme=tracker.theme,
+        busy_label="Loading Journal…",
+        build=build,
+    )
+
+    def _find_listbox(widget: tk.Misc) -> tk.Listbox | None:
+        for child in widget.winfo_children():
+            if isinstance(child, tk.Listbox):
+                return child
+            nested = _find_listbox(child)
+            if nested is not None:
+                return nested
+        return None
+
+    def fill_complete() -> bool:
+        lb = _find_listbox(win)
+        try:
+            return lb is not None and lb.size() == 730
+        except tk.TclError:
+            return False
+
+    assert pump_tk_until(root, fill_complete, timeout_s=10.0)
+    elapsed = time.perf_counter() - started
+    assert elapsed < 2.5, f"730-entry journal fill took {elapsed:.2f}s"
+    indicator.stop()
+    win.destroy()
+    root.destroy()
+
+
+def test_journal_esc_cancels_deferred_fill():
+    root = tk.Tk()
+    root.deiconify()
+    tracker = _tracker_with_entries(root, 200)
+    win = tk.Toplevel(root)
+    win.geometry("1040x760")
+
+    from deferred_toplevel import run_deferred_toplevel_build
+    from journal_ui import show_journal_window
+
+    def build() -> None:
+        show_journal_window(tracker, host=win)
+
+    indicator = run_deferred_toplevel_build(
+        win,
+        theme=tracker.theme,
+        busy_label="Loading Journal…",
+        build=build,
+    )
+
+    def cancel_when_busy() -> bool:
+        if indicator.is_visible:
+            indicator.request_cancel()
+            return True
+        return False
+
+    pump_tk_until(root, cancel_when_busy, timeout_s=3.0)
+    pump_tk_until(root, lambda: not win.winfo_exists(), timeout_s=2.0)
     root.destroy()
 
 

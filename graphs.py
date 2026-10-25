@@ -228,11 +228,11 @@ class GraphWindow:
         finish_build = getattr(self.window, "_deferred_finish_build", None)
         self.window._deferred_build_async = True
 
+        def _yield_for_spinner() -> None:
+            pump_event_loop(self.window)
+
         def _import_matplotlib() -> None:
             mpl_tk.ensure_matplotlib()
-
-        def _build_tabs() -> None:
-            self._populate_graph_tabs(entries)
 
         def _select_tab() -> None:
             self._select_initial_graph_tab(initial_tab)
@@ -242,7 +242,33 @@ class GraphWindow:
             if finish_build is not None:
                 finish_build()
 
-        steps = [_import_matplotlib, _build_tabs, _select_tab]
+        notebook = self._notebook
+        steps: list[Callable[[], None]] = [_yield_for_spinner, _import_matplotlib]
+        if entries:
+            steps.extend(
+                [
+                    lambda: self._add_dashboard_tab(notebook),
+                    lambda: self._add_ratings_tab(notebook),
+                    lambda: self._add_metrics_tab(notebook),
+                    lambda: self._add_heatmap_tab(notebook),
+                    lambda: self._add_radar_tab(notebook),
+                ]
+            )
+        else:
+
+            def _add_empty_tab() -> None:
+                empty = ttk.Frame(notebook, padding=20)
+                notebook.add(empty, text="Charts")
+                self._register_tab(notebook, empty, "empty")
+                ttk.Label(
+                    empty,
+                    text="Log a few days of data to see charts.",
+                    font=("Helvetica", 12),
+                ).pack(anchor="w")
+
+            steps.append(_add_empty_tab)
+        steps.append(lambda: self._add_ai_insight_tab(notebook))
+        steps.append(_select_tab)
         if indicator is not None:
             run_cooperative_steps(self.window, indicator, steps, on_complete=_complete)
         else:
