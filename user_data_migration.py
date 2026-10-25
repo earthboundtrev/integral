@@ -96,6 +96,32 @@ def legacy_user_data_directories() -> list[str]:
     return unique
 
 
+def _payload_has_user_data(data: dict[str, Any]) -> bool:
+    if data.get("entries") or data.get("sessions"):
+        return True
+    journal = data.get("journal")
+    if isinstance(journal, dict) and journal.get("entries"):
+        return True
+    todos = data.get("todos")
+    if isinstance(todos, dict) and todos.get("items"):
+        return True
+    if data.get("day_plans"):
+        return True
+    practices = data.get("practices")
+    if isinstance(practices, dict) and practices.get("items"):
+        return True
+    creative = data.get("creative_projects")
+    if isinstance(creative, dict) and creative.get("projects"):
+        return True
+    youtube = data.get("youtube_history")
+    if isinstance(youtube, dict) and youtube.get("items"):
+        return True
+    settings = data.get("settings")
+    if isinstance(settings, dict) and settings.get("onboarding_complete"):
+        return True
+    return False
+
+
 def _data_json_is_empty_placeholder(path: str) -> bool:
     """True when data.json is a fresh-install stub (safe to sideline, not real history)."""
     if not os.path.isfile(path):
@@ -109,28 +135,34 @@ def _data_json_is_empty_placeholder(path: str) -> bool:
         return False
     if data.get("integral_encrypted"):
         return False
-    if data.get("entries"):
-        return False
-    if data.get("sessions"):
-        return False
-    journal = data.get("journal")
-    if isinstance(journal, dict) and journal.get("entries"):
+    if _payload_has_user_data(data):
         return False
     return True
 
 
-def _sideline_placeholder_dest(dest_file: str) -> bool:
+def _replace_placeholder_data_json(src_file: str, dest_file: str) -> bool:
+    """Copy src over a placeholder dest without leaving dest missing if copy fails."""
     if os.path.basename(dest_file) != "data.json":
         return False
     if not _data_json_is_empty_placeholder(dest_file):
         return False
+    from integral_io import atomic_copy_file
+
+    temp = f"{dest_file}.migration-incoming.tmp"
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     preserved = f"{dest_file}.preserved-before-migration-{stamp}"
     try:
+        atomic_copy_file(src_file, temp)
         os.replace(dest_file, preserved)
+        os.replace(temp, dest_file)
+        return True
     except OSError:
+        if os.path.exists(temp):
+            try:
+                os.remove(temp)
+            except OSError:
+                pass
         return False
-    return True
 
 
 def _file_digest(path: str) -> str | None:
@@ -181,15 +213,23 @@ def _path_has_user_artifacts(root: str) -> bool:
     return False
 
 
+def _resolve_dest_under_root(dest_root: str, *rel_parts: str) -> str | None:
+    dest_root_real = os.path.realpath(dest_root)
+    joined = os.path.join(dest_root, *rel_parts)
+    dest_real = os.path.realpath(os.path.normpath(joined))
+    if dest_real != dest_root_real and not dest_real.startswith(dest_root_real + os.sep):
+        return None
+    return dest_real
+
+
 def _copy_file_if_absent(src_file: str, dest_file: str, conflicts: list[str]) -> bool:
     if os.path.exists(dest_file):
         if _file_digest(src_file) == _file_digest(dest_file):
             return False
-        if _sideline_placeholder_dest(dest_file):
-            pass
-        else:
-            conflicts.append(dest_file)
-            return False
+        if _replace_placeholder_data_json(src_file, dest_file):
+            return True
+        conflicts.append(dest_file)
+        return False
     os.makedirs(os.path.dirname(dest_file) or ".", exist_ok=True)
     from integral_io import atomic_copy_file
 
@@ -202,18 +242,24 @@ def _copy_tree_non_destructive(src_root: str, dest_root: str) -> tuple[int, list
     conflicts: list[str] = []
     src_root = os.path.normpath(src_root)
     dest_root = os.path.normpath(dest_root)
-    for dirpath, _dirnames, filenames in os.walk(src_root):
+    for dirpath, _dirnames, filenames in os.walk(src_root, followlinks=False):
         rel = os.path.relpath(dirpath, src_root)
-        if rel == ".":
-            dest_dir = dest_root
-        else:
-            dest_dir = os.path.join(dest_root, rel)
+        if rel != "." and (rel.startswith("..") or os.path.isabs(rel)):
+            continue
+        rel_parts = () if rel == "." else tuple(rel.split(os.sep))
+        dest_dir = _resolve_dest_under_root(dest_root, *rel_parts)
+        if dest_dir is None:
+            continue
         os.makedirs(dest_dir, exist_ok=True)
         for name in filenames:
             if name == STATE_FILE_NAME and dirpath == src_root:
                 continue
             src_file = os.path.join(dirpath, name)
-            dest_file = os.path.join(dest_dir, name)
+            if os.path.islink(src_file):
+                continue
+            dest_file = _resolve_dest_under_root(dest_root, *rel_parts, name)
+            if dest_file is None:
+                continue
             if _copy_file_if_absent(src_file, dest_file, conflicts):
                 copied += 1
     return copied, conflicts
@@ -249,7 +295,10 @@ def _migrate_from_source(canonical: str, source: str, state: dict[str, Any]) -> 
         return MigrationResult(outcome="skipped", source=source)
 
     dest_has = _path_has_user_artifacts(canonical)
-    copied, conflicts = _copy_tree_non_destructive(source, canonical)
+    try:
+        copied, conflicts = _copy_tree_non_destructive(source, canonical)
+    except OSError:
+        return MigrationResult(outcome="skipped", source=source, message=None)
 
     if not dest_has and copied > 0 and not conflicts:
         outcome = "copied"

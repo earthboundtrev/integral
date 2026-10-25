@@ -60,6 +60,20 @@ def creative_projects_dir() -> str:
     return path
 
 
+def log_dir() -> str:
+    """Directory for integral.log (AppData when frozen, ./data/logs in dev)."""
+    if is_frozen():
+        path = os.path.join(user_data_dir(), "logs")
+    else:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "logs")
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def app_log_file() -> str:
+    return os.path.join(log_dir(), "integral.log")
+
+
 def ensure_data_file() -> str:
     import user_data_migration
 

@@ -9,7 +9,6 @@ from unittest.mock import MagicMock
 
 import journal
 import inspect
-from datetime import date
 
 from journal_ui import (
     JOURNAL_WINDOW_MINSIZE,
@@ -28,7 +27,7 @@ def _mock_tracker(root: tk.Tk) -> MagicMock:
     tracker.entries = {}
     tracker.sessions = []
     tracker.creative_projects = {"projects": []}
-    today = date.today().isoformat()
+    today = journal.date.today().isoformat()
     tracker.today_str.return_value = today
     tracker._invalidate_caches = MagicMock()
     tracker.refresh_dashboard = MagicMock()

@@ -151,6 +151,45 @@ def test_placeholder_dest_data_json_replaced_by_legacy(data_roots):
     assert data["entries"]["2020-01-01"]["Body & Presence"]["notes"] == "real-history"
 
 
+def test_dest_with_todos_not_overwritten(data_roots):
+    dest_data = data_roots["canonical"] / "profiles" / "default" / "data.json"
+    dest_data.parent.mkdir(parents=True)
+    with open(dest_data, "w", encoding="utf-8") as handle:
+        json.dump(
+            {
+                "entries": {},
+                "todos": {"items": [{"id": "abc", "title": "keep", "done": False}]},
+            },
+            handle,
+        )
+    _write_profile_data(data_roots["legacy"], "should-not-replace")
+    udm.run_at_startup()
+    with open(dest_data, encoding="utf-8") as handle:
+        data = json.load(handle)
+    assert data["todos"]["items"][0]["title"] == "keep"
+
+
+def test_resolve_dest_rejects_parent_segments(tmp_path):
+    root = tmp_path / "canonical"
+    root.mkdir()
+    assert udm._resolve_dest_under_root(str(root), "..", "escape.txt") is None
+
+
+def test_copy_skips_symlinked_source_file(data_roots, tmp_path):
+    legacy = data_roots["legacy"]
+    outside = tmp_path / "outside-secret"
+    outside.mkdir()
+    secret = outside / "secret.json"
+    secret.write_text('{"leak": true}', encoding="utf-8")
+    link = legacy / "secret.json"
+    try:
+        link.symlink_to(secret)
+    except OSError:
+        pytest.skip("symlinks not supported")
+    udm.run_at_startup()
+    assert not (data_roots["canonical"] / "secret.json").exists()
+
+
 def test_placeholder_root_data_json_sidelined_when_legacy_has_root(data_roots):
     legacy_root = data_roots["legacy"] / "data.json"
     legacy_root.parent.mkdir(parents=True, exist_ok=True)

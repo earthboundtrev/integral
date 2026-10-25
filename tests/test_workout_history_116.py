@@ -332,6 +332,40 @@ class TestWorkoutHistoryUI(unittest.TestCase):
         finally:
             os.unlink(temp_db.name)
 
+    def test_load_more_button_visible_when_has_more(self):
+        """Regression (#116): Load more must show after first page while has_more is True."""
+        try:
+            import tkinter as tk
+
+            from theme import get_theme
+            from workout_history_ui import WorkoutHistoryView
+        except ImportError:
+            self.skipTest("tkinter not available")
+
+        temp_db = tempfile.NamedTemporaryFile(delete=False, suffix=".db")
+        temp_db.close()
+        repo = FitnessRepository(db_path=temp_db.name)
+        repo.initialize()
+
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            for i in range(130):
+                date = (datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d")
+                repo.add_workout_session(WorkoutSession(date=date))
+
+            view = WorkoutHistoryView(root, repo, get_theme(False))
+            view._do_load_first_page()
+            root.update_idletasks()
+
+            self.assertTrue(view.has_more)
+            self.assertFalse(view.is_loading)
+            self.assertEqual(len(view.sessions), 20)
+            self.assertEqual(view.load_more_btn.winfo_manager(), "pack")
+        finally:
+            root.destroy()
+            os.unlink(temp_db.name)
+
     def test_calculate_bodyweight_volume(self):
         """Test volume calculation for bodyweight exercises."""
         try:
