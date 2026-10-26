@@ -6,6 +6,7 @@ import tempfile
 import unittest
 
 from legacy_fitness_migration import (
+    LegacyMigrationValidationError,
     apply_migrated_flags,
     backup_files_for_migration,
     legacy_source_hash,
@@ -112,22 +113,22 @@ class TestLegacyMigration(unittest.TestCase):
         sessions = repo.list_workout_sessions(limit=10)
         self.assertEqual(len(sessions), 1)
 
-    def test_malformed_entries_skipped(self):
-        """Test that malformed entries are skipped and logged."""
+    def test_malformed_entries_abort_migration(self):
+        """Invalid sessions abort migration with no partial commit (#116, #153)."""
         data = {
             "sessions": [
-                {"notes": "Missing date"},  # No date
+                {"notes": "Missing date"},
                 {"date": "2026-10-01", "notes": "Valid"},
-                {"date": None, "notes": "Null date"},  # Null date
+                {"date": None, "notes": "Null date"},
             ]
         }
-        
+
         repo = FitnessRepository(db_path=self.db_path)
-        result = migrate_legacy_sessions(data, repo)
-        
-        self.assertEqual(result["migrated_count"], 1)
-        self.assertEqual(result["skipped_count"], 2)
-        self.assertEqual(len(result["errors"]), 2)
+        with self.assertRaises(LegacyMigrationValidationError):
+            migrate_legacy_sessions(data, repo)
+
+        sessions = repo.list_workout_sessions(limit=10)
+        self.assertEqual(len(sessions), 0)
 
     def test_mark_migrated_flag(self):
         """Test that sessions are marked as migrated in memory and persist via save."""
