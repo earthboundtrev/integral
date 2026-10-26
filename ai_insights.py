@@ -497,7 +497,8 @@ def run_insight_async(
             result = fetch_insight(context, kind=kind, days=days, model=model)
             root.after(0, lambda: on_success(result))
         except Exception as exc:  # noqa: BLE001
-            root.after(0, lambda: on_error(str(exc)))
+            message = str(exc)
+            root.after(0, lambda: on_error(message))
 
     if on_start:
         on_start()
