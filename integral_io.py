@@ -6,8 +6,11 @@ import csv
 import json
 import os
 import shutil
+import tempfile
 from datetime import datetime
 from typing import Any
+
+import zip_import_safety
 
 # Import the save lock to serialize restore with saves
 from vault import _save_lock
@@ -308,12 +311,42 @@ def is_full_backup_zip(path: str) -> bool:
         with zipfile.ZipFile(path, "r") as zf:
             names = set(zf.namelist())
             if "manifest.json" in names and "data.json" in names:
-                manifest = json.loads(zf.read("manifest.json"))
+                budget = zip_import_safety.prepare_zip_import(zf)
+                manifest = json.loads(
+                    zip_import_safety.read_zip_member_bytes(zf, "manifest.json", budget).decode(
+                        "utf-8"
+                    )
+                )
                 return manifest.get("backup_kind") == FULL_BACKUP_KIND
             # Accept zip that simply has data.json + creative/ (forward-compatible).
             return "data.json" in names
+    except zip_import_safety.ZipImportLimitError:
+        # Shape looks like a full backup; restore_full_backup will reject with a clear error.
+        try:
+            with zipfile.ZipFile(path, "r") as zf:
+                names = set(zf.namelist())
+                return "data.json" in names and "config.json" not in names
+        except OSError:
+            return False
     except (OSError, zipfile.BadZipFile, json.JSONDecodeError, ValueError):
         return False
+
+
+def _install_tree_from_staging(staging_root: str, dest_root: str) -> int:
+    if not os.path.isdir(staging_root):
+        return 0
+    installed = 0
+    for dirpath, _dirnames, filenames in os.walk(staging_root):
+        for name in filenames:
+            abs_path = os.path.join(dirpath, name)
+            rel = os.path.relpath(abs_path, staging_root).replace("\\", "/")
+            if not rel or ".." in rel.split("/"):
+                continue
+            dest = os.path.join(dest_root, *rel.split("/"))
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            shutil.copy2(abs_path, dest)
+            installed += 1
+    return installed
 
 
 def restore_full_backup(
@@ -331,44 +364,61 @@ def restore_full_backup(
 
     creative_root = creative_root if creative_root is not None else creative_projects_dir()
     with zipfile.ZipFile(path, "r") as zf:
+        budget = zip_import_safety.prepare_zip_import(zf)
         names = zf.namelist()
         if "data.json" not in names:
             raise ValueError("Full backup missing data.json")
-        payload = json.loads(zf.read("data.json"))
-        if not isinstance(payload, dict):
-            raise ValueError("Backup data.json is not a valid object.")
-        restore_backup_to_path(payload, target_data_path, make_copy=make_copy)
 
-        os.makedirs(creative_root, exist_ok=True)
-        restored_docs = 0
-        for name in names:
-            if not name.startswith("creative/") or name.endswith("/"):
-                continue
-            rel = name[len("creative/") :]
-            if not rel or ".." in rel.split("/"):
-                continue
-            dest = os.path.join(creative_root, *rel.split("/"))
-            os.makedirs(os.path.dirname(dest), exist_ok=True)
-            with zf.open(name) as src, open(dest, "wb") as dst:
-                dst.write(src.read())
-            restored_docs += 1
+        with tempfile.TemporaryDirectory() as staging:
+            staging_data = os.path.join(staging, "data.json")
+            zip_import_safety.copy_zip_member_to_file(zf, "data.json", staging_data, budget)
 
-        fitness_restored = False
-        if fitness_db_path and "fitness.db" in names:
-            os.makedirs(os.path.dirname(fitness_db_path) or ".", exist_ok=True)
-            if make_copy and os.path.exists(fitness_db_path):
-                stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-                shutil.copy2(fitness_db_path, f"{fitness_db_path}.bak-{stamp}")
-            with zf.open("fitness.db") as src, open(fitness_db_path, "wb") as dst:
-                dst.write(src.read())
-            fitness_restored = True
+            staging_creative = os.path.join(staging, "creative")
+            os.makedirs(staging_creative, exist_ok=True)
+            for name in names:
+                if not name.startswith("creative/") or name.endswith("/"):
+                    continue
+                rel = name[len("creative/") :]
+                if not rel or ".." in rel.split("/"):
+                    continue
+                dest = os.path.join(staging_creative, *rel.split("/"))
+                zip_import_safety.copy_zip_member_to_file(zf, name, dest, budget)
 
-        manifest: dict[str, Any] = {}
-        if "manifest.json" in names:
-            try:
-                manifest = json.loads(zf.read("manifest.json"))
-            except json.JSONDecodeError:
-                manifest = {}
+            staging_fitness: str | None = None
+            if fitness_db_path and "fitness.db" in names:
+                staging_fitness = os.path.join(staging, "fitness.db")
+                zip_import_safety.copy_zip_member_to_file(zf, "fitness.db", staging_fitness, budget)
+
+            manifest: dict[str, Any] = {}
+            if "manifest.json" in names:
+                try:
+                    manifest = json.loads(
+                        zip_import_safety.read_zip_member_bytes(zf, "manifest.json", budget).decode(
+                            "utf-8"
+                        )
+                    )
+                except json.JSONDecodeError:
+                    manifest = {}
+
+            with open(staging_data, encoding="utf-8") as handle:
+                payload = json.load(handle)
+            if not isinstance(payload, dict):
+                raise ValueError("Backup data.json is not a valid object.")
+
+            restore_backup_to_path(payload, target_data_path, make_copy=make_copy)
+
+            os.makedirs(creative_root, exist_ok=True)
+            restored_docs = _install_tree_from_staging(staging_creative, creative_root)
+
+            fitness_restored = False
+            if staging_fitness and fitness_db_path:
+                os.makedirs(os.path.dirname(fitness_db_path) or ".", exist_ok=True)
+                if make_copy and os.path.exists(fitness_db_path):
+                    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+                    shutil.copy2(fitness_db_path, f"{fitness_db_path}.bak-{stamp}")
+                shutil.copy2(staging_fitness, fitness_db_path)
+                fitness_restored = True
+
         manifest["restored_creative_files"] = restored_docs
         manifest["restored_fitness"] = fitness_restored
         return manifest

@@ -10,6 +10,17 @@ PROFILES_DIR_NAME = "profiles"
 CONFIG_FILE_NAME = "config.json"
 DEFAULT_PROFILE_ID = "default"
 DEFAULT_PROFILE_NAME = "Default"
+_SAFE_PROFILE_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$")
+
+
+def require_safe_profile_id(profile_id: object) -> str:
+    """Reject path traversal or odd characters in backup manifest profile ids."""
+    if not isinstance(profile_id, str):
+        raise ValueError("Backup profile id must be a string.")
+    pid = profile_id.strip()
+    if not pid or not _SAFE_PROFILE_ID_RE.match(pid):
+        raise ValueError(f"Backup contains an invalid profile id: {profile_id!r}")
+    return pid
 
 
 def get_app_dir() -> str:

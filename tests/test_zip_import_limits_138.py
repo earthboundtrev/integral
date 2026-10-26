@@ -14,6 +14,7 @@ from unittest import mock
 import pytest
 
 import backup
+import integral_io
 import profiles
 import storage
 import youtube_takeout
@@ -63,6 +64,23 @@ def _patch_zip_declared_uncompressed(zip_path: os.PathLike[str] | str, member: s
     path = os.fspath(zip_path)
     with open(path, "wb") as handle:
         handle.write(data)
+
+
+def _write_minimal_full_backup_zip(path: str, *, extra_members: int = 0) -> None:
+    payload = {"schema_version": 2, "entries": {}, "settings": {}}
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("data.json", json.dumps(payload))
+        zf.writestr(
+            "manifest.json",
+            json.dumps(
+                {
+                    "backup_kind": integral_io.FULL_BACKUP_KIND,
+                    "backup_version": integral_io.FULL_BACKUP_VERSION,
+                }
+            ),
+        )
+        for index in range(extra_members):
+            zf.writestr(f"padding/pad-{index}.txt", "x")
 
 
 def _write_minimal_backup_zip(
@@ -259,3 +277,81 @@ def test_rejects_suspicious_compression_ratio(temp_app, tmp_path):
 
     with pytest.raises(zip_import_safety.ZipImportLimitError, match="suspicious compression"):
         backup.validate_backup(str(zip_path))
+
+
+def test_validate_backup_rejects_unsafe_profile_id_in_manifest(temp_app, tmp_path):
+    zip_path = str(tmp_path / "bad-profile-id.zip")
+    manifest = _minimal_backup_manifest("default")
+    manifest["profiles"] = ["../escape"]
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("config.json", json.dumps(profiles.default_config()))
+        zf.writestr("profiles/default/data.json", json.dumps(storage.empty_data()))
+        zf.writestr(backup.MANIFEST_NAME, json.dumps(manifest))
+
+    with pytest.raises(ValueError, match="invalid profile id"):
+        backup.validate_backup(zip_path)
+
+
+def test_full_backup_restore_rejects_declared_oversized_member(temp_app, tmp_path):
+    zip_path = str(tmp_path / "full-oversized.zip")
+    _write_minimal_full_backup_zip(zip_path)
+    huge = zip_import_safety.MAX_MEMBER_UNCOMPRESSED_BYTES + 10 * 1024 * 1024
+    _patch_zip_declared_uncompressed(zip_path, "data.json", huge)
+
+    target = str(tmp_path / "data.json")
+    with open(target, "w", encoding="utf-8") as handle:
+        json.dump({"entries": {"keep": True}}, handle)
+    before_mtime = os.path.getmtime(target)
+
+    with pytest.raises(zip_import_safety.ZipImportLimitError, match="too large"):
+        integral_io.restore_backup_file(zip_path, target, make_copy=False)
+
+    assert os.path.getmtime(target) == before_mtime
+    with open(target, encoding="utf-8") as handle:
+        assert json.load(handle)["entries"]["keep"] is True
+
+
+def test_full_backup_restore_rejects_too_many_members(temp_app, tmp_path):
+    zip_path = str(tmp_path / "full-many.zip")
+    _write_minimal_full_backup_zip(
+        zip_path, extra_members=zip_import_safety.MAX_ZIP_MEMBERS + 1
+    )
+    target = str(tmp_path / "data.json")
+    with open(target, "w", encoding="utf-8") as handle:
+        json.dump({"entries": {}}, handle)
+
+    with pytest.raises(zip_import_safety.ZipImportLimitError, match="too many files"):
+        integral_io.restore_backup_file(zip_path, target, make_copy=False)
+
+
+def test_full_backup_restore_rejects_high_compression_ratio(temp_app, tmp_path):
+    zip_path = str(tmp_path / "full-ratio.zip")
+    declared = 5 * 1024 * 1024
+    compressed = declared // (zip_import_safety.MAX_COMPRESSION_RATIO + 1)
+    payload = b"z" * compressed
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        info = zipfile.ZipInfo("data.json")
+        info.compress_type = zipfile.ZIP_DEFLATED
+        info.file_size = declared
+        info.compress_size = compressed
+        info.CRC = zipfile.crc32(payload) & 0xFFFFFFFF
+        zf.writestr(info, payload)
+        zf.writestr(
+            "manifest.json",
+            json.dumps(
+                {
+                    "backup_kind": integral_io.FULL_BACKUP_KIND,
+                    "backup_version": integral_io.FULL_BACKUP_VERSION,
+                }
+            ),
+        )
+
+    target = str(tmp_path / "data.json")
+    with open(target, "w", encoding="utf-8") as handle:
+        json.dump({"entries": {"stay": 1}}, handle)
+    before_mtime = os.path.getmtime(target)
+
+    with pytest.raises(zip_import_safety.ZipImportLimitError, match="suspicious compression"):
+        integral_io.restore_backup_file(str(zip_path), target, make_copy=False)
+
+    assert os.path.getmtime(target) == before_mtime

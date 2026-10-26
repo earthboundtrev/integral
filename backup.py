@@ -24,6 +24,13 @@ PROFILE_ARTIFACTS = ("data.json", "fitness.db")
 CREATIVE_PREFIX = "creative/"
 
 
+def _manifest_profile_ids(manifest: dict) -> list[str]:
+    raw = manifest.get("profiles", [])
+    if not isinstance(raw, list):
+        raise ValueError("Backup manifest profiles must be a list.")
+    return [profiles.require_safe_profile_id(pid) for pid in raw]
+
+
 def _write_profile_files(zf: zipfile.ZipFile, profile_id: str) -> list[str]:
     included: list[str] = []
     profile_dir = profiles.get_profile_dir(profile_id)
@@ -86,9 +93,10 @@ def _restore_creative_files(
 
 
 def _install_profile_artifacts(staging_profiles: str, profile_id: str) -> None:
-    dest_dir = profiles.get_profile_dir(profile_id)
+    safe_id = profiles.require_safe_profile_id(profile_id)
+    dest_dir = profiles.get_profile_dir(safe_id)
     os.makedirs(dest_dir, exist_ok=True)
-    staged_dir = os.path.join(staging_profiles, profile_id)
+    staged_dir = os.path.join(staging_profiles, safe_id)
     if not os.path.isdir(staged_dir):
         return
     for filename in PROFILE_ARTIFACTS:
@@ -162,7 +170,7 @@ def validate_backup(zip_path: str) -> dict:
         if manifest.get("backup_version") != BACKUP_VERSION:
             raise ValueError(f"Unsupported backup version: {manifest.get('backup_version')}")
 
-        for pid in manifest.get("profiles", []):
+        for pid in _manifest_profile_ids(manifest):
             data_arc = f"profiles/{pid}/data.json"
             if data_arc not in names:
                 raise ValueError(f"Backup missing required file: {data_arc}")
@@ -192,7 +200,7 @@ def import_backup(
             staging_creative = os.path.join(staging, CREATIVE_PREFIX.rstrip("/"))
             os.makedirs(staging_profiles, exist_ok=True)
 
-            for pid in manifest.get("profiles", []):
+            for pid in _manifest_profile_ids(manifest):
                 prefix = f"profiles/{pid}/"
                 staged_profile = os.path.join(staging_profiles, pid)
                 os.makedirs(staged_profile, exist_ok=True)
@@ -207,7 +215,7 @@ def import_backup(
 
             restored_docs = _restore_creative_files(zf, staging_creative, budget)
 
-            for pid in manifest.get("profiles", []):
+            for pid in _manifest_profile_ids(manifest):
                 _install_profile_artifacts(staging_profiles, pid)
             restored_docs = _install_creative_tree(staging_creative, creative_dest)
 
@@ -217,7 +225,11 @@ def import_backup(
             current = profiles.load_config()
             existing_ids = {p["id"] for p in current["profiles"]}
             for profile in imported_config.get("profiles", []):
-                if profile["id"] not in existing_ids:
+                if not isinstance(profile, dict):
+                    continue
+                pid = profiles.require_safe_profile_id(profile.get("id"))
+                profile = {**profile, "id": pid}
+                if pid not in existing_ids:
                     current["profiles"].append(profile)
             profiles.save_config(current)
         else:
