@@ -9,18 +9,41 @@ import threading
 from typing import Any
 
 try:
-    from cryptography.fernet import Fernet
+    from cryptography.fernet import Fernet, InvalidToken
     from cryptography.hazmat.primitives import hashes
     from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
     CRYPTO_AVAILABLE = True
 except ImportError:
     CRYPTO_AVAILABLE = False
+    InvalidToken = None  # type: ignore[misc, assignment]
 
 
 ENVELOPE_VERSION = 1
 _derived_key_cache: dict[tuple[str, bytes], bytes] = {}
 _save_lock = threading.Lock()
+
+
+class VaultPassphraseError(Exception):
+    """Passphrase missing or incorrect — not file corruption."""
+
+
+class PassphraseRequiredError(VaultPassphraseError):
+    """Encrypted journal requires a passphrase."""
+
+
+class WrongPassphraseError(VaultPassphraseError):
+    """Decryption failed because the passphrase does not match."""
+
+
+def encrypted_journal_envelope_path(data_path: str) -> str | None:
+    """Return the path to an encrypted journal envelope (main file or .bak)."""
+    if is_encrypted_file(data_path):
+        return data_path
+    bak_path = f"{data_path}.bak"
+    if is_encrypted_file(bak_path):
+        return bak_path
+    return None
 
 
 def is_encrypted_file(path: str) -> bool:
@@ -92,7 +115,10 @@ def decrypt_payload(envelope: dict[str, Any], passphrase: str) -> dict[str, Any]
         raise ValueError("File is not an Integral encrypted envelope.")
     salt = base64.b64decode(envelope["salt"])
     key = _derive_key(passphrase, salt)
-    raw = Fernet(key).decrypt(envelope["ciphertext"].encode("ascii"))
+    try:
+        raw = Fernet(key).decrypt(envelope["ciphertext"].encode("ascii"))
+    except InvalidToken:
+        raise WrongPassphraseError("Incorrect passphrase for encrypted journal.") from None
     data = json.loads(raw.decode("utf-8"))
     if not isinstance(data, dict):
         raise ValueError("Decrypted payload is invalid.")
@@ -104,7 +130,7 @@ def load_data_file(path: str, passphrase: str | None) -> dict[str, Any]:
         raw = json.load(handle)
     if isinstance(raw, dict) and raw.get("integral_encrypted"):
         if not passphrase:
-            raise PermissionError("Passphrase required for encrypted journal.")
+            raise PassphraseRequiredError("Passphrase required for encrypted journal.")
         return decrypt_payload(raw, passphrase)
     return raw
 
@@ -144,7 +170,11 @@ def load_data_file_with_recovery(
     # Try to load the main file
     try:
         return load_data_file(path, passphrase)
-    except (json.JSONDecodeError, OSError, ValueError, PermissionError) as e:
+    except VaultPassphraseError:
+        raise
+    except PermissionError:
+        raise
+    except (json.JSONDecodeError, ValueError) as e:
         logging.error(f"Failed to load {path}: {e}")
         
         # Try to load backup
@@ -158,7 +188,11 @@ def load_data_file_with_recovery(
                 # Get backup timestamp
                 bak_stat = os.stat(bak_path)
                 bak_timestamp = datetime.fromtimestamp(bak_stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
-            except (json.JSONDecodeError, OSError, ValueError, PermissionError) as bak_e:
+            except VaultPassphraseError:
+                raise
+            except PermissionError:
+                raise
+            except (json.JSONDecodeError, ValueError) as bak_e:
                 logging.error(f"Backup {bak_path} is also corrupt: {bak_e}")
         
         # If backup is valid, offer to restore it
@@ -203,7 +237,7 @@ def save_data_file(path: str, payload: dict[str, Any], *, encrypted: bool, passp
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
         if encrypted:
             if not passphrase:
-                raise PermissionError("Passphrase required to save encrypted journal.")
+                raise PassphraseRequiredError("Passphrase required to save encrypted journal.")
             salt = _existing_salt(path)
             to_write = encrypt_payload(payload, passphrase, salt=salt)
         else:

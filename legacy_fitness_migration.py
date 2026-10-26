@@ -23,6 +23,79 @@ from progression.models import WorkoutSession
 VOLATILE_SESSION_KEYS = frozenset({"migrated_to_fitness_db"})
 
 
+class LegacyMigrationValidationError(Exception):
+    """One or more legacy sessions failed validation; migration must not commit."""
+
+    def __init__(self, errors: list[str]):
+        self.errors = errors
+        super().__init__("; ".join(errors))
+
+
+def session_needs_legacy_migration(sess: Any) -> bool:
+    """True if this session entry should be considered for legacy DB migration."""
+    if not isinstance(sess, dict):
+        return True
+    return not sess.get("migrated_to_fitness_db")
+
+
+def format_session_ref(index: int, sess: Any) -> str:
+    """User-safe session label (index and date only — no notes or full payload)."""
+    if isinstance(sess, dict):
+        date_val = sess.get("date")
+        date_part = str(date_val) if date_val not in (None, "") else "(no date)"
+    else:
+        date_part = "(no date)"
+    return f"session at index {index} (date {date_part})"
+
+
+def _is_numeric(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def validate_legacy_session(sess: Any, index: int) -> str | None:
+    """Return an error message or None if the session is valid for migration."""
+    ref = format_session_ref(index, sess)
+    if not isinstance(sess, dict):
+        return f"Invalid {ref}: expected a session object"
+    date = sess.get("date")
+    if not date:
+        return f"Invalid {ref}: missing date"
+    if not isinstance(date, str):
+        return f"Invalid {ref}: date must be a string"
+    try:
+        datetime.strptime(date.strip(), "%Y-%m-%d")
+    except ValueError:
+        return f"Invalid {ref}: date is not parseable (expected YYYY-MM-DD)"
+
+    for field in ("session_rpe", "duration_min", "duration_minutes"):
+        if field in sess and sess[field] is not None and not _is_numeric(sess[field]):
+            return f"Invalid {ref}: {field} must be numeric"
+
+    movement_logs = sess.get("movement_logs", [])
+    if movement_logs is None:
+        movement_logs = []
+    if not isinstance(movement_logs, list):
+        return f"Invalid {ref}: movement_logs must be a list"
+    for log_index, log in enumerate(movement_logs):
+        if not isinstance(log, dict):
+            return f"Invalid {ref}: movement_logs[{log_index}] must be an object"
+        for key in ("step", "reps_per_set", "hold_seconds", "height_cm", "form_quality"):
+            if key in log and log[key] is not None and not _is_numeric(log[key]):
+                return f"Invalid {ref}: movement_logs[{log_index}].{key} must be numeric"
+    return None
+
+
+def collect_legacy_session_errors(sessions: list[Any]) -> list[str]:
+    errors: list[str] = []
+    for index, sess in enumerate(sessions):
+        if isinstance(sess, dict) and sess.get("migrated_to_fitness_db"):
+            continue
+        err = validate_legacy_session(sess, index)
+        if err:
+            errors.append(err)
+    return errors
+
+
 def session_for_hash(sess: dict) -> dict:
     """Session dict used for stable idempotency hashing (volatile keys stripped)."""
     return {k: v for k, v in sess.items() if k not in VOLATILE_SESSION_KEYS}
@@ -169,22 +242,16 @@ def migrate_legacy_sessions(
     if not legacy_sessions:
         return result
 
+    validation_errors = collect_legacy_session_errors(legacy_sessions)
+    if validation_errors:
+        raise LegacyMigrationValidationError(validation_errors)
+
     repo.initialize()
 
     with repo.connect(timeout=10.0) as conn:
         existing_hashes = _existing_legacy_hashes(conn)
 
         sessions_to_flag: list[dict] = []
-        for sess in legacy_sessions:
-            if sess.get("migrated_to_fitness_db"):
-                continue
-            source_hash = legacy_source_hash(sess)
-            if source_hash in existing_hashes:
-                sessions_to_flag.append(sess)
-                continue
-            if not sess.get("date"):
-                result["errors"].append(f"Session missing date: {sess}")
-                result["skipped_count"] += 1
 
         if dry_run:
             for sess in legacy_sessions:
@@ -197,101 +264,90 @@ def migrate_legacy_sessions(
                     if sess not in sessions_to_flag:
                         sessions_to_flag.append(sess)
                     continue
-                if not sess.get("date"):
-                    continue
                 result["migrated_count"] += 1
             result["sessions_to_flag"] = sessions_to_flag
             return result
 
         try:
             for sess in legacy_sessions:
-                try:
-                    if sess.get("migrated_to_fitness_db"):
-                        result["skipped_count"] += 1
-                        continue
-
-                    source_hash = legacy_source_hash(sess)
-                    if source_hash in existing_hashes:
-                        result["skipped_count"] += 1
-                        sessions_to_flag.append(sess)
-                        continue
-
-                    date = sess.get("date")
-                    if not date:
-                        continue
-
-                    notes_parts = [f"[LEGACY:{source_hash}]"]
-                    program_id = sess.get("program_id", sess.get("program", ""))
-                    if program_id:
-                        notes_parts.append(f"Program: {program_id}")
-
-                    rpe = sess.get("session_rpe")
-                    if rpe:
-                        notes_parts.append(f"RPE: {rpe}")
-
-                    duration = sess.get("duration_min", sess.get("duration_minutes"))
-                    if duration:
-                        notes_parts.append(f"Duration: {duration}min")
-
-                    movement_logs = sess.get("movement_logs", [])
-                    if movement_logs:
-                        for log in movement_logs:
-                            movement_name = (
-                                log.get("movement_name")
-                                or log.get("chain_name")
-                                or log.get("movement_key", "")
-                            )
-                            if movement_name:
-                                notes_parts.append(f"- {movement_name}")
-                                if log.get("step"):
-                                    notes_parts.append(f"  Step {log['step']}")
-                                if log.get("reps_per_set"):
-                                    notes_parts.append(f"  Reps: {log['reps_per_set']}")
-                                if log.get("hold_seconds"):
-                                    notes_parts.append(f"  Hold: {log['hold_seconds']}s")
-                                if log.get("height_cm"):
-                                    notes_parts.append(f"  Height: {log['height_cm']}cm")
-                                if log.get("form_quality"):
-                                    notes_parts.append(f"  Form: {log['form_quality']}/10")
-
-                    if include_free_text_notes:
-                        user_notes = sess.get("notes", "")
-                        if user_notes:
-                            notes_parts.append(f"\n{user_notes}")
-
-                    notes = "\n".join(notes_parts)
-
-                    session = WorkoutSession(
-                        date=date,
-                        notes=notes,
-                        duration_minutes=duration if isinstance(duration, int) else None,
-                        body_weight_kg=None,
-                    )
-
-                    conn.execute(
-                        """
-                        INSERT INTO workout_sessions (id, date, notes, duration_minutes, body_weight_kg)
-                        VALUES (?, ?, ?, ?, ?)
-                        """,
-                        (
-                            session.id,
-                            session.date,
-                            session.notes,
-                            session.duration_minutes,
-                            session.body_weight_kg,
-                        ),
-                    )
-
-                    result["migrated_count"] += 1
-                    result["session_ids"].append(session.id)
-                    existing_hashes.add(source_hash)
-                    sessions_to_flag.append(sess)
-
-                except Exception as e:
-                    result["errors"].append(
-                        f"Error migrating session {sess.get('date', 'unknown')}: {e}"
-                    )
+                if sess.get("migrated_to_fitness_db"):
                     result["skipped_count"] += 1
+                    continue
+
+                source_hash = legacy_source_hash(sess)
+                if source_hash in existing_hashes:
+                    result["skipped_count"] += 1
+                    sessions_to_flag.append(sess)
+                    continue
+
+                date = sess.get("date")
+
+                notes_parts = [f"[LEGACY:{source_hash}]"]
+                program_id = sess.get("program_id", sess.get("program", ""))
+                if program_id:
+                    notes_parts.append(f"Program: {program_id}")
+
+                rpe = sess.get("session_rpe")
+                if rpe:
+                    notes_parts.append(f"RPE: {rpe}")
+
+                duration = sess.get("duration_min", sess.get("duration_minutes"))
+                if duration:
+                    notes_parts.append(f"Duration: {duration}min")
+
+                movement_logs = sess.get("movement_logs", [])
+                if movement_logs:
+                    for log in movement_logs:
+                        movement_name = (
+                            log.get("movement_name")
+                            or log.get("chain_name")
+                            or log.get("movement_key", "")
+                        )
+                        if movement_name:
+                            notes_parts.append(f"- {movement_name}")
+                            if log.get("step"):
+                                notes_parts.append(f"  Step {log['step']}")
+                            if log.get("reps_per_set"):
+                                notes_parts.append(f"  Reps: {log['reps_per_set']}")
+                            if log.get("hold_seconds"):
+                                notes_parts.append(f"  Hold: {log['hold_seconds']}s")
+                            if log.get("height_cm"):
+                                notes_parts.append(f"  Height: {log['height_cm']}cm")
+                            if log.get("form_quality"):
+                                notes_parts.append(f"  Form: {log['form_quality']}/10")
+
+                if include_free_text_notes:
+                    user_notes = sess.get("notes", "")
+                    if user_notes:
+                        notes_parts.append(f"\n{user_notes}")
+
+                notes = "\n".join(notes_parts)
+
+                session = WorkoutSession(
+                    date=date,
+                    notes=notes,
+                    duration_minutes=duration if isinstance(duration, int) else None,
+                    body_weight_kg=None,
+                )
+
+                conn.execute(
+                    """
+                    INSERT INTO workout_sessions (id, date, notes, duration_minutes, body_weight_kg)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        session.id,
+                        session.date,
+                        session.notes,
+                        session.duration_minutes,
+                        session.body_weight_kg,
+                    ),
+                )
+
+                result["migrated_count"] += 1
+                result["session_ids"].append(session.id)
+                existing_hashes.add(source_hash)
+                sessions_to_flag.append(sess)
 
             conn.commit()
 
@@ -361,6 +417,8 @@ def run_in_memory_migration(
             result["data_backup"] = data_backup
             result["db_backup"] = db_backup
         return result
+    except LegacyMigrationValidationError:
+        raise
     except Exception as e:
         raise Exception(
             f"Migration failed (backups preserved at {data_backup}, {db_backup}): {e}"

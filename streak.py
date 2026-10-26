@@ -38,7 +38,11 @@ def engagement_breakdown(
 
     fitness_count = 0
     if sessions:
-        fitness_count = sum(1 for session in sessions if session.get("date") == date_str)
+        fitness_count = sum(
+            1
+            for session in sessions
+            if isinstance(session, dict) and session.get("date") == date_str
+        )
 
     return {
         "date": date_str,

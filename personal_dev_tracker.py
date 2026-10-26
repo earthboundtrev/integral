@@ -87,7 +87,14 @@ from data_payload_registry import (
     hydrate_registered_from_migrated,
     merge_extra_top_level_into_payload,
 )
-from vault import is_encrypted_file, load_data_file, load_data_file_with_recovery, save_data_file
+from vault import (
+    VaultPassphraseError,
+    encrypted_journal_envelope_path,
+    is_encrypted_file,
+    load_data_file,
+    load_data_file_with_recovery,
+    save_data_file,
+)
 from entry_payload import (
     build_entry_payload,
     collect_touched_checklist,
@@ -214,7 +221,7 @@ class PersonalDevelopmentTracker:
 
         user_data_migration.run_at_startup()
 
-        if is_encrypted_file(DATA_FILE) and not prompt_vault_unlock(self):
+        if encrypted_journal_envelope_path(DATA_FILE) and not prompt_vault_unlock(self):
             messagebox.showerror("Locked", "Cannot open encrypted journal without passphrase.")
             root.destroy()
             return
@@ -769,7 +776,7 @@ class PersonalDevelopmentTracker:
                     on_recovery_prompt=on_recovery_prompt,
                     on_both_corrupt_prompt=on_both_corrupt_prompt
                 )
-            except PermissionError:
+            except VaultPassphraseError:
                 if not prompt_vault_unlock(self):
                     raise
                 data = load_data_file_with_recovery(
@@ -807,14 +814,18 @@ class PersonalDevelopmentTracker:
 
             migration_dirty = False
             if self.sessions:
-                from legacy_fitness_migration import run_in_memory_migration
+                from legacy_fitness_migration import (
+                    LegacyMigrationValidationError,
+                    run_in_memory_migration,
+                    session_needs_legacy_migration,
+                )
                 from progression.db import get_fitness_db_path
 
                 journal_encrypted = on_disk_encrypted or bool(
                     self.settings.get("encryption_enabled")
                 )
                 needs_migration = any(
-                    not sess.get("migrated_to_fitness_db") for sess in self.sessions
+                    session_needs_legacy_migration(sess) for sess in self.sessions
                 )
                 if needs_migration and (not journal_encrypted or self.vault_passphrase):
                     try:
@@ -826,11 +837,13 @@ class PersonalDevelopmentTracker:
                         )
                         if result.get("flagged_count", 0) > 0:
                             migration_dirty = True
-                        if result.get("errors"):
-                            logging.warning(
-                                "Legacy migration completed with %s issue(s)",
-                                len(result["errors"]),
-                            )
+                    except LegacyMigrationValidationError as e:
+                        messagebox.showerror(
+                            "Migration Failed",
+                            "Legacy fitness session migration failed:\n\n"
+                            + "\n".join(e.errors)
+                            + "\n\nYour data is safe. No sessions were migrated.",
+                        )
                     except Exception as e:
                         messagebox.showerror(
                             "Migration Failed",
@@ -1620,6 +1633,8 @@ class PersonalDevelopmentTracker:
             return self._session_counts_cache
         counts: dict[str, int] = {}
         for session in self.sessions:
+            if not isinstance(session, dict):
+                continue
             date_str = session.get("date")
             if date_str:
                 counts[date_str] = counts.get(date_str, 0) + 1
