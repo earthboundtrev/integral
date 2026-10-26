@@ -25,6 +25,18 @@ from ui_scroll import refresh_scroll_region
 if TYPE_CHECKING:
     from personal_dev_tracker import PersonalDevelopmentTracker
 
+class _CooperativeStepIndicator:
+    """run_cooperative_steps hook without covering the panel (#121 UX)."""
+
+    cancel_requested = False
+
+    def start(self, label: str | None = None) -> None:
+        self.cancel_requested = False
+
+    def stop(self) -> None:
+        pass
+
+
 QUICK_LOG_CHOICES = (
     ("Life domain log…", "life"),
     ("Journal", "journal"),
@@ -177,7 +189,18 @@ class _QuickCaptureBuild:
             ]
         )
 
+    def _set_suspend_scroll_refresh(self, suspended: bool) -> None:
+        inner = self.inner
+        if inner is None:
+            return
+        inner._suspend_configure_refresh = suspended
+        if not suspended and self.canvas is not None:
+            refresh = getattr(self.canvas, "_integral_refresh_wheel", None)
+            if refresh:
+                refresh()
+
     def _clear_todo_lists(self) -> None:
+        self._set_suspend_scroll_refresh(True)
         for child in self.today_list.winfo_children():
             child.destroy()
         for child in self.upcoming_list.winfo_children():
@@ -228,7 +251,10 @@ class _QuickCaptureBuild:
         )
         return tuple(steps)
 
-    def _finish_todo_lists(self) -> None:
+    def _finish_todo_lists(self, *, gen: int | None = None) -> None:
+        win = self.win
+        if gen is not None and getattr(win, "_qc_rebuild_gen", None) != gen:
+            return
         if not self.today_list.winfo_children():
             ttk.Label(self.today_list, text="No todos for today.", style="Muted.TLabel").pack(
                 anchor="w"
@@ -239,8 +265,53 @@ class _QuickCaptureBuild:
                 text="Nothing scheduled ahead.",
                 style="Muted.TLabel",
             ).pack(anchor="w")
+        self._set_suspend_scroll_refresh(False)
         self.win.update_idletasks()
         refresh_scroll_region(self.canvas, self.inner)
+
+    def _schedule_cooperative_todo_rebuild(self) -> None:
+        """Refresh todo rows in batches so the UI thread can process wheel input (#121)."""
+        win = self.win
+        if getattr(win, "_qc_building", False):
+            return
+
+        gen = getattr(win, "_qc_rebuild_gen", 0) + 1
+        win._qc_rebuild_gen = gen
+        win._qc_rebuild_running = True
+
+        self._clear_todo_lists()
+        tracker = self.tracker
+        today = tracker.today_str()
+        self._today_items = todos.items_for_day(tracker.todos, today)
+        self._today_ids = [i["id"] for i in self._today_items]
+        self._upcoming_items = todos.upcoming_items(tracker.todos, today)
+        self._upcoming_ids = [i["id"] for i in self._upcoming_items]
+        self._edit_categories = list(tracker.categories.keys())
+
+        def guarded(step_fn):
+            def run() -> None:
+                if getattr(win, "_qc_rebuild_gen", None) != gen:
+                    return
+                step_fn()
+
+            return run
+
+        steps: list = [guarded(step) for step in self._todo_row_batch_steps()]
+        steps.append(guarded(lambda: self._finish_todo_lists(gen=gen)))
+
+        indicator = getattr(win, "_qc_rebuild_indicator", None)
+        if indicator is None:
+            indicator = _CooperativeStepIndicator()
+            win._qc_rebuild_indicator = indicator
+
+        def on_complete() -> None:
+            if getattr(win, "_qc_rebuild_gen", None) != gen:
+                return
+            win._qc_rebuild_running = False
+            indicator.stop()
+
+        indicator.start()
+        run_cooperative_steps(win, indicator, steps, on_complete=on_complete)
 
     def _phase_finalize(self) -> None:
         self.win._qc_building = False
@@ -420,54 +491,9 @@ class _QuickCaptureBuild:
             tracker.save_data(flush=True)
 
         def rebuild_todo_lists() -> None:
-            if getattr(win, "_qc_building", False):
-                return
-            for child in self.today_list.winfo_children():
-                child.destroy()
-            for child in self.upcoming_list.winfo_children():
-                child.destroy()
-            today = tracker.today_str()
-            edit_categories = list(tracker.categories.keys())
-            today_items = todos.items_for_day(tracker.todos, today)
-            today_ids = [i["id"] for i in today_items]
-            for item in today_items:
-                _todo_row(
-                    self.today_list,
-                    tracker,
-                    item,
-                    persist_todos,
-                    rebuild_todo_lists,
-                    win,
-                    sibling_ids=today_ids,
-                    categories=edit_categories,
-                )
-            upcoming = todos.upcoming_items(tracker.todos, today)
-            upcoming_ids = [i["id"] for i in upcoming]
-            for item in upcoming:
-                _todo_row(
-                    self.upcoming_list,
-                    tracker,
-                    item,
-                    persist_todos,
-                    rebuild_todo_lists,
-                    win,
-                    upcoming=True,
-                    sibling_ids=upcoming_ids,
-                    categories=edit_categories,
-                )
-            if not self.today_list.winfo_children():
-                ttk.Label(
-                    self.today_list, text="No todos for today.", style="Muted.TLabel"
-                ).pack(anchor="w")
-            if not self.upcoming_list.winfo_children():
-                ttk.Label(
-                    self.upcoming_list,
-                    text="Nothing scheduled ahead.",
-                    style="Muted.TLabel",
-                ).pack(anchor="w")
-            win.update_idletasks()
-            refresh_scroll_region(self.canvas, self.inner)
+            self._schedule_cooperative_todo_rebuild()
 
+        win._qc_build = self
         self._persist_todos = persist_todos
         self.rebuild_todo_lists = rebuild_todo_lists
         tracker._qc_rebuild_todos = rebuild_todo_lists
@@ -527,7 +553,6 @@ class _QuickCaptureBuild:
             anchor="w", pady=(4, 0)
         )
         todo_entry.bind("<Return>", lambda _event: add_todo())
-        self.rebuild_todo_lists = rebuild_todo_lists
 
 
     def _phase_rest(self) -> None:

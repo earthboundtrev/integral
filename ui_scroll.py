@@ -181,6 +181,10 @@ def bind_mousewheel(
         bind_tree(container)
 
     def schedule_refresh(_event=None) -> None:
+        if watch_configure is not None and getattr(
+            watch_configure, "_suspend_configure_refresh", False
+        ):
+            return
         if pending["active"]:
             return
         pending["active"] = True
@@ -475,6 +479,8 @@ def make_scrollable_frame(parent, *, width=None, height=None, chrome_bg=None, th
     pending = {"active": False}
 
     def _on_inner_configure(_event):
+        if getattr(inner, "_suspend_configure_refresh", False):
+            return
         if pending["active"]:
             return
         pending["active"] = True
@@ -495,6 +501,7 @@ def make_scrollable_frame(parent, *, width=None, height=None, chrome_bg=None, th
 
     canvas.bind("<Configure>", _resize_inner)
     refresh_wheel = bind_mousewheel(outer, canvas.yview, watch_configure=inner)
+    canvas._integral_refresh_wheel = refresh_wheel  # noqa: SLF001 — QC batch rebuild (#121)
     scrollbar.configure(command=refresh_wheel.coalesced_scroll)
 
     canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
