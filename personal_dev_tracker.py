@@ -89,6 +89,7 @@ from data_payload_registry import (
 )
 from vault import (
     VaultPassphraseError,
+    encrypted_journal_envelope_path,
     is_encrypted_file,
     load_data_file,
     load_data_file_with_recovery,
@@ -220,7 +221,7 @@ class PersonalDevelopmentTracker:
 
         user_data_migration.run_at_startup()
 
-        if is_encrypted_file(DATA_FILE) and not prompt_vault_unlock(self):
+        if encrypted_journal_envelope_path(DATA_FILE) and not prompt_vault_unlock(self):
             messagebox.showerror("Locked", "Cannot open encrypted journal without passphrase.")
             root.destroy()
             return

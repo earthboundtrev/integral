@@ -13,6 +13,7 @@ from unittest.mock import patch
 from vault import (
     PassphraseRequiredError,
     WrongPassphraseError,
+    encrypted_journal_envelope_path,
     load_data_file_with_recovery,
     save_data_file,
 )
@@ -283,6 +284,24 @@ def test_recovery_handles_missing_backup_file(tmp_path):
     assert loaded == {}
 
 
+def test_encrypted_journal_envelope_path_uses_backup_when_main_corrupt(tmp_path):
+    """Unlock prompt must verify passphrase against .bak when main JSON is corrupt."""
+    pytest.importorskip("cryptography")
+
+    data_file = tmp_path / "data.json"
+    bak_file = tmp_path / "data.json.bak"
+    save_data_file(
+        str(bak_file),
+        {"from": "backup"},
+        encrypted=True,
+        passphrase="secret",
+    )
+    with open(data_file, "w") as handle:
+        handle.write('{"integral_encrypted": true, "truncated')
+
+    assert encrypted_journal_envelope_path(str(data_file)) == str(bak_file)
+
+
 def test_recovery_encrypted_missing_passphrase_not_corruption(tmp_path):
     """Issue #106: missing passphrase must not trigger backup recovery."""
     pytest.importorskip("cryptography")
@@ -310,6 +329,33 @@ def test_recovery_encrypted_missing_passphrase_not_corruption(tmp_path):
     assert both_corrupt_calls == []
     assert list(tmp_path.glob("data.json.corrupt-*")) == []
     assert list(tmp_path.glob("data.json.bak")) == []
+
+
+def test_recovery_corrupt_main_encrypted_backup_needs_passphrase(tmp_path):
+    """Corrupt main with valid encrypted .bak must not enter corruption recovery."""
+    pytest.importorskip("cryptography")
+
+    data_file = tmp_path / "data.json"
+    bak_file = tmp_path / "data.json.bak"
+    backup_payload = {"from": "backup"}
+    save_data_file(
+        str(bak_file),
+        backup_payload,
+        encrypted=True,
+        passphrase="correct-pass",
+    )
+    with open(data_file, "w") as handle:
+        handle.write('{"broken": "json')
+
+    with pytest.raises(PassphraseRequiredError):
+        load_data_file_with_recovery(
+            str(data_file),
+            passphrase=None,
+            on_recovery_prompt=lambda *_: True,
+            on_both_corrupt_prompt=lambda: True,
+        )
+
+    assert list(tmp_path.glob("data.json.corrupt-*")) == []
 
 
 def test_recovery_wrong_passphrase_not_corruption(tmp_path):

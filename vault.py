@@ -36,6 +36,16 @@ class WrongPassphraseError(VaultPassphraseError):
     """Decryption failed because the passphrase does not match."""
 
 
+def encrypted_journal_envelope_path(data_path: str) -> str | None:
+    """Return the path to an encrypted journal envelope (main file or .bak)."""
+    if is_encrypted_file(data_path):
+        return data_path
+    bak_path = f"{data_path}.bak"
+    if is_encrypted_file(bak_path):
+        return bak_path
+    return None
+
+
 def is_encrypted_file(path: str) -> bool:
     if not os.path.exists(path):
         return False
