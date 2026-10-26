@@ -7,6 +7,7 @@ import tempfile
 import unittest
 
 from legacy_fitness_migration import (
+    LegacyExerciseResolver,
     LegacyMigrationValidationError,
     backfill_legacy_workout_sets,
     build_legacy_session_notes,
@@ -50,6 +51,19 @@ class TestLegacyMigration191(unittest.TestCase):
         except OSError:
             pass
 
+    def _seed_cross_program_ladders(self, repo: FitnessRepository) -> None:
+        for filename in (
+            "cc1_push.json",
+            "cc1_squat.json",
+            "og_push.json",
+            "sm_squat.json",
+        ):
+            seed_from_file(repo, filename)
+
+    def _exercise_name(self, repo: FitnessRepository, exercise_id: str) -> str:
+        exercise = repo.get_exercise(exercise_id)
+        return exercise.name if exercise else ""
+
     def _sets_for_session(self, session_id: str) -> list[sqlite3.Row]:
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
@@ -62,6 +76,91 @@ class TestLegacyMigration191(unittest.TestCase):
                 """,
                 (session_id,),
             ).fetchall()
+
+    def test_cc_pushups_step3_not_matched_to_og_when_other_programs_seeded(self):
+        repo = FitnessRepository(db_path=self.db_path)
+        self._seed_cross_program_ladders(repo)
+        sess = _sample_legacy_session()
+        result = migrate_legacy_sessions({"sessions": [sess]}, repo)
+        rows = self._sets_for_session(result["session_ids"][0])
+        name = self._exercise_name(repo, rows[0]["exercise_id"])
+        self.assertEqual(name, "Kneeling Push-ups")
+        self.assertNotIn("Planche", name)
+
+    def test_cc_squats_step2_not_matched_to_sm_when_other_programs_seeded(self):
+        repo = FitnessRepository(db_path=self.db_path)
+        self._seed_cross_program_ladders(repo)
+        sess = {
+            "date": "2026-03-20",
+            "program_id": "convict-conditioning",
+            "movement_logs": [
+                {
+                    "movement_key": "cc-squats",
+                    "movement_name": "Squats",
+                    "step": 2,
+                    "reps_per_set": [12, 12, 12],
+                }
+            ],
+        }
+        result = migrate_legacy_sessions({"sessions": [sess]}, repo)
+        rows = self._sets_for_session(result["session_ids"][0])
+        name = self._exercise_name(repo, rows[0]["exercise_id"])
+        self.assertEqual(name, "Jackknife Squats")
+        self.assertNotIn("Doorway", name)
+
+    def test_migration_and_backfill_resolve_same_exercise(self):
+        repo = FitnessRepository(db_path=self.db_path)
+        self._seed_cross_program_ladders(repo)
+        sess = _sample_legacy_session()
+
+        migrate_result = migrate_legacy_sessions({"sessions": [sess]}, repo)
+        migrate_exercise_id = self._sets_for_session(migrate_result["session_ids"][0])[
+            0
+        ]["exercise_id"]
+
+        backfill_db = os.path.join(self.temp_dir, "backfill.db")
+        repo2 = FitnessRepository(db_path=backfill_db)
+        self._seed_cross_program_ladders(repo2)
+        source_hash = legacy_source_hash(sess)
+        notes = build_legacy_session_notes(sess, source_hash)
+        repo2.initialize()
+        with repo2.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO workout_sessions (id, date, notes)
+                VALUES ('existing-session', ?, ?)
+                """,
+                (sess["date"], notes),
+            )
+            conn.commit()
+        flagged = {**sess, "migrated_to_fitness_db": "2026-01-01T00:00:00"}
+        backfill_legacy_workout_sets([flagged], repo2)
+        with sqlite3.connect(backfill_db) as conn:
+            conn.row_factory = sqlite3.Row
+            backfill_exercise_id = conn.execute(
+                """
+                SELECT exercise_id FROM workout_sets
+                WHERE session_id = 'existing-session'
+                ORDER BY ordinal LIMIT 1
+                """
+            ).fetchone()["exercise_id"]
+
+        self.assertEqual(migrate_exercise_id, backfill_exercise_id)
+
+    def test_resolver_shared_with_program_id_alias(self):
+        repo = FitnessRepository(db_path=self.db_path)
+        self._seed_cross_program_ladders(repo)
+        repo.initialize()
+        log = {
+            "movement_key": "cc-pushups",
+            "movement_name": "Pushups",
+            "step": 3,
+            "reps_per_set": [5],
+        }
+        with repo.connect() as conn:
+            resolver = LegacyExerciseResolver(conn)
+            exercise_id = resolver.resolve(log, program_id="CC1")
+        self.assertEqual(self._exercise_name(repo, exercise_id), "Kneeling Push-ups")
 
     def test_reps_per_set_creates_one_row_per_rep(self):
         repo = FitnessRepository(db_path=self.db_path)
