@@ -87,7 +87,14 @@ from data_payload_registry import (
     hydrate_registered_from_migrated,
     merge_extra_top_level_into_payload,
 )
-from vault import is_encrypted_file, load_data_file, load_data_file_with_recovery, save_data_file
+from vault import (
+    VaultPassphraseError,
+    encrypted_journal_envelope_path,
+    is_encrypted_file,
+    load_data_file,
+    load_data_file_with_recovery,
+    save_data_file,
+)
 from entry_payload import (
     build_entry_payload,
     collect_touched_checklist,
@@ -214,7 +221,7 @@ class PersonalDevelopmentTracker:
 
         user_data_migration.run_at_startup()
 
-        if is_encrypted_file(DATA_FILE) and not prompt_vault_unlock(self):
+        if encrypted_journal_envelope_path(DATA_FILE) and not prompt_vault_unlock(self):
             messagebox.showerror("Locked", "Cannot open encrypted journal without passphrase.")
             root.destroy()
             return
@@ -769,7 +776,7 @@ class PersonalDevelopmentTracker:
                     on_recovery_prompt=on_recovery_prompt,
                     on_both_corrupt_prompt=on_both_corrupt_prompt
                 )
-            except PermissionError:
+            except VaultPassphraseError:
                 if not prompt_vault_unlock(self):
                     raise
                 data = load_data_file_with_recovery(

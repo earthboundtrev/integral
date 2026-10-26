@@ -26,7 +26,7 @@ from milestones import current_quarter_label, merge_milestones, milestone_summar
 from notifications import normalize_notification_settings, show_windows_notification
 from paths import APP_NAME
 from theme import FONTS, style_listbox, style_text_widget
-from vault import CRYPTO_AVAILABLE, encrypt_payload, is_encrypted_file
+from vault import CRYPTO_AVAILABLE, encrypt_payload, encrypted_journal_envelope_path, is_encrypted_file
 import autostart_windows
 import protocol_windows
 import quick_capture
@@ -839,7 +839,8 @@ def show_youtube_history_dialog(tracker: PersonalDevelopmentTracker) -> None:
 
 
 def prompt_vault_unlock(tracker: PersonalDevelopmentTracker) -> bool:
-    if not is_encrypted_file(tracker.data_path):
+    envelope_path = encrypted_journal_envelope_path(tracker.data_path)
+    if envelope_path is None:
         return True
     for _attempt in range(3):
         passphrase = simpledialog.askstring(
@@ -852,9 +853,8 @@ def prompt_vault_unlock(tracker: PersonalDevelopmentTracker) -> bool:
             return False
         try:
             from vault import decrypt_payload
-            import json
 
-            with open(tracker.data_path, encoding="utf-8") as handle:
+            with open(envelope_path, encoding="utf-8") as handle:
                 envelope = json.load(handle)
             decrypt_payload(envelope, passphrase)
             tracker.vault_passphrase = passphrase
