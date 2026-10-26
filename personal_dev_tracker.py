@@ -819,6 +819,7 @@ class PersonalDevelopmentTracker:
                     run_in_memory_migration,
                     session_needs_legacy_migration,
                 )
+                from progression.fitness_settings import legacy_movement_sets_backfill_pending
                 from progression.db import get_fitness_db_path
 
                 journal_encrypted = on_disk_encrypted or bool(
@@ -827,15 +828,20 @@ class PersonalDevelopmentTracker:
                 needs_migration = any(
                     session_needs_legacy_migration(sess) for sess in self.sessions
                 )
-                if needs_migration and (not journal_encrypted or self.vault_passphrase):
+                needs_set_backfill = legacy_movement_sets_backfill_pending(self.settings)
+                if (
+                    (needs_migration or needs_set_backfill)
+                    and (not journal_encrypted or self.vault_passphrase)
+                ):
                     try:
                         result = run_in_memory_migration(
                             self.sessions,
                             get_fitness_db_path(),
                             data_path=DATA_FILE,
                             include_free_text_notes=not journal_encrypted,
+                            app_settings=self.settings,
                         )
-                        if result.get("flagged_count", 0) > 0:
+                        if result.get("flagged_count", 0) > 0 or needs_set_backfill:
                             migration_dirty = True
                     except LegacyMigrationValidationError as e:
                         messagebox.showerror(
