@@ -16,6 +16,9 @@ LOCK_BYPASS_WARNING = (
     "body is ready."
 )
 
+LEGACY_MOVEMENT_SETS_VERSION_KEY = "legacy_movement_sets_version"
+CURRENT_LEGACY_MOVEMENT_SETS_VERSION = 1
+
 
 def default_fitness_settings() -> dict:
     return {
@@ -25,6 +28,7 @@ def default_fitness_settings() -> dict:
         "disable_progression_locks": False,
         "manual_placement_enabled": True,
         "placements": {},
+        LEGACY_MOVEMENT_SETS_VERSION_KEY: 0,
     }
 
 
@@ -37,7 +41,13 @@ def get_fitness_settings(settings: dict | None) -> dict:
     else:
         stored = settings
     if isinstance(stored, dict):
-        merged.update({key: stored[key] for key in stored if key in merged or key == "placements"})
+        merged.update(
+            {
+                key: stored[key]
+                for key in stored
+                if key in merged or key in (LEGACY_MOVEMENT_SETS_VERSION_KEY, "placements")
+            }
+        )
     placements = stored.get("placements") if isinstance(stored, dict) else None
     if isinstance(placements, dict):
         merged["placements"] = {str(key): int(value) for key, value in placements.items()}
@@ -50,3 +60,17 @@ def is_sequential_exercise(exercise) -> bool:
 
 def progression_locks_enabled(fitness_settings: dict | None) -> bool:
     return not bool(get_fitness_settings(fitness_settings).get("disable_progression_locks"))
+
+
+def legacy_movement_sets_backfill_pending(app_settings: dict | None) -> bool:
+    merged = get_fitness_settings(app_settings)
+    current = int(merged.get(LEGACY_MOVEMENT_SETS_VERSION_KEY, 0) or 0)
+    return current < CURRENT_LEGACY_MOVEMENT_SETS_VERSION
+
+
+def mark_legacy_movement_sets_version_done(app_settings: dict) -> None:
+    fitness = app_settings.get("fitness")
+    if not isinstance(fitness, dict):
+        app_settings["fitness"] = {}
+        fitness = app_settings["fitness"]
+    fitness[LEGACY_MOVEMENT_SETS_VERSION_KEY] = CURRENT_LEGACY_MOVEMENT_SETS_VERSION
