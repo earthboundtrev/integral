@@ -1,12 +1,16 @@
 """Regression tests for all-or-nothing legacy migration (#153)."""
 
-import json
 import os
 import shutil
 import sqlite3
 import tempfile
+import tkinter as tk
 import unittest
+from unittest.mock import patch
 
+import pytest
+
+import personal_dev_tracker
 from legacy_fitness_migration import (
     LegacyMigrationValidationError,
     collect_legacy_session_errors,
@@ -14,6 +18,7 @@ from legacy_fitness_migration import (
     run_in_memory_migration,
     session_needs_legacy_migration,
 )
+from paths import ensure_data_file
 from progression.db import FitnessRepository
 from vault import save_data_file
 
@@ -145,6 +150,55 @@ class TestLegacyMigration153(unittest.TestCase):
         legacy_count = _legacy_row_count(self.db_path)
         self.assertIn(legacy_count, (0, 12))
         self.assertEqual(legacy_count, 12)
+
+
+@pytest.fixture
+def tk_root():
+    root = tk.Tk()
+    root.withdraw()
+    yield root
+    try:
+        root.destroy()
+    except tk.TclError:
+        pass
+
+
+@pytest.mark.allow_tk_messagebox
+def test_tracker_opens_after_non_dict_session_migration_failure(tk_root, monkeypatch):
+    path = ensure_data_file()
+    monkeypatch.setattr(personal_dev_tracker, "DATA_FILE", path)
+    sessions = [
+        {
+            "date": "2026-01-01",
+            "program_id": "CC1",
+            "movement_logs": [{"movement_name": "Push-up"}],
+        },
+        "oops",
+    ]
+    save_data_file(
+        path,
+        {"schema_version": 2, "sessions": sessions, "entries": {}, "settings": {}},
+        encrypted=False,
+        passphrase=None,
+    )
+    migration_errors: list[str] = []
+
+    def _capture_error(_title, message):
+        migration_errors.append(message)
+        return None
+
+    with (
+        patch("tkinter.messagebox.showerror", side_effect=_capture_error),
+        patch.object(personal_dev_tracker, "show_onboarding", lambda _self: None),
+        patch("user_data_migration.run_at_startup", lambda: None),
+        patch("user_data_migration.consume_user_notices", lambda: []),
+    ):
+        tracker = personal_dev_tracker.PersonalDevelopmentTracker(tk_root)
+        tk_root.update_idletasks()
+
+    assert any(sess == "oops" for sess in tracker.sessions)
+    assert any("index 1" in msg for msg in migration_errors)
+    assert tracker.root.winfo_exists()
 
 
 if __name__ == "__main__":

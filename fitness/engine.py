@@ -201,7 +201,11 @@ def compute_program_state(
     state: dict[str, Any] = {}
 
     for program_id, program in programs.items():
-        program_sessions = [session for session in sessions if session.get("program_id") == program_id]
+        program_sessions = [
+            session
+            for session in sessions
+            if isinstance(session, dict) and session.get("program_id") == program_id
+        ]
         if program["progression_model"] == "weekly_rep_ramp":
             state[program_id] = compute_tibetan_state(program, program_sessions, settings)
             continue

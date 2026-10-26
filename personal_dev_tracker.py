@@ -1626,6 +1626,8 @@ class PersonalDevelopmentTracker:
             return self._session_counts_cache
         counts: dict[str, int] = {}
         for session in self.sessions:
+            if not isinstance(session, dict):
+                continue
             date_str = session.get("date")
             if date_str:
                 counts[date_str] = counts.get(date_str, 0) + 1
