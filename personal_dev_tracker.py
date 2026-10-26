@@ -153,6 +153,7 @@ class PersonalDevelopmentTracker:
         self._categories_tab_built = False
         self._theme_dark: bool | None = None
         self._log_bar: ttk.LabelFrame | None = None
+        self._log_one_btn: ttk.Button | None = None
         self._todays_log_filter = ""
         self._todays_log_status = "all"
         self._activity_grid: ContributionGrid | None = None
@@ -1362,18 +1363,26 @@ class PersonalDevelopmentTracker:
         actions_host.pack(fill=tk.X, pady=(0, 4))
         next_cat = self.first_unlogged_category()
         if next_cat:
-            ttk.Button(
+            log_style = (
+                "TButton"
+                if nav_items.deep_work_active(self)
+                else "Accent.TButton"
+            )
+            self._log_one_btn = ttk.Button(
                 actions,
                 text=f"Log one → {CATEGORY_SHORT_LABELS.get(next_cat, next_cat)}",
-                style="Accent.TButton",
+                style=log_style,
                 command=lambda: self.open_log_dialog(next_cat),
-            ).pack(side=tk.LEFT, padx=(0, 8))
-        elif logged_count:
-            ttk.Label(
-                actions,
-                text="All listed domains have a check-in — nothing more required.",
-                style="OnSurfaceMuted.TLabel",
-            ).pack(side=tk.LEFT)
+            )
+            self._log_one_btn.pack(side=tk.LEFT, padx=(0, 8))
+        else:
+            self._log_one_btn = None
+            if logged_count:
+                ttk.Label(
+                    actions,
+                    text="All listed domains have a check-in — nothing more required.",
+                    style="OnSurfaceMuted.TLabel",
+                ).pack(side=tk.LEFT)
         journal_btn = ttk.Button(actions, text="Journal", command=self.show_journal)
         journal_btn.pack(side=tk.LEFT, padx=(0, 8))
         attach_shortcut_tooltip(
@@ -3496,6 +3505,28 @@ class PersonalDevelopmentTracker:
         )
         self._deep_work_end_btn.pack(side=tk.LEFT)
 
+    def _apply_deep_work_main_accent(self, active: bool) -> None:
+        """#132 / #134: End Deep Work is the sole accent while a session runs."""
+        log_btn = self._log_one_btn
+        if log_btn is not None:
+            try:
+                if log_btn.winfo_exists():
+                    log_btn.configure(style="TButton" if active else "Accent.TButton")
+            except tk.TclError:
+                pass
+        if self._deep_work_extend_btn is not None:
+            try:
+                self._deep_work_extend_btn.configure(style="TButton")
+            except tk.TclError:
+                pass
+        end_btn = self._deep_work_end_btn
+        if end_btn is not None:
+            try:
+                if end_btn.winfo_exists():
+                    end_btn.configure(style="Accent.TButton" if active else "TButton")
+            except tk.TclError:
+                pass
+
     def _apply_deep_work_chrome(self) -> None:
         active = nav_items.deep_work_active(self)
         if active:
@@ -3511,16 +3542,7 @@ class PersonalDevelopmentTracker:
                 populate_today_more_menu(today_more, self, self.theme)
             except tk.TclError:
                 pass
-        if self._deep_work_extend_btn is not None:
-            try:
-                self._deep_work_extend_btn.configure(style="TButton")
-            except tk.TclError:
-                pass
-        if self._deep_work_end_btn is not None:
-            try:
-                self._deep_work_end_btn.configure(style="TButton")
-            except tk.TclError:
-                pass
+        self._apply_deep_work_main_accent(active)
         if self._deep_work_banner is not None:
             try:
                 if active:

@@ -123,13 +123,19 @@ def test_goto_excludes_hidden_destinations_during_deep_work():
     assert any(label.startswith("Log ") for label in labels)
 
 
-def test_deep_work_end_button_stays_secondary_while_active(tracker):
-    """#134: main window keeps at most one accent (Log one → …); End stays secondary."""
+def test_deep_work_end_button_is_sole_accent_while_active(tracker):
+    """#132: End Deep Work is the single filled accent during an active session."""
+    from ui_accent import count_accent_buttons
+
     tracker._deep_work_session = MagicMock(running=True)
     tracker._ensure_deep_work_banner()
     tracker._apply_deep_work_chrome()
     assert tracker._deep_work_end_btn is not None
-    assert tracker._deep_work_end_btn.cget("style") == "TButton"
+    assert tracker._deep_work_end_btn.cget("style") == "Accent.TButton"
+    if tracker._log_one_btn is not None:
+        assert tracker._log_one_btn.cget("style") == "TButton"
+    tracker.root.update()
+    assert count_accent_buttons(tracker.root) == 1
     tracker._deep_work_session = None
     tracker._apply_deep_work_chrome()
     assert tracker._deep_work_end_btn.cget("style") == "TButton"
@@ -144,3 +150,13 @@ def test_shortcut_to_hidden_destination_is_blocked(tracker):
         tracker._deep_work_session = None
         tracker.show_reflect()
         open_page.assert_called_once_with(tracker)
+
+
+def test_shortcut_to_hidden_destination_uses_banner_not_messagebox(tracker):
+    tracker._deep_work_session = MagicMock(running=True)
+    banner = MagicMock()
+    with patch.object(tracker, "ensure_status_banner", return_value=banner):
+        with patch("tkinter.messagebox.showinfo") as show_info:
+            tracker._run_nav_shortcut("graphs", lambda: None)
+            banner.show_info.assert_called_once_with("Hidden during Deep Work.")
+            show_info.assert_not_called()
