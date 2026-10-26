@@ -17,6 +17,21 @@ if (Test-Path "assets\icon.ico") {
 }
 
 Write-Host "Building single-file executable..."
+$hiddenJson = python -c "import json; from pathlib import Path; from tests.pyinstaller_import_audit import parse_hiddenimports_from_spec; print(json.dumps(sorted(parse_hiddenimports_from_spec(Path('full-spectrum-development.spec')))))"
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "Failed to read hiddenimports from full-spectrum-development.spec"
+    exit 1
+}
+$hiddenList = @($hiddenJson | ConvertFrom-Json)
+if ($hiddenList.Count -eq 0) {
+    Write-Error "No hiddenimports found in full-spectrum-development.spec"
+    exit 1
+}
+$hiddenImportArgs = @()
+foreach ($name in $hiddenList) {
+    $hiddenImportArgs += @("--hidden-import", $name)
+}
+
 python -m PyInstaller `
     --noconfirm `
     --clean `
@@ -26,15 +41,7 @@ python -m PyInstaller `
     @iconArg `
     --add-data "programs;programs" `
     --add-data "assets;assets" `
-    --hidden-import activity_grid `
-    --hidden-import paths `
-    --hidden-import theme `
-    --hidden-import graphs `
-    --hidden-import fitness_graphs `
-    --hidden-import fitness.engine `
-    --hidden-import fitness.ui `
-    --hidden-import insights.engine `
-    --hidden-import insights.playbooks `
+    @hiddenImportArgs `
     --collect-all matplotlib `
     personal_dev_tracker.py
 
