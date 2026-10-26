@@ -10,6 +10,7 @@ import tempfile
 from datetime import datetime
 from typing import Any
 
+import profiles
 import zip_import_safety
 
 # Import the save lock to serialize restore with saves
@@ -340,8 +341,6 @@ def _install_tree_from_staging(staging_root: str, dest_root: str) -> int:
         for name in filenames:
             abs_path = os.path.join(dirpath, name)
             rel = os.path.relpath(abs_path, staging_root).replace("\\", "/")
-            if not rel or ".." in rel.split("/"):
-                continue
             dest = os.path.join(dest_root, *rel.split("/"))
             os.makedirs(os.path.dirname(dest), exist_ok=True)
             shutil.copy2(abs_path, dest)
@@ -369,6 +368,21 @@ def restore_full_backup(
         if "data.json" not in names:
             raise ValueError("Full backup missing data.json")
 
+        zip_import_safety.validate_full_backup_namelist(names)
+
+        manifest: dict[str, Any] = {}
+        if "manifest.json" in names:
+            try:
+                manifest = json.loads(
+                    zip_import_safety.read_zip_member_bytes(zf, "manifest.json", budget).decode(
+                        "utf-8"
+                    )
+                )
+            except json.JSONDecodeError:
+                manifest = {}
+        if isinstance(manifest, dict):
+            profiles.validate_manifest_profile_ids(manifest)
+
         with tempfile.TemporaryDirectory() as staging:
             staging_data = os.path.join(staging, "data.json")
             zip_import_safety.copy_zip_member_to_file(zf, "data.json", staging_data, budget)
@@ -379,8 +393,6 @@ def restore_full_backup(
                 if not name.startswith("creative/") or name.endswith("/"):
                     continue
                 rel = name[len("creative/") :]
-                if not rel or ".." in rel.split("/"):
-                    continue
                 dest = os.path.join(staging_creative, *rel.split("/"))
                 zip_import_safety.copy_zip_member_to_file(zf, name, dest, budget)
 
@@ -388,17 +400,6 @@ def restore_full_backup(
             if fitness_db_path and "fitness.db" in names:
                 staging_fitness = os.path.join(staging, "fitness.db")
                 zip_import_safety.copy_zip_member_to_file(zf, "fitness.db", staging_fitness, budget)
-
-            manifest: dict[str, Any] = {}
-            if "manifest.json" in names:
-                try:
-                    manifest = json.loads(
-                        zip_import_safety.read_zip_member_bytes(zf, "manifest.json", budget).decode(
-                            "utf-8"
-                        )
-                    )
-                except json.JSONDecodeError:
-                    manifest = {}
 
             with open(staging_data, encoding="utf-8") as handle:
                 payload = json.load(handle)

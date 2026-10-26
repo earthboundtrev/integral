@@ -324,6 +324,131 @@ def test_full_backup_restore_rejects_too_many_members(temp_app, tmp_path):
         integral_io.restore_backup_file(zip_path, target, make_copy=False)
 
 
+def _seed_full_restore_targets(tmp_path: Path) -> tuple[str, str, float, float]:
+    target_data = tmp_path / "data.json"
+    fitness = tmp_path / "fitness.db"
+    target_data.write_text(json.dumps({"entries": {"keep": True}}), encoding="utf-8")
+    fitness.write_bytes(b"fitness-original")
+    return (
+        str(target_data),
+        str(fitness),
+        os.path.getmtime(target_data),
+        os.path.getmtime(fitness),
+    )
+
+
+def _assert_full_restore_targets_unchanged(
+    target_data: str,
+    fitness: str,
+    before_data_mtime: float,
+    before_fit_mtime: float,
+) -> None:
+    assert os.path.getmtime(target_data) == before_data_mtime
+    with open(target_data, encoding="utf-8") as handle:
+        assert json.load(handle)["entries"]["keep"] is True
+    assert os.path.getmtime(fitness) == before_fit_mtime
+    assert Path(fitness).read_bytes() == b"fitness-original"
+
+
+def test_full_backup_restore_rejects_unsafe_creative_path(temp_app, tmp_path):
+    zip_path = str(tmp_path / "full-unsafe-creative.zip")
+    _write_minimal_full_backup_zip(zip_path)
+    with zipfile.ZipFile(zip_path, "a") as zf:
+        zf.writestr("creative/../../evil.txt", "pwnd")
+
+    target_data, fitness, data_mtime, fit_mtime = _seed_full_restore_targets(tmp_path)
+    with pytest.raises(ValueError, match="unsafe path"):
+        integral_io.restore_backup_file(
+            zip_path, target_data, fitness_db_path=fitness, make_copy=False
+        )
+    _assert_full_restore_targets_unchanged(target_data, fitness, data_mtime, fit_mtime)
+
+
+def test_full_backup_restore_rejects_absolute_zip_path(temp_app, tmp_path):
+    zip_path = str(tmp_path / "full-absolute.zip")
+    _write_minimal_full_backup_zip(zip_path)
+    with zipfile.ZipFile(zip_path, "a") as zf:
+        zf.writestr("/absolute.txt", "pwnd")
+
+    target_data, fitness, data_mtime, fit_mtime = _seed_full_restore_targets(tmp_path)
+    with pytest.raises(ValueError, match="unsafe absolute path"):
+        integral_io.restore_backup_file(
+            zip_path, target_data, fitness_db_path=fitness, make_copy=False
+        )
+    _assert_full_restore_targets_unchanged(target_data, fitness, data_mtime, fit_mtime)
+
+
+def test_full_backup_restore_rejects_invalid_manifest_profile_id(temp_app, tmp_path):
+    zip_path = str(tmp_path / "full-bad-profile.zip")
+    payload = {"schema_version": 2, "entries": {}, "settings": {}}
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("data.json", json.dumps(payload))
+        zf.writestr(
+            "manifest.json",
+            json.dumps(
+                {
+                    "backup_kind": integral_io.FULL_BACKUP_KIND,
+                    "backup_version": integral_io.FULL_BACKUP_VERSION,
+                    "profiles": ["../x"],
+                }
+            ),
+        )
+
+    target_data, fitness, data_mtime, fit_mtime = _seed_full_restore_targets(tmp_path)
+    with pytest.raises(ValueError, match="invalid profile id"):
+        integral_io.restore_backup_file(
+            zip_path, target_data, fitness_db_path=fitness, make_copy=False
+        )
+    _assert_full_restore_targets_unchanged(target_data, fitness, data_mtime, fit_mtime)
+
+
+def test_full_backup_restore_rejects_empty_manifest_profile_id(temp_app, tmp_path):
+    zip_path = str(tmp_path / "full-empty-profile.zip")
+    payload = {"schema_version": 2, "entries": {}, "settings": {}}
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("data.json", json.dumps(payload))
+        zf.writestr(
+            "manifest.json",
+            json.dumps(
+                {
+                    "backup_kind": integral_io.FULL_BACKUP_KIND,
+                    "backup_version": integral_io.FULL_BACKUP_VERSION,
+                    "profiles": [""],
+                }
+            ),
+        )
+
+    target_data, fitness, data_mtime, fit_mtime = _seed_full_restore_targets(tmp_path)
+    with pytest.raises(ValueError, match="invalid profile id"):
+        integral_io.restore_backup_file(
+            zip_path, target_data, fitness_db_path=fitness, make_copy=False
+        )
+    _assert_full_restore_targets_unchanged(target_data, fitness, data_mtime, fit_mtime)
+
+
+def test_profile_backup_rejects_unsafe_creative_path(temp_app, tmp_path):
+    profiles.set_active_profile("default")
+    data_path = os.path.join(profiles.get_profile_dir("default"), storage.DATA_FILE_NAME)
+    fitness_path = os.path.join(profiles.get_profile_dir("default"), "fitness.db")
+    storage.save(storage.load())
+    with open(fitness_path, "wb") as handle:
+        handle.write(b"db-keep")
+    before_data_mtime = os.path.getmtime(data_path)
+    before_fit_mtime = os.path.getmtime(fitness_path)
+
+    zip_path = str(tmp_path / "profile-unsafe-creative.zip")
+    _write_minimal_backup_zip(zip_path)
+    with zipfile.ZipFile(zip_path, "a") as zf:
+        zf.writestr("creative/../escape.txt", "pwnd")
+
+    with pytest.raises(ValueError, match="unsafe path"):
+        backup.import_backup(zip_path, merge_profiles=True)
+
+    assert os.path.getmtime(data_path) == before_data_mtime
+    assert os.path.getmtime(fitness_path) == before_fit_mtime
+    assert Path(fitness_path).read_bytes() == b"db-keep"
+
+
 def test_full_backup_restore_rejects_high_compression_ratio(temp_app, tmp_path):
     zip_path = str(tmp_path / "full-ratio.zip")
     declared = 5 * 1024 * 1024

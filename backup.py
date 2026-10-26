@@ -25,10 +25,7 @@ CREATIVE_PREFIX = "creative/"
 
 
 def _manifest_profile_ids(manifest: dict) -> list[str]:
-    raw = manifest.get("profiles", [])
-    if not isinstance(raw, list):
-        raise ValueError("Backup manifest profiles must be a list.")
-    return [profiles.require_safe_profile_id(pid) for pid in raw]
+    return profiles.validate_manifest_profile_ids(manifest)
 
 
 def _write_profile_files(zf: zipfile.ZipFile, profile_id: str) -> list[str]:
@@ -84,8 +81,6 @@ def _restore_creative_files(
         if not normalized.startswith(CREATIVE_PREFIX) or normalized.endswith("/"):
             continue
         rel = normalized[len(CREATIVE_PREFIX) :]
-        if not rel or ".." in rel.split("/"):
-            continue
         dest = os.path.join(creative_root, *rel.split("/"))
         zip_import_safety.copy_zip_member_to_file(zf, name, dest, budget)
         restored += 1
@@ -113,8 +108,6 @@ def _install_creative_tree(staging_creative: str, creative_root: str) -> int:
         for name in filenames:
             abs_path = os.path.join(dirpath, name)
             rel = os.path.relpath(abs_path, staging_creative).replace("\\", "/")
-            if not rel or ".." in rel.split("/"):
-                continue
             dest = os.path.join(creative_root, *rel.split("/"))
             os.makedirs(os.path.dirname(dest), exist_ok=True)
             shutil.copy2(abs_path, dest)
@@ -170,7 +163,14 @@ def validate_backup(zip_path: str) -> dict:
         if manifest.get("backup_version") != BACKUP_VERSION:
             raise ValueError(f"Unsupported backup version: {manifest.get('backup_version')}")
 
-        for pid in _manifest_profile_ids(manifest):
+        profile_ids = _manifest_profile_ids(manifest)
+        zip_import_safety.validate_profile_backup_namelist(
+            list(names),
+            profile_ids=profile_ids,
+            profile_filenames=PROFILE_ARTIFACTS,
+        )
+
+        for pid in profile_ids:
             data_arc = f"profiles/{pid}/data.json"
             if data_arc not in names:
                 raise ValueError(f"Backup missing required file: {data_arc}")

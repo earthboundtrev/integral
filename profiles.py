@@ -23,6 +23,20 @@ def require_safe_profile_id(profile_id: object) -> str:
     return pid
 
 
+def validate_manifest_profile_ids(manifest: dict) -> list[str]:
+    """Validate profile ids declared in a backup manifest (if present)."""
+    if "profiles" not in manifest:
+        return []
+    raw = manifest["profiles"]
+    if not isinstance(raw, list):
+        raise ValueError("Backup manifest profiles must be a list.")
+    ids = [require_safe_profile_id(pid) for pid in raw]
+    active = manifest.get("active_profile_id")
+    if active is not None and str(active).strip():
+        require_safe_profile_id(active)
+    return ids
+
+
 def get_app_dir() -> str:
     return paths.user_data_dir()
 

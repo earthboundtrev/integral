@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import zipfile
 from typing import BinaryIO
+
+import profiles
+
+_ABSOLUTE_ZIP_PATH = re.compile(r"^[A-Za-z]:[/\\]")
 
 CHUNK_SIZE = 64 * 1024
 MAX_ZIP_MEMBERS = 10_000
@@ -65,6 +70,68 @@ def validate_zip_member_count(members: list[str]) -> None:
         raise ZipImportLimitError(
             f"This archive has too many files ({len(members)}; limit {MAX_ZIP_MEMBERS})."
         )
+
+
+def require_safe_zip_member_path(name: str) -> list[str]:
+    """Return normalized path parts or raise ValueError for unsafe zip entry names."""
+    normalized = name.replace("\\", "/").strip()
+    if not normalized:
+        raise ValueError("Backup archive contains an empty path.")
+    if normalized.startswith("/") or _ABSOLUTE_ZIP_PATH.match(normalized):
+        raise ValueError(f"Backup archive contains an unsafe absolute path: {name!r}")
+    parts = [part for part in normalized.split("/") if part]
+    if any(part == ".." for part in parts):
+        raise ValueError(f"Backup archive contains an unsafe path: {name!r}")
+    return parts
+
+
+def _member_path_parts(name: str) -> list[str]:
+    trimmed = name.rstrip("/")
+    if not trimmed:
+        return []
+    return require_safe_zip_member_path(trimmed)
+
+
+def validate_full_backup_namelist(names: list[str]) -> None:
+    """Reject full-app backup zips with unexpected or unsafe member paths."""
+    for name in names:
+        parts = _member_path_parts(name)
+        if not parts:
+            continue
+        if parts in (["data.json"], ["manifest.json"], ["fitness.db"]):
+            continue
+        if parts[0] == "creative":
+            continue
+        raise ValueError(f"Backup archive contains an unexpected entry: {name!r}")
+
+
+def validate_profile_backup_namelist(
+    names: list[str],
+    *,
+    profile_ids: list[str],
+    profile_filenames: tuple[str, ...],
+) -> None:
+    """Reject profile backup zips with unexpected or unsafe member paths."""
+    allowed_profiles = set(profile_ids)
+    for name in names:
+        parts = _member_path_parts(name)
+        if not parts:
+            continue
+        if parts in (["manifest.json"], ["config.json"]):
+            continue
+        if parts[0] == "creative":
+            continue
+        if parts[0] == "profiles":
+            if len(parts) != 3:
+                raise ValueError(f"Backup archive contains an unexpected entry: {name!r}")
+            pid, filename = parts[1], parts[2]
+            profiles.require_safe_profile_id(pid)
+            if pid not in allowed_profiles:
+                raise ValueError(f"Backup archive references unknown profile id: {pid!r}")
+            if filename not in profile_filenames:
+                raise ValueError(f"Backup archive contains an unexpected entry: {name!r}")
+            continue
+        raise ValueError(f"Backup archive contains an unexpected entry: {name!r}")
 
 
 def prepare_zip_import(zf: zipfile.ZipFile) -> ZipImportBudget:
