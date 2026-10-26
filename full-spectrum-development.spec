@@ -69,6 +69,7 @@ a = Analysis(
         "data_payload_registry",
         "external_edit",
         "youtube_takeout",
+        "zip_import_safety",
         "richtext",
         "integral_links",
         "deep_links",
