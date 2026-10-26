@@ -898,6 +898,7 @@ def show_journal_window(
         except OSError as exc:
             messagebox.showerror("Reload from system editor", str(exc), parent=win)
             return
+        external_edit.delete_temp_file(path)
         body_text.configure(state=tk.NORMAL)
         body_text.delete("1.0", tk.END)
         body_text.insert("1.0", loaded)
