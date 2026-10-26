@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import tkinter as tk
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -57,6 +57,19 @@ def test_main_window_zero_accent_when_all_domains_logged(tracker):
     tracker.refresh_dashboard(full=True)
     tracker.root.update()
     assert count_accent_buttons(tracker.root) == 0
+
+
+def test_main_window_sole_accent_during_deep_work(tracker):
+    """#134 reopen: End Deep Work is the only filled accent on Today while active."""
+    tracker._deep_work_session = MagicMock(running=True)
+    tracker._ensure_deep_work_banner()
+    tracker._apply_deep_work_chrome()
+    tracker.root.update()
+    assert tracker._deep_work_end_btn is not None
+    assert tracker._deep_work_end_btn.cget("style") == "Accent.TButton"
+    if tracker._log_one_btn is not None:
+        assert tracker._log_one_btn.cget("style") == "TButton"
+    assert count_accent_buttons(tracker.root) == 1
 
 
 def test_quick_capture_panel_at_most_one_accent(tracker):
