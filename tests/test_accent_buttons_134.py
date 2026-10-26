@@ -17,6 +17,7 @@ from ui_accent import (
 )
 
 import personal_dev_tracker
+from tests.conftest import pump_tk
 from tests.test_sidebar_131 import _mock_tracker_init
 
 
@@ -60,15 +61,26 @@ def test_main_window_zero_accent_when_all_domains_logged(tracker):
 
 
 def test_main_window_sole_accent_during_deep_work(tracker):
-    """#134 reopen: End Deep Work is the only filled accent on Today while active."""
+    """#134 reopen: demote Log one when Deep Work adds End as the sole accent."""
+    pump_tk(tracker.root)
+    assert tracker._log_one_btn is not None
+    assert tracker._log_one_btn.cget("style") == "Accent.TButton"
+    assert count_accent_buttons(tracker.root) == 1
+
     tracker._deep_work_session = MagicMock(running=True)
     tracker._ensure_deep_work_banner()
     tracker._apply_deep_work_chrome()
-    tracker.root.update()
+    pump_tk(tracker.root)
     assert tracker._deep_work_end_btn is not None
     assert tracker._deep_work_end_btn.cget("style") == "Accent.TButton"
-    if tracker._log_one_btn is not None:
-        assert tracker._log_one_btn.cget("style") == "TButton"
+    assert tracker._log_one_btn.cget("style") == "TButton"
+    assert count_accent_buttons(tracker.root) == 1
+
+    tracker._deep_work_session = None
+    tracker._apply_deep_work_chrome()
+    pump_tk(tracker.root)
+    assert tracker._deep_work_end_btn.cget("style") == "TButton"
+    assert tracker._log_one_btn.cget("style") == "Accent.TButton"
     assert count_accent_buttons(tracker.root) == 1
 
 
