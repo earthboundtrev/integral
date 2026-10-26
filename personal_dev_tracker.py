@@ -87,7 +87,13 @@ from data_payload_registry import (
     hydrate_registered_from_migrated,
     merge_extra_top_level_into_payload,
 )
-from vault import is_encrypted_file, load_data_file, load_data_file_with_recovery, save_data_file
+from vault import (
+    VaultPassphraseError,
+    is_encrypted_file,
+    load_data_file,
+    load_data_file_with_recovery,
+    save_data_file,
+)
 from entry_payload import (
     build_entry_payload,
     collect_touched_checklist,
@@ -769,7 +775,7 @@ class PersonalDevelopmentTracker:
                     on_recovery_prompt=on_recovery_prompt,
                     on_both_corrupt_prompt=on_both_corrupt_prompt
                 )
-            except PermissionError:
+            except VaultPassphraseError:
                 if not prompt_vault_unlock(self):
                     raise
                 data = load_data_file_with_recovery(

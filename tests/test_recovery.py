@@ -8,7 +8,14 @@ from pathlib import Path
 
 import pytest
 
-from vault import load_data_file_with_recovery, save_data_file
+from unittest.mock import patch
+
+from vault import (
+    PassphraseRequiredError,
+    WrongPassphraseError,
+    load_data_file_with_recovery,
+    save_data_file,
+)
 
 
 def test_recovery_loads_valid_file_normally(tmp_path):
@@ -274,6 +281,84 @@ def test_recovery_handles_missing_backup_file(tmp_path):
     
     assert len(prompts) == 1
     assert loaded == {}
+
+
+def test_recovery_encrypted_missing_passphrase_not_corruption(tmp_path):
+    """Issue #106: missing passphrase must not trigger backup recovery."""
+    pytest.importorskip("cryptography")
+
+    data_file = tmp_path / "data.json"
+    save_data_file(
+        str(data_file),
+        {"secret": "journal"},
+        encrypted=True,
+        passphrase="correct-pass",
+    )
+
+    recovery_calls: list = []
+    both_corrupt_calls: list = []
+
+    with pytest.raises(PassphraseRequiredError, match="Passphrase required"):
+        load_data_file_with_recovery(
+            str(data_file),
+            passphrase=None,
+            on_recovery_prompt=lambda *a: recovery_calls.append(a) or True,
+            on_both_corrupt_prompt=lambda: both_corrupt_calls.append(True) or True,
+        )
+
+    assert recovery_calls == []
+    assert both_corrupt_calls == []
+    assert list(tmp_path.glob("data.json.corrupt-*")) == []
+    assert list(tmp_path.glob("data.json.bak")) == []
+
+
+def test_recovery_wrong_passphrase_not_corruption(tmp_path):
+    """Issue #106: wrong passphrase must not trigger backup recovery."""
+    pytest.importorskip("cryptography")
+
+    data_file = tmp_path / "data.json"
+    save_data_file(
+        str(data_file),
+        {"secret": "journal"},
+        encrypted=True,
+        passphrase="correct-pass",
+    )
+
+    with pytest.raises(WrongPassphraseError, match="Incorrect passphrase"):
+        load_data_file_with_recovery(
+            str(data_file),
+            passphrase="wrong-pass",
+            on_recovery_prompt=lambda *_: True,
+            on_both_corrupt_prompt=lambda: True,
+        )
+
+    assert list(tmp_path.glob("data.json.corrupt-*")) == []
+
+
+def test_recovery_file_lock_permission_error_not_corruption(tmp_path):
+    """Issue #106: OS PermissionError (e.g. locked file) must not trigger recovery."""
+    data_file = tmp_path / "data.json"
+    payload = {"valid": "data"}
+    save_data_file(str(data_file), payload, encrypted=False, passphrase=None)
+
+    data_path = str(data_file)
+    real_open = open
+
+    def locked_open(file, *args, **kwargs):
+        if file == data_path:
+            raise PermissionError("The process cannot access the file because it is being used by another process")
+        return real_open(file, *args, **kwargs)
+
+    with patch("builtins.open", locked_open):
+        with pytest.raises(PermissionError, match="cannot access"):
+            load_data_file_with_recovery(
+                str(data_file),
+                passphrase=None,
+                on_recovery_prompt=lambda *_: True,
+                on_both_corrupt_prompt=lambda: True,
+            )
+
+    assert list(tmp_path.glob("data.json.corrupt-*")) == []
 
 
 def test_recovery_default_prompts_accept(tmp_path):
