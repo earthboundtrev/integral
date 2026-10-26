@@ -269,11 +269,7 @@ def deep_work_blocks_action(tracker: Any, *, item_id: str | None = None, label: 
         return False
     if not is_hidden_during_deep_work(item_id=item_id, label=label, tracker=tracker):
         return False
-    from tkinter import messagebox
-
-    messagebox.showinfo(
-        "Deep Work",
-        "Hidden during Deep Work.",
-        parent=getattr(tracker, "root", None),
-    )
+    ensure = getattr(tracker, "ensure_status_banner", None)
+    if callable(ensure):
+        ensure().show_info("Hidden during Deep Work.")
     return True
