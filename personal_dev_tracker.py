@@ -128,6 +128,18 @@ def _perf_log(message: str) -> None:
         print(f"[PERF {time.time():.3f}] {message}", file=sys.stderr, flush=True)
 
 
+def format_unreadable_reps_banner_message(count: int) -> str:
+    if count == 1:
+        return (
+            "1 workout entry had unreadable reps and was skipped in progress "
+            "calculations. Your data wasn't changed."
+        )
+    return (
+        f"{count} workout entries had unreadable reps and were skipped in progress "
+        "calculations. Your data wasn't changed."
+    )
+
+
 class PersonalDevelopmentTracker:
     def _init_shell_state(self) -> None:
         """Initialize in-memory tracker fields before load_data (shared with test mocks)."""
@@ -795,9 +807,7 @@ class PersonalDevelopmentTracker:
             migrated = migrate_data(data, self.programs)
             from fitness.reps_normalization import drain_unreadable_reps_warnings
 
-            self._pending_unreadable_reps_warnings = (
-                self._collect_unread_unreadable_reps_warnings(drain_unreadable_reps_warnings())
-            )
+            drained_unreadable_reps_warnings = drain_unreadable_reps_warnings()
             self._extra_top_level = extract_extra_top_level(migrated)
             hydrate_registered_from_migrated(self, migrated)
             apply_ephemeral_from_migrated(self, migrated)
@@ -812,6 +822,9 @@ class PersonalDevelopmentTracker:
             )
             self.settings = apply_todays_log_settings(self.settings)
             self.settings["fitness"] = get_fitness_settings(self.settings)
+            self._pending_unreadable_reps_warnings = self._collect_unread_unreadable_reps_warnings(
+                drained_unreadable_reps_warnings
+            )
             self.sessions = migrated.get("sessions", [])
             self._invalidate_session_counts()
 
@@ -1057,12 +1070,7 @@ class PersonalDevelopmentTracker:
         if not warnings:
             return
         self._pending_unreadable_reps_warnings = []
-        count = len(warnings)
-        noun = "entry" if count == 1 else "entries"
-        message = (
-            f"{count} workout {noun} had unreadable reps and were skipped in progress "
-            "calculations. Your data wasn't changed."
-        )
+        message = format_unreadable_reps_banner_message(len(warnings))
 
         def show_details() -> None:
             lines = [f"{item.get('date', '?')}: {item.get('movement', 'movement')}" for item in warnings]

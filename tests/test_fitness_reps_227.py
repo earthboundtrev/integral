@@ -25,9 +25,12 @@ from fitness.engine import (  # noqa: E402
 from fitness.reps_normalization import (  # noqa: E402
     classify_reps_per_set,
     drain_unreadable_reps_warnings,
+    logger as reps_logger,
     normalize_reps_per_set,
     reset_unreadable_reps_warnings,
 )
+from fitness.intelligence import get_fitness_settings  # noqa: E402
+from personal_dev_tracker import format_unreadable_reps_banner_message  # noqa: E402
 from tests.mock_tracker import mock_tracker_init  # noqa: E402
 
 
@@ -47,6 +50,10 @@ def _cc_session(reps_per_set) -> dict:
 
 
 class TestRepsNormalization(unittest.TestCase):
+    def test_logger_under_integral_hierarchy(self) -> None:
+        self.assertEqual(reps_logger.name, "integral.fitness.reps")
+        self.assertTrue(reps_logger.name.startswith("integral."))
+
     def test_scalar_int_becomes_single_element_list(self) -> None:
         self.assertEqual(normalize_reps_per_set(10), [10])
 
@@ -131,6 +138,47 @@ class TestStartupProgramState(unittest.TestCase):
 
 
 class TestUnreadableRepsBanner(unittest.TestCase):
+    def test_banner_message_singular_and_plural(self) -> None:
+        self.assertIn("entry had", format_unreadable_reps_banner_message(1))
+        self.assertIn("was skipped", format_unreadable_reps_banner_message(1))
+        self.assertIn("entries had", format_unreadable_reps_banner_message(2))
+        self.assertIn("were skipped", format_unreadable_reps_banner_message(2))
+
+    def test_restart_with_persisted_dismissed_ids_suppresses_banner(self) -> None:
+        import personal_dev_tracker
+
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            with mock.patch.object(
+                personal_dev_tracker.PersonalDevelopmentTracker,
+                "__init__",
+                mock_tracker_init,
+            ):
+                tracker = personal_dev_tracker.PersonalDevelopmentTracker(root)
+            entry_id = "2026-07-01|cc-pushups|'abc'"
+            drained = [
+                {
+                    "id": entry_id,
+                    "date": "2026-07-01",
+                    "movement": "cc-pushups",
+                    "raw": "'abc'",
+                }
+            ]
+            tracker.settings = {"dark_mode": False}
+            self.assertEqual(len(tracker._collect_unread_unreadable_reps_warnings(drained)), 1)
+            tracker.settings["fitness"] = get_fitness_settings(
+                {"fitness": {"dismissed_unreadable_reps": [entry_id]}}
+            )
+            pending = tracker._collect_unread_unreadable_reps_warnings(drained)
+            self.assertEqual(pending, [])
+            tracker._pending_unreadable_reps_warnings = pending
+            tracker._banner_host = tk.Frame(root)
+            tracker._show_unreadable_reps_banner_if_needed()
+            self.assertIsNone(tracker._status_banner)
+        finally:
+            root.destroy()
+
     def test_banner_once_per_entry(self) -> None:
         import personal_dev_tracker
 
@@ -161,7 +209,12 @@ class TestUnreadableRepsBanner(unittest.TestCase):
             dismissed = tracker.settings["fitness"]["dismissed_unreadable_reps"]
             self.assertIn("2026-07-01|cc-pushups|\"abc\"", dismissed)
             save_mock.assert_called()
-            tracker._pending_unreadable_reps_warnings = warnings
+            tracker.settings["fitness"] = get_fitness_settings(
+                {"fitness": {"dismissed_unreadable_reps": dismissed}}
+            )
+            tracker._pending_unreadable_reps_warnings = tracker._collect_unread_unreadable_reps_warnings(
+                warnings
+            )
             tracker._show_unreadable_reps_banner_if_needed()
             self.assertEqual(tracker._pending_unreadable_reps_warnings, [])
         finally:

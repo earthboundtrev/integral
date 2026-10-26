@@ -181,12 +181,12 @@ class StatusBanner:
             wraplength=720,
             takefocus=0,
         )
-        text.pack(side=tk.LEFT, fill=tk.X, expand=True)
-
         self._sr_label.config(text=message)
 
         actions = tk.Frame(inner, bg=bg)
         actions.pack(side=tk.RIGHT)
+
+        text.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
         if undo_label and undo_callback:
             self._undo_callback = undo_callback
@@ -206,6 +206,7 @@ class StatusBanner:
                 btn = ttk.Button(
                     actions,
                     text=label,
+                    width=max(len(label) + 2, 8),
                     command=cmd,
                     takefocus=1 if focusable_actions and not actions_disabled else 0,
                 )
