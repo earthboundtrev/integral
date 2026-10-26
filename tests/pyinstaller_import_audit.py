@@ -128,7 +128,7 @@ def collect_required_app_modules(
     return required
 
 
-def parse_hiddenimports_from_spec(spec_path: Path = SPEC_PATH) -> set[str]:
+def _analysis_list_keyword(spec_path: Path, keyword: str) -> ast.List:
     tree = ast.parse(spec_path.read_text(encoding="utf-8"), filename=str(spec_path))
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
@@ -136,15 +136,87 @@ def parse_hiddenimports_from_spec(spec_path: Path = SPEC_PATH) -> set[str]:
         func = node.func
         if not (isinstance(func, ast.Name) and func.id == "Analysis"):
             continue
-        for keyword in node.keywords:
-            if keyword.arg != "hiddenimports" or not isinstance(keyword.value, ast.List):
-                continue
-            hidden: set[str] = set()
-            for element in keyword.value.elts:
-                if isinstance(element, ast.Constant) and isinstance(element.value, str):
-                    hidden.add(element.value)
-            return hidden
-    raise ValueError(f"Analysis(hiddenimports=[...]) not found in {spec_path}")
+        for kw in node.keywords:
+            if kw.arg == keyword and isinstance(kw.value, ast.List):
+                return kw.value
+    raise ValueError(f"Analysis({keyword}=[...]) not found in {spec_path}")
+
+
+def _const_str(node: ast.AST) -> str | None:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    return None
+
+
+def _data_source_path(node: ast.AST) -> str | None:
+    """Map a spec datas tuple source expression to a repo-relative path."""
+    direct = _const_str(node)
+    if direct is not None:
+        return direct
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+        if node.func.attr != "join":
+            return None
+        args = node.args
+        if len(args) < 2:
+            return None
+        if not (isinstance(args[0], ast.Name) and args[0].id == "ROOT"):
+            return None
+        parts = [_const_str(arg) for arg in args[1:]]
+        if not all(parts):
+            return None
+        return Path(*parts).as_posix()
+    return None
+
+
+def parse_hiddenimports_from_spec(spec_path: Path = SPEC_PATH) -> set[str]:
+    hidden_list = _analysis_list_keyword(spec_path, "hiddenimports")
+    hidden: set[str] = set()
+    for element in hidden_list.elts:
+        if isinstance(element, ast.Constant) and isinstance(element.value, str):
+            hidden.add(element.value)
+    return hidden
+
+
+def parse_static_datas_from_spec(spec_path: Path = SPEC_PATH) -> list[tuple[str, str]]:
+    """Static Analysis(datas=[...]) entries (excludes *matplotlib_datas expansion)."""
+    datas_list = _analysis_list_keyword(spec_path, "datas")
+    pairs: list[tuple[str, str]] = []
+    for element in datas_list.elts:
+        if isinstance(element, ast.Starred):
+            continue
+        if not isinstance(element, ast.Tuple) or len(element.elts) != 2:
+            continue
+        src = _data_source_path(element.elts[0])
+        dest = _const_str(element.elts[1])
+        if src is None or dest is None:
+            continue
+        pairs.append((src, dest))
+    if not pairs:
+        raise ValueError(f"No static datas tuples found in {spec_path}")
+    return pairs
+
+
+def parse_collect_all_packages_from_spec(spec_path: Path = SPEC_PATH) -> list[str]:
+    """Packages passed to collect_data_files(...) in the spec (onefile --collect-all)."""
+    tree = ast.parse(spec_path.read_text(encoding="utf-8"), filename=str(spec_path))
+    packages: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        is_collect = (
+            isinstance(func, ast.Name) and func.id == "collect_data_files"
+        ) or (isinstance(func, ast.Attribute) and func.attr == "collect_data_files")
+        if is_collect:
+            if (
+                node.args
+                and isinstance(node.args[0], ast.Constant)
+                and isinstance(node.args[0].value, str)
+            ):
+                packages.add(node.args[0].value)
+    if not packages:
+        raise ValueError(f"collect_data_files(...) not found in {spec_path}")
+    return sorted(packages)
 
 
 def missing_hiddenimports(
