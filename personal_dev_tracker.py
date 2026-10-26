@@ -156,6 +156,7 @@ class PersonalDevelopmentTracker:
         self._status_banner: StatusBanner | None = None
         self._today_build_error_state = TodayBuildErrorState()
         self._fitness_state_dirty = False
+        self._pending_unreadable_reps_warnings: list[dict[str, str]] = []
         self._dashboard_ready = False
         self._categories_tab_built = False
         self._theme_dark: bool | None = None
@@ -234,6 +235,7 @@ class PersonalDevelopmentTracker:
 
         for notice in user_data_migration.consume_user_notices():
             self.ensure_status_banner().show_info(notice)
+        self._show_unreadable_reps_banner_if_needed()
         self._start_day_watch()
         self._start_reminder_scheduler()
         self.sync_quick_capture_panel()
@@ -791,6 +793,11 @@ class PersonalDevelopmentTracker:
                 raise
                 
             migrated = migrate_data(data, self.programs)
+            from fitness.reps_normalization import drain_unreadable_reps_warnings
+
+            self._pending_unreadable_reps_warnings = (
+                self._collect_unread_unreadable_reps_warnings(drain_unreadable_reps_warnings())
+            )
             self._extra_top_level = extract_extra_top_level(migrated)
             hydrate_registered_from_migrated(self, migrated)
             apply_ephemeral_from_migrated(self, migrated)
@@ -1023,6 +1030,59 @@ class PersonalDevelopmentTracker:
                 on_done(True, None)
             return
         threading.Thread(target=run_async, daemon=True).start()
+
+    def _collect_unread_unreadable_reps_warnings(
+        self, warnings: list[dict[str, str]]
+    ) -> list[dict[str, str]]:
+        dismissed = set(get_fitness_settings(self.settings).get("dismissed_unreadable_reps") or [])
+        return [item for item in warnings if item.get("id") not in dismissed]
+
+    def _dismiss_unreadable_reps_warnings(self, warnings: list[dict[str, str]]) -> None:
+        if not warnings:
+            return
+        fitness = self.settings.setdefault("fitness", {})
+        dismissed = list(fitness.get("dismissed_unreadable_reps") or [])
+        seen = set(dismissed)
+        for item in warnings:
+            entry_id = item.get("id")
+            if entry_id and entry_id not in seen:
+                dismissed.append(entry_id)
+                seen.add(entry_id)
+        fitness["dismissed_unreadable_reps"] = dismissed
+        self.settings["fitness"] = get_fitness_settings(self.settings)
+        self.save_data()
+
+    def _show_unreadable_reps_banner_if_needed(self) -> None:
+        warnings = list(self._pending_unreadable_reps_warnings)
+        if not warnings:
+            return
+        self._pending_unreadable_reps_warnings = []
+        count = len(warnings)
+        noun = "entry" if count == 1 else "entries"
+        message = (
+            f"{count} workout {noun} had unreadable reps and were skipped in progress "
+            "calculations. Your data wasn't changed."
+        )
+
+        def show_details() -> None:
+            lines = [f"{item.get('date', '?')}: {item.get('movement', 'movement')}" for item in warnings]
+            messagebox.showinfo(
+                "Unreadable reps",
+                "These logs were skipped when calculating program progress:\n\n"
+                + "\n".join(lines),
+            )
+
+        def dismiss_banner() -> None:
+            self._dismiss_unreadable_reps_warnings(warnings)
+            self.ensure_status_banner().dismiss()
+
+        self.ensure_status_banner().show_info(
+            message,
+            extra_actions=[
+                ("Details", show_details),
+                ("Dismiss", dismiss_banner),
+            ],
+        )
 
     def ensure_status_banner(self) -> StatusBanner:
         if self._status_banner is not None:

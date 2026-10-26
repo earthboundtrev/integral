@@ -45,6 +45,7 @@ a = Analysis(
         "fitness_graphs",
         "fitness",
         "fitness.engine",
+        "fitness.reps_normalization",
         "fitness.ui",
         "fitness.intelligence",
         "fitness_ui",
