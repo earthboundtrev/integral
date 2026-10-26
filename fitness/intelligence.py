@@ -78,7 +78,9 @@ def smart_defaults_for_program(program: dict, sessions: list[dict], program_stat
 
 
 def metric_total(log: dict) -> float:
-    reps = log.get("reps_per_set") or []
+    from fitness.reps_normalization import normalize_reps_per_set
+
+    reps = normalize_reps_per_set(log.get("reps_per_set"))
     if reps:
         return float(sum(reps))
     if log.get("hold_seconds") is not None:
@@ -124,8 +126,10 @@ def cc_sessions_meeting_standard(logs: list[dict], program: dict, movement_key: 
                 "reps_per_set": log.get("reps_per_set"),
                 "hold_seconds": log.get("hold_seconds"),
                 "form_quality": log.get("form_quality", 10),
+                "date": log.get("date"),
             },
             program,
+            session_date=log.get("date"),
         )
         if evaluation.get("ready_to_advance"):
             met.append(log)
@@ -191,7 +195,9 @@ def advancement_evidence(program: dict, logs_at_step: list[dict], settings: dict
         heights = [log.get("height_cm") for log in logs_at_step if log.get("height_cm")]
         if heights:
             evidence.append(f"Height trend: {heights[-3:]}")
-        reps = [sum(log.get("reps_per_set") or []) for log in logs_at_step[-3:]]
+        from fitness.reps_normalization import normalize_reps_per_set
+
+        reps = [sum(normalize_reps_per_set(log.get("reps_per_set"))) for log in logs_at_step[-3:]]
         evidence.append(f"Recent volume: {reps}")
 
     return evidence

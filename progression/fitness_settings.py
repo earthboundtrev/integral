@@ -28,6 +28,7 @@ def default_fitness_settings() -> dict:
         "disable_progression_locks": False,
         "manual_placement_enabled": True,
         "placements": {},
+        "dismissed_unreadable_reps": [],
         LEGACY_MOVEMENT_SETS_VERSION_KEY: 0,
     }
 
@@ -45,7 +46,12 @@ def get_fitness_settings(settings: dict | None) -> dict:
             {
                 key: stored[key]
                 for key in stored
-                if key in merged or key in (LEGACY_MOVEMENT_SETS_VERSION_KEY, "placements")
+                if key in merged
+                or key in (
+                    LEGACY_MOVEMENT_SETS_VERSION_KEY,
+                    "placements",
+                    "dismissed_unreadable_reps",
+                )
             }
         )
     placements = stored.get("placements") if isinstance(stored, dict) else None

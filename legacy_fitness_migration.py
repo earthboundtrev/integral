@@ -18,6 +18,8 @@ from datetime import datetime
 from typing import Any
 
 import paths
+from fitness.reps_normalization import is_numeric as _is_numeric
+from fitness.reps_normalization import normalize_reps_per_set as _normalize_reps_per_set
 from progression.db import FitnessRepository
 from progression.models import Exercise, WorkoutSession, WorkoutSet
 from progression.fitness_settings import (
@@ -53,10 +55,6 @@ def format_session_ref(index: int, sess: Any) -> str:
     else:
         date_part = "(no date)"
     return f"session at index {index} (date {date_part})"
-
-
-def _is_numeric(value: Any) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
 def validate_legacy_session(sess: Any, index: int) -> str | None:
@@ -348,16 +346,6 @@ def _movement_log_label(log: dict) -> str:
         or log.get("chain_key")
         or "movement"
     )
-
-
-def _normalize_reps_per_set(value: Any) -> list[int | float]:
-    if value is None:
-        return []
-    if isinstance(value, list):
-        return [v for v in value if _is_numeric(v)]
-    if _is_numeric(value):
-        return [value]
-    return []
 
 
 class LegacyExerciseResolver:

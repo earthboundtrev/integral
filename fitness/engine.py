@@ -8,6 +8,11 @@ import re
 from datetime import datetime, timedelta
 from typing import Any
 
+from fitness.reps_normalization import (
+    normalize_reps_per_set,
+    reps_for_evaluation,
+    reset_unreadable_reps_warnings,
+)
 from paths import programs_dir
 
 PROGRAMS_DIR = programs_dir()
@@ -127,6 +132,8 @@ def get_step_definition(program: dict, movement_key: str, step: int) -> dict | N
 def meets_sets_reps_standard(reps_per_set: list[int], standard: dict) -> bool:
     if standard.get("type") != "sets_reps":
         return False
+    if not isinstance(reps_per_set, list):
+        return False
     needed_sets = standard["sets"]
     needed_reps = standard["reps"]
     if len(reps_per_set) < needed_sets:
@@ -138,17 +145,23 @@ def meets_hold_standard(hold_seconds: float, standard: dict) -> bool:
     return standard.get("type") == "hold_seconds" and hold_seconds >= standard["seconds"]
 
 
-def evaluate_session_log(log: dict, program: dict) -> dict[str, Any]:
+def evaluate_session_log(
+    log: dict,
+    program: dict,
+    *,
+    session_date: str | None = None,
+) -> dict[str, Any]:
     """Return advancement hints for a single movement log entry."""
     model = program["progression_model"]
     result: dict[str, Any] = {"ready_to_advance": False, "trend": "logged", "messages": []}
+    eval_date = session_date or log.get("date")
 
     if model == "step_ladder":
         step_def = get_step_definition(program, log["movement_key"], log["step"])
         if not step_def:
             return result
         standard = parse_standard(step_def["progression"])
-        reps = log.get("reps_per_set") or []
+        reps = reps_for_evaluation(log, date=eval_date)
         hold_seconds = log.get("hold_seconds")
         if hold_seconds is not None:
             if meets_hold_standard(float(hold_seconds), standard):
@@ -179,7 +192,7 @@ def evaluate_session_log(log: dict, program: dict) -> dict[str, Any]:
         if not step_def:
             return result
         standard = parse_standard(step_def["progression"])
-        reps = log.get("reps_per_set") or []
+        reps = reps_for_evaluation(log, date=eval_date)
         if reps and meets_sets_reps_standard(reps, standard):
             result["ready_to_advance"] = True
             result["messages"].append(f"Met PARC progression: {step_def['progression']}")
@@ -197,6 +210,7 @@ def compute_program_state(
     settings: dict | None = None,
 ) -> dict[str, Any]:
     """Derive current step/rep level and trends from session history."""
+    reset_unreadable_reps_warnings()
     settings = settings or {}
     state: dict[str, Any] = {}
 
@@ -249,8 +263,10 @@ def compute_cc_state(program: dict, sessions: list[dict], settings: dict | None 
                 "reps_per_set": latest.get("reps_per_set"),
                 "hold_seconds": latest.get("hold_seconds"),
                 "form_quality": latest.get("form_quality"),
+                "date": latest.get("date"),
             },
             program,
+            session_date=latest.get("date"),
         )
         met_sessions = cc_sessions_meeting_standard(at_step, program, key, current_step)
         ready = len(met_sessions) >= fitness_settings["cc_sessions_for_advance"] and evaluation["ready_to_advance"]
@@ -300,8 +316,10 @@ def compute_parc_state(program: dict, sessions: list[dict], settings: dict | Non
                 "step": current_step,
                 "reps_per_set": latest.get("reps_per_set"),
                 "height_cm": latest.get("height_cm"),
+                "date": latest.get("date"),
             },
             program,
+            session_date=latest.get("date"),
         )
         item_state = {
             "current_step": current_step,
@@ -370,7 +388,7 @@ def classify_trend(logs_at_step: list[dict]) -> str:
         return "plateau"
     totals = []
     for log in logs_at_step[-4:]:
-        reps = log.get("reps_per_set") or []
+        reps = normalize_reps_per_set(log.get("reps_per_set"))
         totals.append(sum(reps) if reps else float(log.get("hold_seconds") or 0))
     if len(totals) >= 2 and totals[-1] > totals[0]:
         return "improving"
