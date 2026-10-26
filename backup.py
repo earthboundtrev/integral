@@ -8,12 +8,15 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import tempfile
 import zipfile
 from datetime import datetime
 
 import paths
 import profiles
 import storage
+import zip_import_safety
 
 BACKUP_VERSION = 1
 MANIFEST_NAME = "manifest.json"
@@ -62,9 +65,12 @@ def _write_creative_files(zf: zipfile.ZipFile, creative_root: str | None = None)
     return included
 
 
-def _restore_creative_files(zf: zipfile.ZipFile, creative_root: str | None = None) -> int:
-    root = creative_root if creative_root is not None else paths.creative_projects_dir()
-    os.makedirs(root, exist_ok=True)
+def _restore_creative_files(
+    zf: zipfile.ZipFile,
+    creative_root: str,
+    budget: zip_import_safety.ZipImportBudget,
+) -> int:
+    os.makedirs(creative_root, exist_ok=True)
     restored = 0
     for name in zf.namelist():
         normalized = name.replace("\\", "/")
@@ -73,12 +79,39 @@ def _restore_creative_files(zf: zipfile.ZipFile, creative_root: str | None = Non
         rel = normalized[len(CREATIVE_PREFIX) :]
         if not rel or ".." in rel.split("/"):
             continue
-        dest = os.path.join(root, *rel.split("/"))
-        os.makedirs(os.path.dirname(dest), exist_ok=True)
-        with zf.open(name) as src, open(dest, "wb") as dst:
-            dst.write(src.read())
+        dest = os.path.join(creative_root, *rel.split("/"))
+        zip_import_safety.copy_zip_member_to_file(zf, name, dest, budget)
         restored += 1
     return restored
+
+
+def _install_profile_artifacts(staging_profiles: str, profile_id: str) -> None:
+    dest_dir = profiles.get_profile_dir(profile_id)
+    os.makedirs(dest_dir, exist_ok=True)
+    staged_dir = os.path.join(staging_profiles, profile_id)
+    if not os.path.isdir(staged_dir):
+        return
+    for filename in PROFILE_ARTIFACTS:
+        src = os.path.join(staged_dir, filename)
+        if os.path.isfile(src):
+            shutil.copy2(src, os.path.join(dest_dir, filename))
+
+
+def _install_creative_tree(staging_creative: str, creative_root: str) -> int:
+    if not os.path.isdir(staging_creative):
+        return 0
+    installed = 0
+    for dirpath, _dirnames, filenames in os.walk(staging_creative):
+        for name in filenames:
+            abs_path = os.path.join(dirpath, name)
+            rel = os.path.relpath(abs_path, staging_creative).replace("\\", "/")
+            if not rel or ".." in rel.split("/"):
+                continue
+            dest = os.path.join(creative_root, *rel.split("/"))
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            shutil.copy2(abs_path, dest)
+            installed += 1
+    return installed
 
 
 def export_backup(
@@ -116,13 +149,16 @@ def export_backup(
 def validate_backup(zip_path: str) -> dict:
     """Verify backup structure. Raises ValueError if invalid."""
     with zipfile.ZipFile(zip_path, "r") as zf:
+        budget = zip_import_safety.prepare_zip_import(zf)
         names = set(zf.namelist())
         if MANIFEST_NAME not in names:
             raise ValueError("Backup missing manifest.json")
         if "config.json" not in names:
             raise ValueError("Backup missing config.json")
 
-        manifest = json.loads(zf.read(MANIFEST_NAME))
+        manifest = json.loads(
+            zip_import_safety.read_zip_member_bytes(zf, MANIFEST_NAME, budget).decode("utf-8")
+        )
         if manifest.get("backup_version") != BACKUP_VERSION:
             raise ValueError(f"Unsupported backup version: {manifest.get('backup_version')}")
 
@@ -143,25 +179,38 @@ def import_backup(
     """Restore profiles and creative documents from a validated backup zip."""
     manifest = validate_backup(zip_path)
     profiles.ensure_app_structure()
+    creative_dest = creative_root if creative_root is not None else paths.creative_projects_dir()
 
     with zipfile.ZipFile(zip_path, "r") as zf:
-        imported_config = json.loads(zf.read("config.json"))
+        budget = zip_import_safety.prepare_zip_import(zf)
+        imported_config = json.loads(
+            zip_import_safety.read_zip_member_bytes(zf, "config.json", budget).decode("utf-8")
+        )
 
-        for pid in manifest.get("profiles", []):
-            dest_dir = profiles.get_profile_dir(pid)
-            os.makedirs(dest_dir, exist_ok=True)
-            prefix = f"profiles/{pid}/"
-            for name in zf.namelist():
-                if not name.startswith(prefix) or name.endswith("/"):
-                    continue
-                filename = name[len(prefix) :]
-                if filename not in PROFILE_ARTIFACTS:
-                    continue
-                target = os.path.join(dest_dir, filename)
-                with zf.open(name) as src, open(target, "wb") as dst:
-                    dst.write(src.read())
+        with tempfile.TemporaryDirectory() as staging:
+            staging_profiles = os.path.join(staging, "profiles")
+            staging_creative = os.path.join(staging, CREATIVE_PREFIX.rstrip("/"))
+            os.makedirs(staging_profiles, exist_ok=True)
 
-        restored_docs = _restore_creative_files(zf, creative_root=creative_root)
+            for pid in manifest.get("profiles", []):
+                prefix = f"profiles/{pid}/"
+                staged_profile = os.path.join(staging_profiles, pid)
+                os.makedirs(staged_profile, exist_ok=True)
+                for name in zf.namelist():
+                    if not name.startswith(prefix) or name.endswith("/"):
+                        continue
+                    filename = name[len(prefix) :]
+                    if filename not in PROFILE_ARTIFACTS:
+                        continue
+                    target = os.path.join(staged_profile, filename)
+                    zip_import_safety.copy_zip_member_to_file(zf, name, target, budget)
+
+            restored_docs = _restore_creative_files(zf, staging_creative, budget)
+
+            for pid in manifest.get("profiles", []):
+                _install_profile_artifacts(staging_profiles, pid)
+            restored_docs = _install_creative_tree(staging_creative, creative_dest)
+
         manifest = {**manifest, "restored_creative_files": restored_docs}
 
         if merge_profiles:

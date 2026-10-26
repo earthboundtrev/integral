@@ -9,6 +9,8 @@ import zipfile
 from datetime import datetime, timezone
 from typing import Any
 
+import zip_import_safety
+
 CONTENT_CATEGORY = "Content You Have Consumed"
 ART_CATEGORY = "Art You Have Consumed"
 WATCH_HISTORY_NAMES = ("watch-history.json", "watch-history.html")
@@ -165,11 +167,12 @@ def load_events_from_path(path: str) -> tuple[list[dict[str, Any]], int]:
     lower = path.lower()
     if lower.endswith(".zip"):
         with zipfile.ZipFile(path, "r") as zf:
+            budget = zip_import_safety.prepare_zip_import(zf)
             member = find_watch_history_in_zip(zf)
-            records = load_takeout_json_bytes(zf.read(member))
+            raw = zip_import_safety.read_zip_member_bytes(zf, member, budget)
+            records = load_takeout_json_bytes(raw)
     elif lower.endswith(".json"):
-        with open(path, "rb") as handle:
-            records = load_takeout_json_bytes(handle.read())
+        records = load_takeout_json_bytes(zip_import_safety.read_plain_file_bytes(path))
     else:
         raise ValueError("Choose a watch-history.json file or a Takeout .zip.")
     return parse_takeout_records(records)
