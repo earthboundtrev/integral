@@ -41,22 +41,37 @@ def test_rejects_symlinked_profile_dir(temp_app, tmp_path):
     marker.write_text("{}", encoding="utf-8")
 
     profiles.ensure_app_structure()
+    config = profiles.load_config()
+    prior_active = config["active_profile_id"]
+    prior_profiles = list(config.get("profiles") or [])
     profiles_root = profiles.get_profiles_root()
     link_name = "linked-prof"
     profile_dir = os.path.join(profiles_root, link_name)
-    if os.path.isdir(profile_dir):
-        os.rmdir(profile_dir)
-    os.symlink(str(outside), profile_dir, target_is_directory=True)
+    try:
+        if os.path.lexists(profile_dir):
+            if os.path.islink(profile_dir):
+                os.unlink(profile_dir)
+            elif os.path.isdir(profile_dir):
+                os.rmdir(profile_dir)
+        os.symlink(str(outside), profile_dir, target_is_directory=True)
 
-    config = profiles.load_config()
-    if not any(p["id"] == link_name for p in config["profiles"]):
-        config["profiles"].append({"id": link_name, "name": "Linked"})
-    config["active_profile_id"] = link_name
-    profiles.save_config(config)
+        if not any(p["id"] == link_name for p in config["profiles"]):
+            config["profiles"].append({"id": link_name, "name": "Linked"})
+        config["active_profile_id"] = link_name
+        profiles.save_config(config)
 
-    src = tmp_path / "tracker.json"
-    src.write_text('{"entries":{"x":1}}', encoding="utf-8")
-    before = marker.read_text(encoding="utf-8")
-    with pytest.raises(ProfileJournalSyncError):
-        profile_journal_sync.sync_tracker_journal_to_active_profile(str(src))
-    assert marker.read_text(encoding="utf-8") == before
+        src = tmp_path / "tracker.json"
+        src.write_text('{"entries":{"x":1}}', encoding="utf-8")
+        before = marker.read_text(encoding="utf-8")
+        with pytest.raises(ProfileJournalSyncError):
+            profile_journal_sync.sync_tracker_journal_to_active_profile(str(src))
+        assert marker.read_text(encoding="utf-8") == before
+    finally:
+        config = profiles.load_config()
+        config["active_profile_id"] = prior_active
+        config["profiles"] = [p for p in config.get("profiles") or [] if p.get("id") != link_name]
+        if not any(p.get("id") == prior_active for p in config["profiles"]):
+            config["profiles"] = prior_profiles
+        profiles.save_config(config)
+        if os.path.islink(profile_dir):
+            os.unlink(profile_dir)
