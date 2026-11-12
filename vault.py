@@ -178,6 +178,20 @@ def drop_mismatched_journal_backup_after_journal_open(data_path: str) -> None:
         _remove_mismatched_journal_backup(data_path, encrypted=live_format)
 
 
+def _drop_mismatched_backups_on_validated_journal_paths() -> None:
+    for data_path in _validated_journal_sweep_data_paths():
+        live_format = confirmed_live_journal_encrypted(data_path)
+        if live_format is None:
+            continue
+        _remove_mismatched_journal_backup(data_path, encrypted=live_format)
+
+
+def drop_mismatched_journal_backups_after_journal_open() -> None:
+    """Drop mismatched ``.bak`` files on every validated journal path after open."""
+    with _save_lock:
+        _drop_mismatched_backups_on_validated_journal_paths()
+
+
 def retry_journal_save_artifact_cleanup(data_path: str) -> None:
     """Retry removing a leftover save temp for one journal path (pre-save only)."""
     try_remove_leftover_save_temp(data_path)
@@ -217,6 +231,15 @@ def iter_journal_sweep_targets() -> list[tuple[str, str]]:
         data_path = os.path.join(profile_dir, _JOURNAL_BASENAME)
         _append(data_path, profile_dir)
     return out
+
+
+def _validated_journal_sweep_data_paths() -> list[str]:
+    """Journal ``data.json`` paths that pass container validation (issue #275-style paths)."""
+    paths_out: list[str] = []
+    for data_path, container_dir in iter_journal_sweep_targets():
+        if _journal_artifacts_contained(data_path, container_dir):
+            paths_out.append(data_path)
+    return paths_out
 
 
 def sweep_journal_save_artifacts_at_startup() -> None:
@@ -446,7 +469,6 @@ def save_data_file(path: str, payload: dict[str, Any], *, encrypted: bool, passp
                 rotated = True
 
             os.replace(temp_path, path)
-            drop_opposite_format_journal_backup(path, encrypted=encrypted)
             try_remove_leftover_save_temp(path)
         except Exception:
             if os.path.exists(temp_path):
@@ -460,3 +482,5 @@ def save_data_file(path: str, payload: dict[str, Any], *, encrypted: bool, passp
                 except OSError:
                     pass
             raise
+    with _save_lock:
+        _drop_mismatched_backups_on_validated_journal_paths()
