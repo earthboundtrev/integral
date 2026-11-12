@@ -20,6 +20,8 @@ from tests.test_data_payload_registry_177 import _minimal_v2_payload
 from vault import (
     _LEFTOVER_SAVE_TEMP_WARNING,
     _MISMATCHED_JOURNAL_BACKUP_WARNING,
+    _STARTUP_DEFER_BACKUP_CLEANUP_WARNING,
+    _SWEEP_PATH_SKIPPED_WARNING,
     save_data_file,
     save_temp_path,
     sweep_journal_save_artifacts_at_startup,
@@ -232,6 +234,73 @@ def test_change_passphrase_confirm_cancel_is_silent(tk_root, request):
     assert not any(
         name == "showerror" and args and args[0] == "Mismatch" for name, args, _kwargs in calls
     )
+
+
+def test_startup_keeps_bak_when_primary_unreadable(tmp_path, monkeypatch):
+    pytest.importorskip("cryptography")
+    log_file = _configure_integral_log(monkeypatch, tmp_path)
+    data_file = tmp_path / "data.json"
+    bak_file = tmp_path / "data.json.bak"
+    save_data_file(str(bak_file), {"from": "backup"}, encrypted=True, passphrase="secret")
+    with open(data_file, "w", encoding="utf-8") as handle:
+        handle.write('{"integral_encrypted": true, "truncated')
+
+    with patch(
+        "vault.iter_journal_sweep_targets",
+        return_value=[(str(data_file), str(tmp_path))],
+    ):
+        sweep_journal_save_artifacts_at_startup()
+
+    assert bak_file.exists()
+    assert _STARTUP_DEFER_BACKUP_CLEANUP_WARNING in _read_log(log_file)
+
+
+def test_sweep_skips_traversal_escape_path(tmp_path, monkeypatch):
+    log_file = _configure_integral_log(monkeypatch, tmp_path)
+    container = tmp_path / "profiles" / "default"
+    container.mkdir(parents=True)
+    escaped = tmp_path / "escaped"
+    escaped.mkdir()
+    escaped_journal = escaped / "data.json"
+    save_data_file(str(escaped_journal), {"escaped": True}, encrypted=False, passphrase=None)
+    escaped_temp = Path(save_temp_path(str(escaped_journal)))
+    escaped_temp.write_text("{}", encoding="utf-8")
+
+    with patch(
+        "vault.iter_journal_sweep_targets",
+        return_value=[(str(escaped_journal), str(container))],
+    ):
+        sweep_journal_save_artifacts_at_startup()
+
+    assert escaped_temp.exists()
+    assert _SWEEP_PATH_SKIPPED_WARNING in _read_log(log_file)
+
+
+@pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks unsupported")
+def test_sweep_skips_symlink_escape(tmp_path, monkeypatch):
+    try:
+        outside = tmp_path / "outside"
+        profile_dir = tmp_path / "profiles" / "default"
+        outside.mkdir()
+        profile_dir.mkdir(parents=True)
+        outside_journal = outside / "data.json"
+        save_data_file(str(outside_journal), {"v": 1}, encrypted=False, passphrase=None)
+        outside_temp = Path(save_temp_path(str(outside_journal)))
+        outside_temp.write_text("{}", encoding="utf-8")
+        link = profile_dir / "data.json"
+        link.symlink_to(outside_journal, target_is_directory=False)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks unsupported on this platform")
+
+    log_file = _configure_integral_log(monkeypatch, tmp_path)
+    with patch(
+        "vault.iter_journal_sweep_targets",
+        return_value=[(str(link), str(profile_dir))],
+    ):
+        sweep_journal_save_artifacts_at_startup()
+
+    assert outside_temp.exists()
+    assert _SWEEP_PATH_SKIPPED_WARNING in _read_log(log_file)
 
 
 def test_tracker_startup_invokes_startup_sweep(tmp_path, monkeypatch, tk_root):
