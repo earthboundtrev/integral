@@ -10,7 +10,8 @@ Write-Host "Installing dependencies..."
 python -m pip install -r requirements.txt -q
 python -m pip install -r requirements-build.txt -q
 
-if ($env:INTEGRAL_CI_BUILD -eq "1") {
+$useCommittedIcon = ($env:INTEGRAL_CI_BUILD -eq "1") -or ($env:INTEGRAL_WINDOWS_EXE_CI -eq "1")
+if ($useCommittedIcon) {
     if (-not (Test-Path "assets\icon.ico")) {
         Write-Error "CI build requires committed assets\icon.ico (do not run build_icon.py in CI)."
         exit 1
