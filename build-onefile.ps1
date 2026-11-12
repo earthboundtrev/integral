@@ -101,5 +101,9 @@ Write-Host ""
 Write-Host "Done. Your app is here:"
 Write-Host "  dist\Integral.exe"
 Write-Host ""
-Write-Host "Double-click that file to run. Data saves to:"
-Write-Host "  %APPDATA%\Integral\data.json"
+if ($env:INTEGRAL_CI_BUILD -eq "1") {
+    Write-Host "CI build: default data folder is %APPDATA%\Integral-test\ (not production Integral)."
+} else {
+    Write-Host "Double-click that file to run. Data saves to:"
+    Write-Host "  %APPDATA%\Integral\data.json"
+}

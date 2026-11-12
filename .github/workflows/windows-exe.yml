@@ -14,10 +14,12 @@ jobs:
     runs-on: windows-latest
     env:
       INTEGRAL_WINDOWS_EXE_CI: "1"
+      INTEGRAL_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      INTEGRAL_PR_NUMBER: ${{ github.event.pull_request.number }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
         with:
           python-version: "3.12"
           cache: pip
@@ -51,32 +53,12 @@ jobs:
         run: ./scripts/ci_smoke_windows_exe.ps1 -ExePath dist/Integral.exe -Seconds 20
 
       - name: Bundle artifact files (BUILD.txt, Run-Test.cmd)
-        shell: pwsh
-        run: |
-          $pr = '${{ github.event.pull_request.number }}'
-          if (-not $pr) { $pr = 'manual' }
-          $built = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss'Z'")
-          @(
-            "pull_request: $pr",
-            "commit: $env:GITHUB_SHA",
-            "built_utc: $built",
-            "data_folder_default: %APPDATA%\Integral-test",
-            "run_test_cmd: sets INTEGRAL_DATA_DIR=%TEMP%\Integral-RunTest"
-          ) | Set-Content -Path dist/BUILD.txt -Encoding utf8
-          Copy-Item -Path scripts/Run-Test.cmd -Destination dist/Run-Test.cmd
-
-      - name: Artifact name
         id: artifact
         shell: pwsh
-        run: |
-          $pr = '${{ github.event.pull_request.number }}'
-          if (-not $pr) { $pr = 'manual' }
-          $short = $env:GITHUB_SHA.Substring(0, 7)
-          $name = "integral-pr${pr}-${short}"
-          "name=$name" >> $env:GITHUB_OUTPUT
+        run: ./scripts/ci_bundle_pr_build.ps1
 
       - name: Upload PR build bundle
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ steps.artifact.outputs.name }}
           path: |
