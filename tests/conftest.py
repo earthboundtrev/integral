@@ -4,6 +4,12 @@ from __future__ import annotations
 
 import os
 import sys
+
+if sys.platform == "win32" and os.environ.get("INTEGRAL_WINDOWS_EXE_CI") == "1":
+    _py_base = sys.base_prefix
+    os.environ.setdefault("TCL_LIBRARY", os.path.join(_py_base, "tcl", "tcl8.6"))
+    os.environ.setdefault("TK_LIBRARY", os.path.join(_py_base, "tcl", "tk8.6"))
+
 import tkinter as tk
 from collections.abc import Iterator
 from unittest.mock import patch
@@ -115,6 +121,7 @@ def pytest_configure(config: pytest.Config) -> None:
 
 
 # GitHub Actions windows-latest: Tk focus / clamp geometry differs from dev machines.
+# NEEDS-WINDOWS (real machine, INTEGRAL_WINDOWS_EXE_CI unset): docs/WINDOWS_PR_BUILD_CHECKLIST.md
 _GHA_WINDOWS_EXE_SKIP_NODEIDS = frozenset(
     {
         "tests/test_app_shell_128.py::test_theme_toggle_preserves_inline_todo_draft_and_focus",
@@ -130,7 +137,10 @@ _GHA_WINDOWS_EXE_SKIP_NODEIDS = frozenset(
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
     if os.environ.get("INTEGRAL_WINDOWS_EXE_CI") != "1" or sys.platform != "win32":
         return
-    reason = "Tk focus/layout differs on GitHub Actions windows-latest (see #260 CI job)"
+    reason = (
+        "Tk focus/layout differs on GitHub Actions windows-latest "
+        "(NEEDS-WINDOWS: docs/WINDOWS_PR_BUILD_CHECKLIST.md)"
+    )
     skip = pytest.mark.skip(reason=reason)
     for item in items:
         if item.nodeid in _GHA_WINDOWS_EXE_SKIP_NODEIDS:

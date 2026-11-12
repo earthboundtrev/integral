@@ -12,6 +12,11 @@ from urllib.request import Request, urlopen
 SECTION_KEYS = ("today", "upcoming")
 DEFAULT_QUICK_CAPTURE = {"enabled": False, "collapsed": {"today": False, "upcoming": False}}
 
+QC_TODO_INITIAL_VISIBLE = 50
+QC_TODO_SHOW_MORE_STEP = 50
+QC_TODO_MAX_VISIBLE_TOTAL = 300
+QC_BUILDING_SETTINGS_KEY = "quick_capture_building"
+
 _YOUTUBE_HOSTS = (
     "youtube.com",
     "www.youtube.com",
@@ -64,6 +69,57 @@ def apply_quick_capture_settings(settings: dict | None, quick_capture: dict) -> 
 
 def is_quick_capture_enabled(settings: dict | None) -> bool:
     return bool(normalize_quick_capture_settings(settings).get("enabled"))
+
+
+def is_quick_capture_building(settings: dict | None) -> bool:
+    return bool((settings or {}).get(QC_BUILDING_SETTINGS_KEY))
+
+
+def settings_for_save(settings: dict | None) -> dict:
+    """Persist settings; during an in-flight build, do not write enabled=true (#220)."""
+    out = dict(settings or {})
+    if not out.get(QC_BUILDING_SETTINGS_KEY):
+        return out
+    out = dict(out)
+    qc = normalize_quick_capture_settings(out)
+    out["quick_capture"] = {**qc, "enabled": False}
+    return out
+
+
+def commit_build_success(settings: dict | None) -> dict:
+    out = dict(settings or {})
+    out.pop(QC_BUILDING_SETTINGS_KEY, None)
+    return apply_quick_capture_settings(out, {"enabled": True})
+
+
+def commit_build_failure(settings: dict | None) -> dict:
+    out = dict(settings or {})
+    out.pop(QC_BUILDING_SETTINGS_KEY, None)
+    return apply_quick_capture_settings(out, {"enabled": False})
+
+
+def compute_rendered_todo_counts(
+    *,
+    today_count: int,
+    upcoming_count: int,
+    visible_today_limit: int,
+    visible_upcoming_limit: int,
+    max_total: int = QC_TODO_MAX_VISIBLE_TOTAL,
+) -> tuple[int, int]:
+    """Return how many rows to render per section; today (incl. overdue) wins the cap (#219)."""
+    want_today = min(max(0, visible_today_limit), today_count)
+    want_upcoming = min(max(0, visible_upcoming_limit), upcoming_count)
+    today_render = min(want_today, today_count, max_total)
+    remaining = max(0, max_total - today_render)
+    upcoming_render = min(want_upcoming, upcoming_count, remaining)
+    if today_render + upcoming_render > max_total:
+        today_render = min(today_count, max_total)
+        upcoming_render = min(upcoming_count, max(0, max_total - today_render))
+    return today_render, upcoming_render
+
+
+def todo_list_total(today_count: int, upcoming_count: int) -> int:
+    return today_count + upcoming_count
 
 
 def is_section_collapsed(settings: dict | None, section: str) -> bool:

@@ -37,6 +37,23 @@ if TYPE_CHECKING:
     from personal_dev_tracker import PersonalDevelopmentTracker
 
 
+def wait_for_tracker_save_idle(tracker: PersonalDevelopmentTracker, *, timeout_s: float = 8.0) -> bool:
+    """Wait until async journal writes finish without busy-spinning the UI thread."""
+    import time
+
+    deadline = time.monotonic() + timeout_s
+    while getattr(tracker, "_save_write_in_progress", False):
+        if time.monotonic() > deadline:
+            return False
+        try:
+            tracker.root.update_idletasks()
+            tracker.root.update()
+        except tk.TclError:
+            return True
+        time.sleep(0.02)
+    return True
+
+
 def _active_fitness_db_path(
     tracker: PersonalDevelopmentTracker, *, require_exists: bool = True
 ) -> str | None:
@@ -279,20 +296,6 @@ def show_security_dialog(tracker: PersonalDevelopmentTracker) -> None:
         wraplength=500,
     ).pack(anchor="w", padx=15, pady=8)
 
-    def _wait_for_save_idle() -> bool:
-        import time
-
-        deadline = time.monotonic() + 8.0
-        while getattr(tracker, "_save_write_in_progress", False):
-            if time.monotonic() > deadline:
-                return False
-            try:
-                tracker.root.update_idletasks()
-                tracker.root.update()
-            except tk.TclError:
-                return True
-        return True
-
     def _save_security_settings() -> BaseException | None:
         """Flush settings to disk; return an error when the write fails."""
         err_holder: list[BaseException | None] = [None]
@@ -302,7 +305,7 @@ def show_security_dialog(tracker: PersonalDevelopmentTracker) -> None:
             ok_holder[0] = ok
             err_holder[0] = err
 
-        if not _wait_for_save_idle():
+        if not wait_for_tracker_save_idle(tracker):
             return OSError("Another save is still in progress. Try again in a moment.")
         tracker.save_data(flush=True, on_complete=on_complete)
         if ok_holder[0]:
@@ -397,6 +400,8 @@ def show_security_dialog(tracker: PersonalDevelopmentTracker) -> None:
         if not new:
             return
         confirm = simpledialog.askstring("Confirm", "Confirm new passphrase:", show="*", parent=window)
+        if not confirm:
+            return
         if new != confirm:
             messagebox.showerror("Mismatch", "Passphrases do not match.")
             return

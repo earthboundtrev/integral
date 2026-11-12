@@ -10,7 +10,8 @@ Write-Host "Installing dependencies..."
 python -m pip install -r requirements.txt -q
 python -m pip install -r requirements-build.txt -q
 
-if ($env:INTEGRAL_CI_BUILD -eq "1") {
+$useCommittedIcon = ($env:INTEGRAL_CI_BUILD -eq "1") -or ($env:INTEGRAL_WINDOWS_EXE_CI -eq "1")
+if ($useCommittedIcon) {
     if (-not (Test-Path "assets\icon.ico")) {
         Write-Error "CI build requires committed assets\icon.ico (do not run build_icon.py in CI)."
         exit 1
@@ -101,5 +102,9 @@ Write-Host ""
 Write-Host "Done. Your app is here:"
 Write-Host "  dist\Integral.exe"
 Write-Host ""
-Write-Host "Double-click that file to run. Data saves to:"
-Write-Host "  %APPDATA%\Integral\data.json"
+if ($env:INTEGRAL_CI_BUILD -eq "1") {
+    Write-Host "CI build: default data folder is %APPDATA%\Integral-test\ (not production Integral)."
+} else {
+    Write-Host "Double-click that file to run. Data saves to:"
+    Write-Host "  %APPDATA%\Integral\data.json"
+}

@@ -23,6 +23,20 @@ ENVELOPE_VERSION = 1
 _derived_key_cache: dict[tuple[str, bytes], bytes] = {}
 _save_lock = threading.Lock()
 
+_LEFTOVER_SAVE_TEMP_WARNING = (
+    "Could not remove a leftover save temp file; will retry on the next save."
+)
+_MISMATCHED_JOURNAL_BACKUP_WARNING = (
+    "Could not remove a mismatched journal backup file; will retry on the next save."
+)
+_STARTUP_DEFER_BACKUP_CLEANUP_WARNING = (
+    "Journal backup cleanup was deferred because the live journal could not be verified."
+)
+_SWEEP_PATH_SKIPPED_WARNING = (
+    "Journal cleanup was skipped for a profile path that could not be verified."
+)
+_JOURNAL_BASENAME = "data.json"
+
 
 class VaultPassphraseError(Exception):
     """Passphrase missing or incorrect — not file corruption."""
@@ -59,22 +73,157 @@ def encrypted_journal_envelope_path(data_path: str) -> str | None:
     return None
 
 
+def _logger():
+    from integral_logging import get_logger
+
+    return get_logger()
+
+
+def save_temp_path(data_path: str) -> str:
+    return f"{data_path}.tmp"
+
+
+def _is_same_or_within(child: str, parent_dir: str) -> bool:
+    """True when ``child`` resolves to ``parent_dir`` or a path inside it."""
+    try:
+        parent = os.path.normcase(os.path.realpath(parent_dir))
+        target = os.path.normcase(os.path.realpath(child))
+    except OSError:
+        return False
+    if target == parent:
+        return True
+    return target.startswith(parent + os.sep)
+
+
+def _artifact_paths_for_journal(data_path: str) -> tuple[str, str, str]:
+    return (data_path, save_temp_path(data_path), f"{data_path}.bak")
+
+
+def _journal_artifacts_contained(data_path: str, container_dir: str) -> bool:
+    if os.path.basename(data_path) != _JOURNAL_BASENAME:
+        return False
+    for artifact in _artifact_paths_for_journal(data_path):
+        if os.path.lexists(artifact) and not _is_same_or_within(artifact, container_dir):
+            return False
+    if not _is_same_or_within(data_path, container_dir):
+        return False
+    temp_name = f"{_JOURNAL_BASENAME}.tmp"
+    bak_name = f"{_JOURNAL_BASENAME}.bak"
+    for artifact in _artifact_paths_for_journal(data_path):
+        base = os.path.basename(artifact)
+        if base not in (_JOURNAL_BASENAME, temp_name, bak_name):
+            return False
+    return True
+
+
+def confirmed_live_journal_encrypted(data_path: str) -> bool | None:
+    """Return the on-disk encryption mode when the primary journal is readable; else None."""
+    if not os.path.isfile(data_path):
+        return None
+    if is_encrypted_file(data_path):
+        return True
+    if _is_readable_plaintext_journal(data_path):
+        return False
+    return None
+
+
+def try_remove_leftover_save_temp(data_path: str, *, container_dir: str | None = None) -> bool:
+    """Remove ``data.json.tmp`` in the same folder as ``data_path`` if present."""
+    if container_dir is not None and not _journal_artifacts_contained(data_path, container_dir):
+        _logger().warning(_SWEEP_PATH_SKIPPED_WARNING)
+        return False
+    temp_path = save_temp_path(data_path)
+    if os.path.basename(temp_path) != f"{_JOURNAL_BASENAME}.tmp":
+        return False
+    if not os.path.exists(temp_path):
+        return True
+    try:
+        os.remove(temp_path)
+        return True
+    except OSError:
+        _logger().warning(_LEFTOVER_SAVE_TEMP_WARNING)
+        return False
+
+
+def _remove_mismatched_journal_backup(data_path: str, *, encrypted: bool) -> bool:
+    """Delete ``data.json.bak`` only when its envelope format differs from the live journal."""
+    bak_path = f"{data_path}.bak"
+    if os.path.basename(bak_path) != f"{_JOURNAL_BASENAME}.bak":
+        return False
+    if not os.path.exists(bak_path):
+        return True
+    bak_encrypted = is_encrypted_file(bak_path)
+    mismatch = (encrypted and not bak_encrypted) or (not encrypted and bak_encrypted)
+    if not mismatch:
+        return True
+    try:
+        os.remove(bak_path)
+        return True
+    except OSError:
+        _logger().warning(_MISMATCHED_JOURNAL_BACKUP_WARNING)
+        return False
+
+
 def drop_opposite_format_journal_backup(path: str, *, encrypted: bool) -> None:
     """Remove a .bak that does not match the on-disk journal format after a successful save."""
-    bak_path = f"{path}.bak"
-    if not os.path.exists(bak_path):
-        return
-    bak_encrypted = is_encrypted_file(bak_path)
-    if encrypted and not bak_encrypted:
+    _remove_mismatched_journal_backup(path, encrypted=encrypted)
+
+
+def retry_journal_save_artifact_cleanup(data_path: str) -> None:
+    """Retry removing a leftover save temp for one journal path (pre-save only)."""
+    try_remove_leftover_save_temp(data_path)
+
+
+def iter_journal_sweep_targets() -> list[tuple[str, str]]:
+    """Return ``(data.json path, owning profile directory)`` pairs for startup sweeps."""
+    import paths
+    import profiles
+
+    profiles.ensure_app_structure()
+    profiles_root = profiles.get_profiles_root()
+    seen: set[str] = set()
+    out: list[tuple[str, str]] = []
+
+    def _append(data_path: str, container_dir: str) -> None:
+        key = os.path.normcase(os.path.normpath(data_path))
+        if key in seen:
+            return
+        seen.add(key)
+        out.append((data_path, container_dir))
+
+    root_data = paths.data_file()
+    root_container = os.path.dirname(root_data) or "."
+    _append(root_data, root_container)
+
+    for profile in profiles.list_profiles():
         try:
-            os.remove(bak_path)
-        except OSError:
-            pass
-    elif not encrypted and bak_encrypted:
-        try:
-            os.remove(bak_path)
-        except OSError:
-            pass
+            profile_id = profiles.require_safe_profile_id(profile.get("id"))
+        except ValueError:
+            _logger().warning(_SWEEP_PATH_SKIPPED_WARNING)
+            continue
+        profile_dir = profiles.get_profile_dir(profile_id)
+        if not _is_same_or_within(profile_dir, profiles_root):
+            _logger().warning(_SWEEP_PATH_SKIPPED_WARNING)
+            continue
+        data_path = os.path.join(profile_dir, _JOURNAL_BASENAME)
+        _append(data_path, profile_dir)
+    return out
+
+
+def sweep_journal_save_artifacts_at_startup() -> None:
+    """Remove leftover save temps and mismatched backups before the first save."""
+    for data_path, container_dir in iter_journal_sweep_targets():
+        if not _journal_artifacts_contained(data_path, container_dir):
+            _logger().warning(_SWEEP_PATH_SKIPPED_WARNING)
+            continue
+        try_remove_leftover_save_temp(data_path, container_dir=container_dir)
+        live_format = confirmed_live_journal_encrypted(data_path)
+        if live_format is None:
+            bak_path = f"{data_path}.bak"
+            if os.path.lexists(bak_path):
+                _logger().warning(_STARTUP_DEFER_BACKUP_CLEANUP_WARNING)
+            continue
+        _remove_mismatched_journal_backup(data_path, encrypted=live_format)
 
 
 def is_encrypted_file(path: str) -> bool:
@@ -265,6 +414,7 @@ def save_data_file(path: str, payload: dict[str, Any], *, encrypted: bool, passp
     current good data.json to data.json.bak. Use a lock to serialize saves.
     """
     with _save_lock:
+        retry_journal_save_artifact_cleanup(path)
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
         if encrypted:
             if not passphrase:
@@ -291,12 +441,13 @@ def save_data_file(path: str, payload: dict[str, Any], *, encrypted: bool, passp
 
             os.replace(temp_path, path)
             drop_opposite_format_journal_backup(path, encrypted=encrypted)
+            try_remove_leftover_save_temp(path)
         except Exception:
             if os.path.exists(temp_path):
                 try:
                     os.remove(temp_path)
                 except OSError:
-                    pass
+                    _logger().warning(_LEFTOVER_SAVE_TEMP_WARNING)
             if rotated and os.path.exists(bak_path) and not os.path.exists(path):
                 try:
                     os.replace(bak_path, path)

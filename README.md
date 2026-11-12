@@ -113,11 +113,31 @@ User data: `%APPDATA%\Integral\data.json` (encrypted optional via Data & Securit
 Every pull request to `main` runs a **Windows EXE** job. When it succeeds:
 
 1. Open the PR on GitHub → **Checks** → **Windows EXE (PR)** (or the **Actions** tab).
-2. Download the artifact named `integral-pr<N>-<shortsha>` (7-day retention). It contains `Integral.exe`, `BUILD.txt` (PR number, commit, build time), and `Run-Test.cmd`.
+2. Download the artifact named `integral-pr<N>-<8-char-sha>` (7-day retention; sha is the **PR head** commit). It contains `Integral.exe`, `BUILD.txt` (`app_version`, merge `commit`, `pr_head_commit`, build time), and `Run-Test.cmd`. See `docs/WINDOWS_PR_BUILD_CHECKLIST.md` for manual QA and **NEEDS-WINDOWS** Tk tests.
 3. Run `Integral.exe` directly, or use `Run-Test.cmd` to force data under `%TEMP%\Integral-RunTest`. The window title includes **TEST BUILD** when using the test data folder; the CI exe defaults to `%APPDATA%\Integral-test\`, not your real `%APPDATA%\Integral\`.
 4. PR builds are **unsigned**. Windows SmartScreen may block the first run — choose **More info** → **Run anyway**.
 
 To point any build at a custom folder (dev or QA), set `INTEGRAL_DATA_DIR` to an absolute path before launch.
+
+### Download a release (Windows)
+
+Official builds are published on [GitHub Releases](https://github.com/earthboundtrev/integral/releases) when a `v*` tag matches `APP_VERSION` in `paths.py` (for example `v0.3.11.5.6`). Each release includes:
+
+- `Integral-v{version}.exe` — production onefile build (data defaults to `%APPDATA%\Integral\`, not the PR test folder)
+- `Integral-v{version}.exe.sha256` — SHA-256 checksum of the exe (verify before you run)
+
+Release exes are **unsigned**. Windows SmartScreen may block the first run — choose **More info** → **Run anyway**. Compare the file hash with the published `.sha256` file before launching:
+
+```powershell
+Get-FileHash -Algorithm SHA256 .\Integral-v0.3.11.5.6.exe
+# Match the hex string to the first field in Integral-v0.3.11.5.6.exe.sha256
+```
+
+```cmd
+certutil -hashfile Integral-v0.3.11.5.6.exe SHA256
+```
+
+Prerelease tags (for example `v0.0.0-test`) are marked as GitHub **prerelease** assets.
 
 ## What you get
 
