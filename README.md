@@ -113,7 +113,7 @@ User data: `%APPDATA%\Integral\data.json` (encrypted optional via Data & Securit
 Every pull request to `main` runs a **Windows EXE** job. When it succeeds:
 
 1. Open the PR on GitHub → **Checks** → **Windows EXE (PR)** (or the **Actions** tab).
-2. Download the artifact named `integral-pr<N>-<shortsha>` (7-day retention). It contains `Integral.exe`, `BUILD.txt` (PR number, commit, build time), and `Run-Test.cmd`.
+2. Download the artifact named `integral-pr<N>-<8-char-sha>` (7-day retention; sha is the **PR head** commit). It contains `Integral.exe`, `BUILD.txt` (`app_version`, merge `commit`, `pr_head_commit`, build time), and `Run-Test.cmd`. See `docs/WINDOWS_PR_BUILD_CHECKLIST.md` for manual QA and **NEEDS-WINDOWS** Tk tests.
 3. Run `Integral.exe` directly, or use `Run-Test.cmd` to force data under `%TEMP%\Integral-RunTest`. The window title includes **TEST BUILD** when using the test data folder; the CI exe defaults to `%APPDATA%\Integral-test\`, not your real `%APPDATA%\Integral\`.
 4. PR builds are **unsigned**. Windows SmartScreen may block the first run — choose **More info** → **Run anyway**.
 
