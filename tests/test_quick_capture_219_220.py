@@ -158,31 +158,65 @@ class TestQuickCaptureBuildPersistence220(unittest.TestCase):
         root = tk.Tk()
         root.withdraw()
         try:
-            tracker = _tracker_mock(
-                todo_items=[
-                    {
-                        "id": "t1",
-                        "text": "Todo",
-                        "done": False,
-                        "work_date": "2026-07-20",
-                        "category": "",
-                    }
-                ],
-            )
+            tracker = PersonalDevelopmentTracker.__new__(PersonalDevelopmentTracker)
             tracker.root = root
+            tracker.theme = _theme()
+            tracker.categories = {"Body & Presence": {}}
+            tracker.settings = quick_capture.default_quick_capture_settings()
+            tracker.todos = todos.normalize_todos(
+                {
+                    "items": [
+                        {
+                            "id": "t1",
+                            "text": "Todo",
+                            "done": False,
+                            "work_date": "2026-07-20",
+                            "category": "",
+                        }
+                    ]
+                }
+            )
+            tracker.today_str = lambda: "2026-07-20"  # type: ignore[method-assign]
+            tracker._deep_work_session = None
+            tracker._focus_shield = mock.MagicMock(active=False)
+            tracker._quick_capture_win = None
+            tracker.save_data = mock.MagicMock()
+            tracker.stop_focus_shield = mock.MagicMock()
+            tracker.sync_quick_capture_panel = (
+                PersonalDevelopmentTracker.sync_quick_capture_panel.__get__(
+                    tracker, PersonalDevelopmentTracker
+                )
+            )
             win = quick_capture_ui.open_quick_capture_panel(tracker)
             for _ in range(40):
                 root.update()
-            self.assertTrue(quick_capture_ui.quick_capture_panel_is_open(tracker))
-            tracker.settings = quick_capture.apply_quick_capture_settings(
-                tracker.settings, {"enabled": True}
+            tracker.set_quick_capture_enabled = (
+                PersonalDevelopmentTracker.set_quick_capture_enabled.__get__(
+                    tracker, PersonalDevelopmentTracker
+                )
             )
-            if quick_capture_ui.quick_capture_panel_is_open(tracker):
-                tracker.settings = quick_capture.commit_build_success(tracker.settings)
-            else:
-                tracker.settings[quick_capture.QC_BUILDING_SETTINGS_KEY] = True
+            tracker.set_quick_capture_enabled(True)
             self.assertNotIn(quick_capture.QC_BUILDING_SETTINGS_KEY, tracker.settings)
             self.assertTrue(quick_capture.is_quick_capture_enabled(tracker.settings))
+            win.destroy()
+        finally:
+            root.destroy()
+
+    def test_existing_panel_heals_stale_building_marker(self) -> None:
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            tracker = _tracker_mock(todo_items=[])
+            tracker.root = root
+            tracker.settings[quick_capture.QC_BUILDING_SETTINGS_KEY] = True
+            win = quick_capture_ui.open_quick_capture_panel(tracker)
+            for _ in range(40):
+                root.update()
+            quick_capture_ui.open_quick_capture_panel(tracker)
+            for _ in range(10):
+                root.update()
+            self.assertNotIn(quick_capture.QC_BUILDING_SETTINGS_KEY, tracker.settings)
+            tracker.save_data.assert_called()
             win.destroy()
         finally:
             root.destroy()

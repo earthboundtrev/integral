@@ -141,6 +141,11 @@ def open_quick_capture_panel(tracker: PersonalDevelopmentTracker) -> tk.Toplevel
     if existing is not None:
         try:
             if existing.winfo_exists():
+                if quick_capture.is_quick_capture_building(tracker.settings) and not getattr(
+                    existing, "_qc_building", False
+                ):
+                    tracker.settings = quick_capture.commit_build_success(tracker.settings)
+                    tracker.save_data(flush=True)
                 existing.lift()
                 # Don't steal focus when just refreshing lists
                 if getattr(tracker, "_qc_should_focus", False):
