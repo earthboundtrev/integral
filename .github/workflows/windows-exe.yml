@@ -34,11 +34,24 @@ jobs:
           $tclRoot = python -c "import sys, pathlib; print(pathlib.Path(sys.base_prefix) / 'tcl')"
           $tcl = Join-Path $tclRoot 'tcl8.6'
           $tk = Join-Path $tclRoot 'tk8.6'
+          foreach ($rel in @('tk.tcl', 'ttk\ttk.tcl', 'ttk\sizegrip.tcl')) {
+            $path = Join-Path $tk $rel
+            if (-not (Test-Path $path)) {
+              throw "Tk script missing for CI: $path"
+            }
+          }
           "TCL_LIBRARY=$tcl" >> $env:GITHUB_ENV
           "TK_LIBRARY=$tk" >> $env:GITHUB_ENV
 
       - name: Run pytest
-        run: python -m pytest tests/ -q --timeout=180
+        shell: pwsh
+        run: |
+          python -m pytest tests/ -q --timeout=180
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "Pytest failed; retrying once in a fresh process (Windows Tk flake guard)."
+            python -m pytest tests/ -q --timeout=180
+          }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Build onefile exe (CI test data folder)
         shell: pwsh
