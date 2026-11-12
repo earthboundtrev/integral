@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import tkinter as tk
 from tkinter import ttk
 from unittest.mock import MagicMock, patch
@@ -19,6 +20,7 @@ import profiles
 import storage
 from backup_dialog_ui import (
     GENERIC_REENCRYPT_ERROR,
+    _rollback_journal_copies,
     _rollback_journal_from_snapshot,
     _snapshot_journal_if_present,
     prepare_restore_apply,
@@ -201,6 +203,52 @@ def test_reencrypt_failure_leaves_profile_without_restored_plaintext(temp_app):
     assert "2099-02-01" not in on_disk.get("entries", {})
     assert on_disk["entries"]["2000-01-01"]["Emotional Wellbeing"]["notes"] == "prior"
     assert not is_encrypted_file(profile_path)
+
+
+def test_reencrypt_failure_removes_profile_journal_without_prior_file(temp_app):
+    profiles.set_active_profile("default")
+    _seed_data_file(_minimal_v2_payload())
+    tracker_path = paths.data_file()
+    profile_path = profile_journal_sync.resolved_active_profile_data_path()
+    os.makedirs(os.path.dirname(tracker_path), exist_ok=True)
+    if os.path.lexists(profile_path):
+        os.remove(profile_path)
+    assert not os.path.lexists(profile_path)
+
+    prior = storage.empty_data()
+    with open(tracker_path, "w", encoding="utf-8") as handle:
+        json.dump(prior, handle)
+    journal_snap = _snapshot_journal_if_present(tracker_path)
+    profile_snap = _snapshot_journal_if_present(profile_path)
+
+    restored = storage.empty_data()
+    restored["entries"]["2099-08-01"] = {
+        "Emotional Wellbeing": {"rating": 1, "checklist": {}, "metrics": {}, "notes": "new-profile"}
+    }
+    with open(tracker_path, "w", encoding="utf-8") as handle:
+        json.dump(restored, handle)
+    with open(profile_path, "w", encoding="utf-8") as handle:
+        json.dump(restored, handle)
+
+    tracker = MagicMock()
+    tracker.settings = {"encryption_enabled": True}
+    tracker.vault_passphrase = "vault-passphrase-12"
+    tracker.data_path = tracker_path
+
+    calls: list[str] = []
+
+    def flaky_save(path, payload, **kwargs):
+        calls.append(path)
+        if len(calls) >= 2:
+            raise OSError("fail re-encrypt")
+        return save_data_file(path, payload, **kwargs)
+
+    with patch("backup_dialog_ui.save_data_file", side_effect=flaky_save):
+        ok, msg = reencrypt_restored_journal_from_disk(tracker)
+    assert ok is False
+    assert msg == GENERIC_REENCRYPT_ERROR
+    _rollback_journal_copies(tracker_path, journal_snap, profile_snap, profile_path)
+    assert not os.path.lexists(profile_path)
 
 
 def test_reencrypt_failure_returns_error_not_success(temp_app):
