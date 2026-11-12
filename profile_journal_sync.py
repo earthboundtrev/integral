@@ -113,17 +113,24 @@ def active_profile_journal_path() -> str:
     return resolved_active_profile_data_path()
 
 
+def validate_layout_before_restore() -> None:
+    """Refuse linked/invalid layout before restore snapshots or writes."""
+    safe_id = _validated_active_profile_id()
+    _validate_layout_before_io(safe_id)
+
+
+def validated_active_profile_journal_path() -> str:
+    """Profile journal path only when layout validation passes."""
+    validate_layout_before_restore()
+    safe_id = _validated_active_profile_id()
+    return _validate_layout_before_io(safe_id)[2]
+
+
 def active_profile_journal_path_for_rollback() -> str | None:
-    """Layout path for rollback snapshots when validation refuses linked layout."""
+    """Validated profile journal path for rollback, or None when layout is unsafe."""
     try:
-        return resolved_active_profile_data_path()
+        return validated_active_profile_journal_path()
     except ProfileJournalSyncError:
-        pass
-    try:
-        config = _read_config_for_validation()
-        safe_id = profiles.require_safe_profile_id(config["active_profile_id"])
-        return os.path.join(profiles.get_profiles_root(), safe_id, storage.DATA_FILE_NAME)
-    except (ValueError, OSError):
         return None
 
 

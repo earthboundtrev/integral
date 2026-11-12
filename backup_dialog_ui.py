@@ -147,8 +147,9 @@ def prepare_restore_apply(tracker: PersonalDevelopmentTracker) -> bool:
 def _restore_snapshots_for_vault(
     tracker: PersonalDevelopmentTracker,
 ) -> tuple[str | None, str | None, str | None]:
+    profile_journal_sync.validate_layout_before_restore()
     journal_snap = _snapshot_journal_if_present(tracker.data_path)
-    profile_path = profile_journal_sync.active_profile_journal_path_for_rollback()
+    profile_path = profile_journal_sync.validated_active_profile_journal_path()
     if profile_path and _same_journal_path(tracker.data_path, profile_path):
         profile_path = None
     profile_snap = (
@@ -806,7 +807,12 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         if not prepare_restore_apply(tracker):
             tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
             return
-        journal_snap, profile_snap, profile_path = _restore_snapshots_for_vault(tracker)
+        try:
+            journal_snap, profile_snap, profile_path = _restore_snapshots_for_vault(tracker)
+        except profile_journal_sync.ProfileJournalSyncError:
+            tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
+            cancel_restore_flow()
+            return
         restore_state["journal_snap"] = journal_snap
         restore_state["profile_snap"] = profile_snap
         restore_state["profile_journal_path"] = profile_path
@@ -942,7 +948,11 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         if not prepare_restore_apply(tracker):
             tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
             return
-        journal_snap, profile_snap, profile_path = _restore_snapshots_for_vault(tracker)
+        try:
+            journal_snap, profile_snap, profile_path = _restore_snapshots_for_vault(tracker)
+        except profile_journal_sync.ProfileJournalSyncError:
+            tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
+            return
         try:
             result = integral_io.restore_backup_file(
                 path,
@@ -984,7 +994,11 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         if not prepare_restore_apply(tracker):
             tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
             return
-        journal_snap, profile_snap, profile_path = _restore_snapshots_for_vault(tracker)
+        try:
+            journal_snap, profile_snap, profile_path = _restore_snapshots_for_vault(tracker)
+        except profile_journal_sync.ProfileJournalSyncError:
+            tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
+            return
         try:
             backup.import_backup(path, merge_profiles=True, creative_root=creative_projects_dir())
             finish_restore_success(

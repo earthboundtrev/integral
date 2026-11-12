@@ -63,7 +63,7 @@ def test_restore_reencrypt_failure_removes_new_profile_journal_ui(
     """UI restore: import succeeds, re-encrypt fails, profile data.json created during restore is removed."""
     enc = str(tmp_path / "vault-restore.enc")
     profiles.set_active_profile("default")
-    profile_path = profile_journal_sync.active_profile_journal_path_for_rollback()
+    profile_path = profile_journal_sync.resolved_active_profile_data_path()
     assert profile_path
     if os.path.lexists(profile_path):
         os.remove(profile_path)
@@ -134,7 +134,7 @@ def test_restore_import_failure_removes_new_profile_journal_ui(
     enc = str(tmp_path / "fail-import.enc")
     backup.export_backup(enc, passphrase="twelve-char-pp")
     profiles.set_active_profile("default")
-    profile_path = profile_journal_sync.active_profile_journal_path_for_rollback()
+    profile_path = profile_journal_sync.resolved_active_profile_data_path()
     assert profile_path
     if os.path.lexists(profile_path):
         os.remove(profile_path)
