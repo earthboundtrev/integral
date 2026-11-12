@@ -17,22 +17,18 @@ from tests.test_backup import temp_app  # noqa: F401
 from tests.test_data_payload_registry_177 import _minimal_v2_payload
 
 
-def test_rejects_invalid_active_profile_id(temp_app, monkeypatch):
+def test_rejects_invalid_active_profile_id(temp_app):
     config = profiles.load_config()
     config["active_profile_id"] = "../escape"
-    monkeypatch.setattr(
-        profiles,
-        "load_config",
-        lambda: config,
-    )
+    profiles.save_config(config)
     with pytest.raises(ProfileJournalSyncError):
         profile_journal_sync.resolved_active_profile_data_path()
 
 
-def test_rejects_unknown_active_profile_id(temp_app, monkeypatch):
+def test_rejects_unknown_active_profile_id(temp_app):
     config = profiles.load_config()
     config["active_profile_id"] = "not-in-list"
-    monkeypatch.setattr(profiles, "load_config", lambda: config)
+    profiles.save_config(config)
     with pytest.raises(ProfileJournalSyncError):
         profile_journal_sync.resolved_active_profile_data_path()
 

@@ -225,16 +225,32 @@ def _validate_backup_zip_member(name: str) -> None:
     zip_import_safety.require_safe_zip_member_path(name)
 
 
+def _staging_path_contained_in_app_dir(path: str) -> bool:
+    try:
+        app_dir = profiles.get_app_dir()
+        path_real = os.path.normcase(os.path.realpath(path))
+        app_real = os.path.normcase(os.path.realpath(app_dir))
+        sep = os.path.normcase(os.sep)
+        return path_real == app_real or path_real.startswith(app_real + sep)
+    except OSError:
+        return False
+
+
+def _remove_import_staging_dir(staging: str) -> None:
+    if not os.path.isdir(staging):
+        return
+    if not _staging_path_contained_in_app_dir(staging):
+        return
+    shutil.rmtree(staging, ignore_errors=True)
+
+
 def _remove_empty_staging_parent(parent: str) -> None:
     if not os.path.isdir(parent) or any(os.scandir(parent)):
         return
+    if not _staging_path_contained_in_app_dir(parent):
+        return
     try:
-        app_dir = profiles.get_app_dir()
-        parent_real = os.path.normcase(os.path.realpath(parent))
-        app_real = os.path.normcase(os.path.realpath(app_dir))
-        sep = os.path.normcase(os.sep)
-        if parent_real.startswith(app_real + sep):
-            os.rmdir(parent)
+        os.rmdir(parent)
     except OSError:
         pass
 
@@ -242,6 +258,9 @@ def _remove_empty_staging_parent(parent: str) -> None:
 @contextmanager
 def _backup_import_staging() -> Iterator[str]:
     """Stage backup extracts under the app data directory; always removed after use."""
+    from profile_journal_sync import _refuse_link
+
+    _refuse_link(profiles.get_app_dir())
     profiles.ensure_app_structure()
     parent = os.path.join(profiles.get_app_dir(), BACKUP_IMPORT_STAGING_DIRNAME)
     os.makedirs(parent, exist_ok=True)
@@ -250,7 +269,7 @@ def _backup_import_staging() -> Iterator[str]:
     try:
         yield staging
     finally:
-        shutil.rmtree(staging, ignore_errors=True)
+        _remove_import_staging_dir(staging)
         _remove_empty_staging_parent(parent)
 
 

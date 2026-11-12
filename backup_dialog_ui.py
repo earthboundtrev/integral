@@ -148,15 +148,19 @@ def _restore_snapshots_for_vault(
     tracker: PersonalDevelopmentTracker,
 ) -> tuple[str | None, str | None, str | None]:
     journal_snap = _snapshot_journal_if_present(tracker.data_path)
-    profile_snap: str | None = None
-    profile_path: str | None = None
-    if _vault_active(tracker):
-        try:
-            profile_path = profile_journal_sync.resolved_active_profile_data_path()
-            profile_snap = _snapshot_journal_if_present(profile_path)
-        except profile_journal_sync.ProfileJournalSyncError:
-            profile_path = None
+    profile_path = profile_journal_sync.active_profile_journal_path_for_rollback()
+    if profile_path and _same_journal_path(tracker.data_path, profile_path):
+        profile_path = None
+    profile_snap = (
+        _snapshot_journal_if_present(profile_path) if profile_path else None
+    )
     return journal_snap, profile_snap, profile_path
+
+
+def _profile_journal_path_for_rollback(profile_journal_path: str | None) -> str | None:
+    if profile_journal_path:
+        return profile_journal_path
+    return profile_journal_sync.active_profile_journal_path_for_rollback()
 
 
 def _journal_paths_after_restore(tracker: PersonalDevelopmentTracker) -> list[str]:
@@ -743,7 +747,10 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
             profile_journal_sync.sync_active_profile_journal_to_tracker(tracker.data_path)
         except profile_journal_sync.ProfileJournalSyncError:
             _rollback_journal_copies(
-                tracker.data_path, journal_snap, profile_snap, profile_journal_path
+                tracker.data_path,
+                journal_snap,
+                profile_snap,
+                _profile_journal_path_for_rollback(profile_journal_path),
             )
             tracker.cancel_pending_save()
             try:
@@ -755,13 +762,11 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
             return False
         ok, msg = reencrypt_restored_journal_from_disk(tracker)
         if not ok:
-            if profile_journal_path is None:
-                try:
-                    profile_journal_path = profile_journal_sync.resolved_active_profile_data_path()
-                except profile_journal_sync.ProfileJournalSyncError:
-                    profile_journal_path = None
             _rollback_journal_copies(
-                tracker.data_path, journal_snap, profile_snap, profile_journal_path
+                tracker.data_path,
+                journal_snap,
+                profile_snap,
+                _profile_journal_path_for_rollback(profile_journal_path),
             )
             tracker.cancel_pending_save()
             try:
@@ -829,8 +834,12 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
             profile_snap = restore_state.get("profile_snap")
             profile_path = restore_state.get("profile_journal_path")
             if exc is not None:
-                _remove_snapshot(snap)
-                _remove_snapshot(profile_snap)
+                _rollback_journal_copies(
+                    tracker.data_path,
+                    snap,
+                    profile_snap,
+                    _profile_journal_path_for_rollback(profile_path),
+                )
                 restore_state["journal_snap"] = None
                 restore_state["profile_snap"] = None
                 msg = _safe_user_error(exc, context="restore")
