@@ -4,6 +4,12 @@ from __future__ import annotations
 
 import os
 import sys
+
+if sys.platform == "win32" and os.environ.get("INTEGRAL_WINDOWS_EXE_CI") == "1":
+    _py_base = sys.base_prefix
+    os.environ.setdefault("TCL_LIBRARY", os.path.join(_py_base, "tcl", "tcl8.6"))
+    os.environ.setdefault("TK_LIBRARY", os.path.join(_py_base, "tcl", "tk8.6"))
+
 import tkinter as tk
 from collections.abc import Iterator
 from unittest.mock import patch
