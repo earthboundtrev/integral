@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import zipfile
 from datetime import datetime
 from tkinter import filedialog, messagebox, scrolledtext, simpledialog, ttk
@@ -363,15 +364,17 @@ def show_security_dialog(tracker: PersonalDevelopmentTracker) -> None:
         wraplength=500,
     ).pack(anchor="w", padx=15, pady=8)
 
-    def _wait_for_save_idle() -> None:
-        for _ in range(300):
+    def _wait_for_save_idle() -> bool:
+        for _ in range(500):
             if not getattr(tracker, "_save_write_in_progress", False):
-                return
+                return True
             try:
                 tracker.root.update_idletasks()
                 tracker.root.update()
             except tk.TclError:
-                return
+                return True
+            time.sleep(0.01)
+        return not getattr(tracker, "_save_write_in_progress", False)
 
     def _save_security_settings() -> BaseException | None:
         """Flush settings to disk; return an error when the write fails."""
@@ -382,7 +385,8 @@ def show_security_dialog(tracker: PersonalDevelopmentTracker) -> None:
             ok_holder[0] = ok
             err_holder[0] = err
 
-        _wait_for_save_idle()
+        if not _wait_for_save_idle():
+            return OSError("Another save is still in progress. Try again in a moment.")
         tracker.save_data(flush=True, on_complete=on_complete)
         if ok_holder[0]:
             return None
