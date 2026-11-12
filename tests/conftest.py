@@ -5,20 +5,26 @@ from __future__ import annotations
 import os
 import sys
 
-if sys.platform == "win32" and os.environ.get("INTEGRAL_WINDOWS_EXE_CI") == "1":
-    _py_base = sys.base_prefix
-    _tcl_lib = os.path.join(_py_base, "tcl", "tcl8.6")
-    _tk_lib = os.path.join(_py_base, "tcl", "tk8.6")
-    if os.path.isdir(_tcl_lib):
-        os.environ["TCL_LIBRARY"] = _tcl_lib
-    if os.path.isdir(_tk_lib):
-        os.environ["TK_LIBRARY"] = _tk_lib
+from tests.tcl_tk_env import ensure_windows_ci_tcl_tk_env, install_tk_constructor_guard
+
+ensure_windows_ci_tcl_tk_env()
 
 import tkinter as tk
+
+install_tk_constructor_guard()
 from collections.abc import Iterator
 from unittest.mock import patch
 
 import pytest
+
+
+def create_tk_root(*, withdraw: bool = True) -> tk.Tk:
+    """Create a Tk root with Windows CI Tcl/Tk paths applied."""
+    ensure_windows_ci_tcl_tk_env()
+    root = tk.Tk()
+    if withdraw:
+        root.withdraw()
+    return root
 
 
 def pump_tk(root: tk.Misc, steps: int = 25) -> None:
@@ -118,10 +124,17 @@ def _stub_tk_messageboxes(request: pytest.FixtureRequest) -> Iterator[None]:
 
 
 def pytest_configure(config: pytest.Config) -> None:
+    ensure_windows_ci_tcl_tk_env()
+    install_tk_constructor_guard()
     config.addinivalue_line(
         "markers",
         "allow_tk_messagebox: do not stub tkinter.messagebox for this test",
     )
+
+
+def pytest_sessionstart(session: pytest.Session) -> None:
+    ensure_windows_ci_tcl_tk_env()
+    install_tk_constructor_guard()
 
 
 # GitHub Actions windows-latest: Tk focus / clamp geometry differs from dev machines.

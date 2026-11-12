@@ -6,7 +6,7 @@
 
 PR #274 / commit `b81dac93` (on `main` since `8a807fb`):
 
-- `tests/conftest.py` sets `TCL_LIBRARY` and `TK_LIBRARY` from `sys.base_prefix` **before** `import tkinter`, when `INTEGRAL_WINDOWS_EXE_CI=1` on Windows.
+- `tests/tcl_tk_env.py` + `tests/conftest.py` set a **matched** `TCL_LIBRARY` / `TK_LIBRARY` pair (validated via `init.tcl` / `tk.tcl`) before import and before every `Tk()` on Windows EXE CI (#284).
 - `.github/workflows/windows-exe.yml` step **Configure Tcl/Tk for GitHub Actions** sets the same env vars for the pytest job only (not the exe smoke step).
 
 ## Acceptance: 3 consecutive green `build-windows-exe` pytest runs
