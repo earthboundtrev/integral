@@ -26,6 +26,15 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt -r requirements-build.txt -r requirements-ai.txt
 
+      - name: Configure Tcl/Tk for GitHub Actions
+        shell: pwsh
+        run: |
+          $tclRoot = python -c "import sys, pathlib; print(pathlib.Path(sys.base_prefix) / 'tcl')"
+          $tcl = Join-Path $tclRoot 'tcl8.6'
+          $tk = Join-Path $tclRoot 'tk8.6'
+          "TCL_LIBRARY=$tcl" >> $env:GITHUB_ENV
+          "TK_LIBRARY=$tk" >> $env:GITHUB_ENV
+
       - name: Run pytest
         run: python -m pytest tests/ -q --timeout=180
 

@@ -42,21 +42,15 @@ def test_seed_loader_uses_app_resource(monkeypatch, tmp_path):
     assert data["source_book"] == "CC1"
 
 
-def test_dev_data_file_uses_canonical_user_dir(monkeypatch, tmp_path):
+def test_dev_data_file_uses_canonical_user_dir(monkeypatch):
     monkeypatch.setattr(paths, "is_frozen", lambda: False)
     monkeypatch.delenv(paths.INTEGRAL_DATA_DIR_ENV, raising=False)
     monkeypatch.delenv(paths.INTEGRAL_TEST_BUILD_ENV, raising=False)
     monkeypatch.setattr(paths, "ci_test_build_bundled", lambda: False)
     if sys.platform == "win32":
-        appdata = tmp_path / "AppData" / "Roaming"
-        appdata.mkdir(parents=True)
-        monkeypatch.setenv("APPDATA", str(appdata))
-        expected = os.path.join(str(appdata), "Integral", "data.json")
+        expected = os.path.join(os.environ["APPDATA"], "Integral", "data.json")
     else:
-        home = tmp_path / "home"
-        home.mkdir()
-        monkeypatch.setenv("HOME", str(home))
-        expected = os.path.join(str(home), ".integral", "data.json")
+        expected = os.path.join(os.environ["HOME"], ".integral", "data.json")
     assert paths.data_file() == expected
 
 
