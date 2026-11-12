@@ -308,7 +308,7 @@ def test_flush_save_async_writes_extras(tk_root):
     tracker.entries = {"2026-10-25": {"Body & Presence": {"rating": 5}}}
     tracker.save_data(flush=False)
     pump_tk(tk_root, steps=40)
-    time.sleep(0.3)
+    assert tracker._save_idle_event.wait(timeout=5.0), "async save did not finish"
     pump_tk(tk_root, steps=10)
     reloaded = json.loads(open(paths.data_file(), encoding="utf-8").read())
     assert reloaded["sleep_log"] == expected_extra["sleep_log"]
