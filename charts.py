@@ -1,3 +1,11 @@
+from summaries import numeric_rating
+
+
+def _numeric_ratings(day_entries):
+    values = (numeric_rating(entry) for entry in day_entries)
+    return [value for value in values if value is not None]
+
+
 def build_daily_avg_figure(entries):
     from matplotlib.figure import Figure
 
@@ -7,7 +15,7 @@ def build_daily_avg_figure(entries):
     if dates:
         daily_avg = []
         for date_str in dates:
-            ratings = [e.get("rating", 0) for e in entries[date_str].values()]
+            ratings = _numeric_ratings(entries[date_str].values())
             daily_avg.append(sum(ratings) / len(ratings) if ratings else 0)
         ax.plot(dates, daily_avg, marker="o", linewidth=2)
         ax.set_title("Daily Average Rating (Last 30 Days)")
@@ -31,7 +39,9 @@ def build_category_avg_figure(entries, categories):
         ratings = []
         for day in entries.values():
             if cat in day:
-                ratings.append(day[cat].get("rating", 0))
+                rating = numeric_rating(day[cat])
+                if rating is not None:
+                    ratings.append(rating)
         avgs.append(sum(ratings) / len(ratings) if ratings else 0)
     ax.bar(cat_names, avgs)
     ax.set_title("Average Rating per Category (All Time)")
