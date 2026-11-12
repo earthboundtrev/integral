@@ -172,8 +172,14 @@ def test_use_vault_checkbox_bound(tk_root):
     checks = [w for w in _walk(dialog) if w.winfo_class() == "TCheckbutton"]
     vault_checks = [w for w in checks if "vault passphrase" in str(w.cget("text"))]
     assert vault_checks
-    vault_checks[0].invoke()
+    var_name = vault_checks[0].cget("variable")
+    assert var_name
+    dialog.setvar(var_name, False)
+    pump_tk(tk_root)
     assert not vault_checks[0].instate(["selected"])
+    dialog.setvar(var_name, True)
+    pump_tk(tk_root)
+    assert vault_checks[0].instate(["selected"])
 
 
 def test_window_close_clears_passphrases(tk_root):
