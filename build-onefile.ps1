@@ -10,9 +10,17 @@ Write-Host "Installing dependencies..."
 python -m pip install -r requirements.txt -q
 python -m pip install -r requirements-build.txt -q
 
-Write-Host "Building app icon..."
-python scripts\build_icon.py
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+if ($env:INTEGRAL_CI_BUILD -eq "1") {
+    if (-not (Test-Path "assets\icon.ico")) {
+        Write-Error "CI build requires committed assets\icon.ico (do not run build_icon.py in CI)."
+        exit 1
+    }
+    Write-Host "CI build: using committed assets\icon.ico (skipping build_icon.py)."
+} else {
+    Write-Host "Building app icon..."
+    python scripts\build_icon.py
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
 
 $iconArg = @()
 if (Test-Path "assets\icon.ico") {

@@ -29,9 +29,6 @@ jobs:
       - name: Run pytest
         run: python -m pytest tests/ -q --timeout=180
 
-      - name: Build app icon
-        run: python scripts/build_icon.py
-
       - name: Build onefile exe (CI test data folder)
         shell: pwsh
         env:
