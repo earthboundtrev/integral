@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import tkinter as tk
-from unittest.mock import MagicMock
 
 import pytest
 
