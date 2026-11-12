@@ -169,6 +169,14 @@ def drop_opposite_format_journal_backup(path: str, *, encrypted: bool) -> None:
     _remove_mismatched_journal_backup(path, encrypted=encrypted)
 
 
+def drop_mismatched_journal_backup_after_journal_open(data_path: str) -> None:
+    """Remove a format-mismatched .bak after the live journal has been opened."""
+    live_format = confirmed_live_journal_encrypted(data_path)
+    if live_format is None:
+        return
+    _remove_mismatched_journal_backup(data_path, encrypted=live_format)
+
+
 def retry_journal_save_artifact_cleanup(data_path: str) -> None:
     """Retry removing a leftover save temp for one journal path (pre-save only)."""
     try_remove_leftover_save_temp(data_path)
@@ -211,19 +219,16 @@ def iter_journal_sweep_targets() -> list[tuple[str, str]]:
 
 
 def sweep_journal_save_artifacts_at_startup() -> None:
-    """Remove leftover save temps and mismatched backups before the first save."""
+    """Remove leftover save temps before the first save (defer .bak cleanup until open)."""
     for data_path, container_dir in iter_journal_sweep_targets():
         if not _journal_artifacts_contained(data_path, container_dir):
             _logger().warning(_SWEEP_PATH_SKIPPED_WARNING)
             continue
         try_remove_leftover_save_temp(data_path, container_dir=container_dir)
-        live_format = confirmed_live_journal_encrypted(data_path)
-        if live_format is None:
+        if confirmed_live_journal_encrypted(data_path) is None:
             bak_path = f"{data_path}.bak"
             if os.path.lexists(bak_path):
                 _logger().warning(_STARTUP_DEFER_BACKUP_CLEANUP_WARNING)
-            continue
-        _remove_mismatched_journal_backup(data_path, encrypted=live_format)
 
 
 def is_encrypted_file(path: str) -> bool:

@@ -93,6 +93,7 @@ from data_payload_registry import (
 )
 from vault import (
     VaultPassphraseError,
+    drop_mismatched_journal_backup_after_journal_open,
     encrypted_journal_envelope_path,
     is_encrypted_file,
     load_data_file,
@@ -905,6 +906,7 @@ class PersonalDevelopmentTracker:
                     self.settings, qc_flags
                 )
                 dirty = True
+            drop_mismatched_journal_backup_after_journal_open(DATA_FILE)
             if dirty:
                 self.save_data(flush=True)
         else:
