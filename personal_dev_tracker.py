@@ -50,7 +50,7 @@ import practices
 import youtube_takeout
 from milestones import merge_milestones, milestone_summary
 from notifications import ReminderScheduler, normalize_notification_settings, show_windows_notification
-from paths import APP_NAME, APP_VERSION, data_file, ensure_data_file, icon_path
+from paths import APP_NAME, APP_VERSION, data_file, ensure_data_file, icon_path, show_test_build_window_marker
 from progression.sessions import bridge_fitness_to_daily_entries, sync_fitness_sessions_to_entries
 import streak
 from theme import (
@@ -169,6 +169,8 @@ class PersonalDevelopmentTracker:
         self._pending_save_payload: dict | None = None
         self._save_after_callbacks: list[Callable[[bool, BaseException | None], None]] = []
         self._save_write_in_progress = False
+        self._save_idle_event = threading.Event()
+        self._save_idle_event.set()
         self._status_banner: StatusBanner | None = None
         self._today_build_error_state = TodayBuildErrorState()
         self._fitness_state_dirty = False
@@ -227,7 +229,10 @@ class PersonalDevelopmentTracker:
 
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
-        self.root.title(f"{APP_NAME} {APP_VERSION}")
+        title = f"{APP_NAME} {APP_VERSION}"
+        if show_test_build_window_marker():
+            title = f"{title} — TEST BUILD"
+        self.root.title(title)
         self.root.geometry("1200x800")
         self.root.minsize(900, 600)
         self._apply_window_icon()
@@ -1021,26 +1026,39 @@ class PersonalDevelopmentTracker:
             save_data_file(path, payload, encrypted=encrypted, passphrase=passphrase)
 
         def on_done(ok: bool, error: BaseException | None) -> None:
-            self._save_write_in_progress = False
-            self._invoke_save_callbacks(callbacks, ok, error)
-            if ok:
-                if self._pending_save_payload is payload:
-                    self._pending_save_payload = None
-            else:
-                self._show_save_error_banner(error)
-                if self._pending_save_payload is payload:
-                    self._pending_save_payload = None
-            self._schedule_chained_flush(sync=sync)
+            try:
+                self._invoke_save_callbacks(callbacks, ok, error)
+                if ok:
+                    if self._pending_save_payload is payload:
+                        self._pending_save_payload = None
+                else:
+                    self._show_save_error_banner(error)
+                    if self._pending_save_payload is payload:
+                        self._pending_save_payload = None
+                self._schedule_chained_flush(sync=sync)
+            finally:
+                self._save_write_in_progress = False
+                idle = getattr(self, "_save_idle_event", None)
+                if idle is not None:
+                    idle.set()
 
         def run_async() -> None:
+            save_ok = False
+            save_err: BaseException | None = None
             try:
                 write()
+                save_ok = True
             except Exception as exc:  # noqa: BLE001
-                self.root.after(0, lambda e=exc: on_done(False, e))
-            else:
-                self.root.after(0, lambda: on_done(True, None))
+                save_err = exc
+            try:
+                self.root.after(0, lambda o=save_ok, e=save_err: on_done(o, e))
+            except (tk.TclError, RuntimeError):
+                on_done(save_ok, save_err)
 
         self._save_write_in_progress = True
+        idle = getattr(self, "_save_idle_event", None)
+        if idle is not None:
+            idle.clear()
         if sync:
             try:
                 write()

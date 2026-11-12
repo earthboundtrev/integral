@@ -10,6 +10,34 @@ APP_NAME = "Integral"
 APP_SLUG = "Integral"
 APP_VERSION = "0.3.11.5.6"
 
+INTEGRAL_DATA_DIR_ENV = "INTEGRAL_DATA_DIR"
+INTEGRAL_TEST_BUILD_ENV = "INTEGRAL_TEST_BUILD"
+
+
+def _env_flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in ("1", "true", "yes")
+
+
+def ci_test_build_bundled() -> bool:
+    """True when this frozen exe was built with the CI test-data marker bundled."""
+    if not is_frozen():
+        return False
+    return os.path.isfile(os.path.join(bundle_dir(), "build", "ci_test_build.marker"))
+
+
+def uses_test_data_store() -> bool:
+    """Alternate data root (CI/pr builds or explicit override) — not production %APPDATA%\\Integral."""
+    if os.environ.get(INTEGRAL_DATA_DIR_ENV, "").strip():
+        return True
+    if _env_flag(INTEGRAL_TEST_BUILD_ENV):
+        return True
+    return ci_test_build_bundled()
+
+
+def show_test_build_window_marker() -> bool:
+    """Window title should show TEST BUILD when a non-production data folder is active."""
+    return uses_test_data_store()
+
 
 def is_frozen() -> bool:
     return bool(getattr(sys, "frozen", False))
@@ -32,10 +60,15 @@ def app_resource(*parts: str):
 
 
 def user_data_dir() -> str:
+    explicit = os.environ.get(INTEGRAL_DATA_DIR_ENV, "").strip()
+    if explicit:
+        return os.path.normpath(os.path.expanduser(explicit))
+
+    slug = f"{APP_SLUG}-test" if uses_test_data_store() else APP_SLUG
     if sys.platform == "win32":
         base = os.environ.get("APPDATA", os.path.expanduser("~"))
-        return os.path.join(base, APP_SLUG)
-    return os.path.join(os.path.expanduser("~"), f".{APP_SLUG.lower()}")
+        return os.path.join(base, slug)
+    return os.path.join(os.path.expanduser("~"), f".{slug.lower()}")
 
 
 def data_file() -> str:
