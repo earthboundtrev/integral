@@ -20,11 +20,22 @@ import pytest
 
 def create_tk_root(*, withdraw: bool = True) -> tk.Tk:
     """Create a Tk root with Windows CI Tcl/Tk paths applied."""
-    ensure_windows_ci_tcl_tk_env()
-    root = tk.Tk()
-    if withdraw:
-        root.withdraw()
-    return root
+    last_err: tk.TclError | None = None
+    trials = 5 if (sys.platform == "win32" and os.environ.get("INTEGRAL_WINDOWS_EXE_CI") == "1") else 1
+    for _ in range(trials):
+        ensure_windows_ci_tcl_tk_env()
+        try:
+            root = tk.Tk()
+            if withdraw:
+                root.withdraw()
+            return root
+        except tk.TclError as exc:
+            last_err = exc
+            import time
+
+            time.sleep(0.25)
+    assert last_err is not None
+    raise last_err
 
 
 def pump_tk(root: tk.Misc, steps: int = 25) -> None:
@@ -66,6 +77,14 @@ def pump_tk_until(
     except tk.TclError:
         pass
     return bool(predicate())
+
+
+@pytest.fixture(autouse=True)
+def _windows_ci_tcl_tk_env_each_test() -> Iterator[None]:
+    """Re-apply Tcl/Tk paths before every test (ttk import runs in-test)."""
+    ensure_windows_ci_tcl_tk_env()
+    yield
+    ensure_windows_ci_tcl_tk_env()
 
 
 @pytest.fixture(autouse=True)

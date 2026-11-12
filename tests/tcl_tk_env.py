@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 from pathlib import Path
 
 
@@ -20,16 +21,29 @@ def python_tcl_runtime_dirs() -> tuple[Path, Path]:
     return base / "tcl8.6", base / "tk8.6"
 
 
-def resolved_runtime_paths() -> tuple[str, str]:
-    """Return normalized ``TCL_LIBRARY`` and ``TK_LIBRARY`` after validating scripts exist."""
-    tcl_dir, tk_dir = python_tcl_runtime_dirs()
-    tcl_init = tcl_dir / "init.tcl"
-    tk_tcl = tk_dir / "tk.tcl"
-    if not tcl_init.is_file():
-        raise FileNotFoundError(f"Missing Tcl runtime: {tcl_init}")
-    if not tk_tcl.is_file():
-        raise FileNotFoundError(f"Missing Tk runtime: {tk_tcl}")
-    return os.path.normpath(str(tcl_dir)), os.path.normpath(str(tk_dir))
+def _env_path(path: Path) -> str:
+    """Path form Tcl accepts reliably on Windows CI (forward slashes)."""
+    text = os.path.normpath(str(path))
+    if sys.platform == "win32":
+        return text.replace("\\", "/")
+    return text
+
+
+def resolved_runtime_paths(*, retries: int = 5, retry_delay_s: float = 0.25) -> tuple[str, str]:
+    """Return ``TCL_LIBRARY`` and ``TK_LIBRARY`` after validating scripts exist."""
+    last_err: FileNotFoundError | None = None
+    for attempt in range(retries):
+        tcl_dir, tk_dir = python_tcl_runtime_dirs()
+        tcl_init = tcl_dir / "init.tcl"
+        tk_tcl = tk_dir / "tk.tcl"
+        if tcl_init.is_file() and tk_tcl.is_file():
+            return _env_path(tcl_dir), _env_path(tk_dir)
+        last_err = FileNotFoundError(
+            f"Missing Tcl/Tk runtime scripts (attempt {attempt + 1}/{retries}): "
+            f"{tcl_init} / {tk_tcl}"
+        )
+        time.sleep(retry_delay_s)
+    raise last_err or FileNotFoundError("Missing Tcl/Tk runtime scripts")
 
 
 def ensure_windows_ci_tcl_tk_env() -> None:
@@ -37,6 +51,9 @@ def ensure_windows_ci_tcl_tk_env() -> None:
     if sys.platform != "win32" or os.environ.get("INTEGRAL_WINDOWS_EXE_CI") != "1":
         return
     tcl_lib, tk_lib = resolved_runtime_paths()
+    # Overwrite GITHUB_ENV values so a half-set pair cannot leak (issue #282).
+    os.environ.pop("TCL_LIBRARY", None)
+    os.environ.pop("TK_LIBRARY", None)
     os.environ["TCL_LIBRARY"] = tcl_lib
     os.environ["TK_LIBRARY"] = tk_lib
 
@@ -56,7 +73,17 @@ def install_tk_constructor_guard() -> None:
         _integral_tcl_guard = True
 
         def __init__(self, *args, **kwargs):
-            ensure_windows_ci_tcl_tk_env()
+            last_err: tkinter.TclError | None = None
+            for _ in range(5):
+                ensure_windows_ci_tcl_tk_env()
+                try:
+                    super().__init__(*args, **kwargs)
+                    return
+                except tkinter.TclError as exc:
+                    last_err = exc
+                    time.sleep(0.25)
+            if last_err is not None:
+                raise last_err
             super().__init__(*args, **kwargs)
 
     tkinter.Tk = Tk  # type: ignore[misc,assignment]
