@@ -104,15 +104,16 @@ def test_disable_failure_shows_error_and_rolls_back(tk_root, request):
     passphrase = "keep-me"
     data_path = paths.data_file()
     tracker = _load_tracker_encrypted(tk_root, passphrase)
+    session_pass = tracker.vault_passphrase
     encrypted_before = open(data_path, encoding="utf-8").read()
 
-    with patch("integral_dialogs.simpledialog.askstring", return_value=passphrase):
+    with patch("integral_dialogs.simpledialog.askstring", return_value="typed-unlock-only"):
         with patch("personal_dev_tracker.save_data_file", side_effect=OSError("save blocked")):
             show_security_dialog(tracker)
             _click_button(tk_root, "Disable encryption")
 
     assert tracker.settings.get("encryption_enabled") is True
-    assert tracker.vault_passphrase == passphrase
+    assert tracker.vault_passphrase == session_pass
     assert open(data_path, encoding="utf-8").read() == encrypted_before
     assert _had_showerror(request)
     assert not _had_showinfo_title(request, "Disabled")

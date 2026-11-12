@@ -363,6 +363,16 @@ def show_security_dialog(tracker: PersonalDevelopmentTracker) -> None:
         wraplength=500,
     ).pack(anchor="w", padx=15, pady=8)
 
+    def _wait_for_save_idle() -> None:
+        for _ in range(300):
+            if not getattr(tracker, "_save_write_in_progress", False):
+                return
+            try:
+                tracker.root.update_idletasks()
+                tracker.root.update()
+            except tk.TclError:
+                return
+
     def _save_security_settings() -> BaseException | None:
         """Flush settings to disk; return an error when the write fails."""
         err_holder: list[BaseException | None] = [None]
@@ -372,6 +382,7 @@ def show_security_dialog(tracker: PersonalDevelopmentTracker) -> None:
             ok_holder[0] = ok
             err_holder[0] = err
 
+        _wait_for_save_idle()
         tracker.save_data(flush=True, on_complete=on_complete)
         if ok_holder[0]:
             return None
@@ -407,23 +418,28 @@ def show_security_dialog(tracker: PersonalDevelopmentTracker) -> None:
             messagebox.showerror("Failed", str(exc))
 
     def disable_encryption() -> None:
+        prev_enabled = bool(tracker.settings.get("encryption_enabled"))
+        prev_passphrase = tracker.vault_passphrase
         if encrypted:
             passphrase = simpledialog.askstring("Unlock", "Enter current passphrase:", show="*", parent=window)
             if not passphrase:
                 return
             tracker.vault_passphrase = passphrase
-        prev_enabled = bool(tracker.settings.get("encryption_enabled"))
-        prev_passphrase = tracker.vault_passphrase
-        tracker.settings["encryption_enabled"] = False
-        tracker.vault_passphrase = None
-        save_err = _save_security_settings()
-        if save_err is not None:
+        try:
+            tracker.settings["encryption_enabled"] = False
+            tracker.vault_passphrase = None
+            save_err = _save_security_settings()
+            if save_err is not None:
+                tracker.settings["encryption_enabled"] = prev_enabled
+                tracker.vault_passphrase = prev_passphrase
+                messagebox.showerror("Failed", str(save_err))
+                return
+            window.destroy()
+            messagebox.showinfo("Disabled", "Journal saved as plain JSON.")
+        except Exception as exc:  # noqa: BLE001
             tracker.settings["encryption_enabled"] = prev_enabled
             tracker.vault_passphrase = prev_passphrase
-            messagebox.showerror("Failed", str(save_err))
-            return
-        window.destroy()
-        messagebox.showinfo("Disabled", "Journal saved as plain JSON.")
+            messagebox.showerror("Failed", str(exc))
 
     def change_passphrase() -> None:
         if not encrypted:
