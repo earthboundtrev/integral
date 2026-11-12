@@ -119,6 +119,26 @@ Every pull request to `main` runs a **Windows EXE** job. When it succeeds:
 
 To point any build at a custom folder (dev or QA), set `INTEGRAL_DATA_DIR` to an absolute path before launch.
 
+### Download a release (Windows)
+
+Official builds are published on [GitHub Releases](https://github.com/earthboundtrev/integral/releases) when a `v*` tag matches `APP_VERSION` in `paths.py` (for example `v0.3.11.5.6`). Each release includes:
+
+- `Integral-v{version}.exe` — production onefile build (data defaults to `%APPDATA%\Integral\`, not the PR test folder)
+- `Integral-v{version}.exe.sha256` — SHA-256 checksum of the exe (verify before you run)
+
+Release exes are **unsigned**. Windows SmartScreen may block the first run — choose **More info** → **Run anyway**. Compare the file hash with the published `.sha256` file before launching:
+
+```powershell
+Get-FileHash -Algorithm SHA256 .\Integral-v0.3.11.5.6.exe
+# Match the hex string to the first field in Integral-v0.3.11.5.6.exe.sha256
+```
+
+```cmd
+certutil -hashfile Integral-v0.3.11.5.6.exe SHA256
+```
+
+Prerelease tags (for example `v0.0.0-test`) are marked as GitHub **prerelease** assets.
+
 ## What you get
 
 | Area | Features |
