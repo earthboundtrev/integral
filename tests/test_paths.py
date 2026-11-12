@@ -55,13 +55,62 @@ def test_user_data_dir_unchanged_when_frozen(monkeypatch):
     import profiles
     import sys
 
+    monkeypatch.delenv(paths.INTEGRAL_DATA_DIR_ENV, raising=False)
+    monkeypatch.delenv(paths.INTEGRAL_TEST_BUILD_ENV, raising=False)
     monkeypatch.setattr(paths, "is_frozen", lambda: True)
+    monkeypatch.setattr(paths, "ci_test_build_bundled", lambda: False)
     app_dir = profiles.get_app_dir()
     if sys.platform == "win32":
         assert app_dir.endswith(os.path.join("AppData", "Roaming", "Integral")) or app_dir.endswith(
             "Integral"
         )
+        assert not app_dir.endswith("Integral-test")
     else:
         assert str(app_dir).endswith(".integral")
+        assert not str(app_dir).endswith(".integral-test")
     assert "MEIPASS" not in str(app_dir)
     assert "dist" not in str(app_dir)
+
+
+def test_integral_data_dir_override(monkeypatch, tmp_path):
+    custom = tmp_path / "custom-root"
+    custom.mkdir()
+    monkeypatch.setenv(paths.INTEGRAL_DATA_DIR_ENV, str(custom))
+    monkeypatch.setattr(paths, "is_frozen", lambda: False)
+    assert paths.user_data_dir() == str(custom)
+    assert paths.data_file() == os.path.join(str(custom), "data.json")
+    assert paths.show_test_build_window_marker()
+
+
+def test_test_build_env_uses_integral_test_slug(monkeypatch):
+    monkeypatch.delenv(paths.INTEGRAL_DATA_DIR_ENV, raising=False)
+    monkeypatch.setenv(paths.INTEGRAL_TEST_BUILD_ENV, "1")
+    monkeypatch.setattr(paths, "is_frozen", lambda: False)
+    monkeypatch.setattr(paths, "ci_test_build_bundled", lambda: False)
+    if sys.platform == "win32":
+        appdata = os.path.join("C:", "Users", "Tester", "AppData", "Roaming")
+        monkeypatch.setenv("APPDATA", appdata)
+        assert paths.user_data_dir() == os.path.join(appdata, "Integral-test")
+    else:
+        monkeypatch.setenv("HOME", "/home/tester")
+        assert paths.user_data_dir() == "/home/tester/.integral-test"
+    assert paths.show_test_build_window_marker()
+
+
+def test_ci_marker_selects_test_slug_on_windows(monkeypatch):
+    monkeypatch.delenv(paths.INTEGRAL_DATA_DIR_ENV, raising=False)
+    monkeypatch.delenv(paths.INTEGRAL_TEST_BUILD_ENV, raising=False)
+    monkeypatch.setattr(paths, "is_frozen", lambda: True)
+    monkeypatch.setattr(paths, "ci_test_build_bundled", lambda: True)
+    monkeypatch.setattr(
+        paths,
+        "bundle_dir",
+        lambda: os.path.join("C:", "fake", "_MEI123"),
+    )
+    if sys.platform == "win32":
+        appdata = os.path.join("C:", "Users", "Tester", "AppData", "Roaming")
+        monkeypatch.setenv("APPDATA", appdata)
+        assert paths.user_data_dir() == os.path.join(appdata, "Integral-test")
+    else:
+        monkeypatch.setenv("HOME", "/home/tester")
+        assert paths.user_data_dir() == "/home/tester/.integral-test"

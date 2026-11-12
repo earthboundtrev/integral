@@ -108,6 +108,17 @@ pip install -r requirements.txt -r requirements-build.txt
 
 User data: `%APPDATA%\Integral\data.json` (encrypted optional via Data & Security).
 
+### Download a PR build (Windows)
+
+Every pull request to `main` runs a **Windows EXE** job. When it succeeds:
+
+1. Open the PR on GitHub → **Checks** → **Windows EXE (PR)** (or the **Actions** tab).
+2. Download the artifact named `integral-pr<N>-<shortsha>` (7-day retention).
+3. Extract `Integral.exe` and run it. The window title includes **TEST BUILD**; data is written only under `%APPDATA%\Integral-test\`, not your real `%APPDATA%\Integral\`.
+4. PR builds are **unsigned**. Windows SmartScreen may block the first run — choose **More info** → **Run anyway**.
+
+To point any build at a custom folder (dev or QA), set `INTEGRAL_DATA_DIR` to an absolute path before launch.
+
 ## What you get
 
 | Area | Features |

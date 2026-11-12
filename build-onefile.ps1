@@ -55,6 +55,17 @@ foreach ($line in $dataLines) {
     $dataArgs += @("--add-data", "$($pair[0]);$($pair[1])")
 }
 
+if ($env:INTEGRAL_CI_BUILD -eq "1") {
+    $markerDir = Join-Path $PSScriptRoot "build"
+    New-Item -ItemType Directory -Force -Path $markerDir | Out-Null
+    $markerPath = Join-Path $markerDir "ci_test_build.marker"
+    if (-not (Test-Path $markerPath)) {
+        Set-Content -Path $markerPath -Value "ci" -NoNewline
+    }
+    $dataArgs += @("--add-data", "$markerPath;build")
+    Write-Host "CI test build: bundling ci_test_build.marker (data -> Integral-test)"
+}
+
 $collectList = Get-SpecBundleLines collect-all
 $collectArgs = @()
 foreach ($package in $collectList) {

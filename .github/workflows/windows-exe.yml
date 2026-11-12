@@ -1,0 +1,57 @@
+# Build a one-file Windows Integral.exe on every PR to main (artifact for manual QA).
+name: Windows EXE (PR)
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows-exe:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt -r requirements-build.txt -r requirements-ai.txt pyinstaller
+
+      - name: Run pytest
+        run: python -m pytest tests/ -q --timeout=60
+
+      - name: Build app icon
+        run: python scripts/build_icon.py
+
+      - name: Build onefile exe (CI test data folder)
+        shell: pwsh
+        env:
+          INTEGRAL_CI_BUILD: "1"
+        run: ./build-onefile.ps1
+
+      - name: Artifact name
+        id: artifact
+        shell: pwsh
+        run: |
+          $pr = '${{ github.event.pull_request.number }}'
+          if (-not $pr) { $pr = 'manual' }
+          $short = $env:GITHUB_SHA.Substring(0, 7)
+          $name = "integral-pr${pr}-${short}"
+          "name=$name" >> $env:GITHUB_OUTPUT
+
+      - name: Upload Integral.exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.artifact.outputs.name }}
+          path: dist/Integral.exe
+          retention-days: 7
+          if-no-files-found: error
