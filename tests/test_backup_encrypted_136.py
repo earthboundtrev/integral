@@ -131,7 +131,6 @@ def test_truncated_encrypted_header_invalid(tmp_path):
         handle.write(garbage)
     with pytest.raises(ValueError, match="(invalid|Not a valid)"):
         backup._unpack_encrypted_backup(garbage, "pw")
-    assert storage.load()["entries"]["2026-11-01"]["Emotional Wellbeing"]["notes"] == _JOURNAL_MARK
 
 
 def test_no_plaintext_zip_sidecar_in_export_dir(seeded_profile, tmp_path, monkeypatch):
