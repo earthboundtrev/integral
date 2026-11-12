@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import tkinter as tk
 from unittest.mock import patch
 
@@ -98,6 +99,30 @@ def test_enable_failure_shows_error_and_rolls_back(tk_root, request):
     assert open(data_path, encoding="utf-8").read() == plain_before
     assert _had_showerror(request)
     assert not _had_showinfo_title(request, "Enabled")
+
+
+def test_disable_final_replace_failure_restores_data_file(tk_root, request):
+    passphrase = "keep-me"
+    data_path = paths.data_file()
+    tracker = _load_tracker_encrypted(tk_root, passphrase)
+    before_bytes = open(data_path, "rb").read()
+    real_replace = os.replace
+
+    def replacing(src, dst):
+        if str(src).endswith(".tmp"):
+            raise OSError("final replace failed")
+        return real_replace(src, dst)
+
+    with patch("vault.os.replace", side_effect=replacing):
+        with patch("integral_dialogs.simpledialog.askstring", return_value=passphrase):
+            show_security_dialog(tracker)
+            _click_button(tk_root, "Disable encryption")
+
+    tmp_path = f"{data_path}.tmp"
+    assert not os.path.exists(tmp_path)
+    assert open(data_path, "rb").read() == before_bytes
+    assert _had_showerror(request)
+    assert not _had_showinfo_title(request, "Disabled")
 
 
 def test_disable_failure_shows_error_and_rolls_back(tk_root, request):

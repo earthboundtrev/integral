@@ -243,20 +243,31 @@ def save_data_file(path: str, payload: dict[str, Any], *, encrypted: bool, passp
         else:
             to_write = payload
         
-        # Write to temp file in same directory
         temp_path = f"{path}.tmp"
-        with open(temp_path, "w", encoding="utf-8") as handle:
-            json.dump(to_write, handle, indent=2, ensure_ascii=False)
-            handle.flush()
-            os.fsync(handle.fileno())
-        
-        # Rotate current good file to backup before replacing
         bak_path = f"{path}.bak"
-        if os.path.exists(path):
-            # Use os.replace which is atomic on both Windows and Unix
-            if os.path.exists(bak_path):
-                os.remove(bak_path)
-            os.replace(path, bak_path)
-        
-        # Atomic replace temp with real file
-        os.replace(temp_path, path)
+        rotated = False
+        try:
+            with open(temp_path, "w", encoding="utf-8") as handle:
+                json.dump(to_write, handle, indent=2, ensure_ascii=False)
+                handle.flush()
+                os.fsync(handle.fileno())
+
+            if os.path.exists(path):
+                if os.path.exists(bak_path):
+                    os.remove(bak_path)
+                os.replace(path, bak_path)
+                rotated = True
+
+            os.replace(temp_path, path)
+        except Exception:
+            if os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except OSError:
+                    pass
+            if rotated and os.path.exists(bak_path) and not os.path.exists(path):
+                try:
+                    os.replace(bak_path, path)
+                except OSError:
+                    pass
+            raise
