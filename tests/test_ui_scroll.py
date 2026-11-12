@@ -22,6 +22,13 @@ def test_scroll_amount_windows_large_delta():
     assert _scroll_amount(_WheelEvent(delta=-360)) == 3
 
 
+def test_scroll_amount_precision_deltas_accumulate():
+    """Twelve delta=10 events scroll the same as one delta=120 notch (#125)."""
+    state: dict = {}
+    total = sum(_scroll_amount(_WheelEvent(delta=10), state) for _ in range(12))
+    assert total == _scroll_amount(_WheelEvent(delta=120))
+
+
 def test_scroll_amount_linux_buttons():
     assert _scroll_amount(_WheelEvent(delta=0, num=4)) == -1
     assert _scroll_amount(_WheelEvent(delta=0, num=5)) == 1

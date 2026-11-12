@@ -13,7 +13,14 @@ _wheel_bound_widgets: set[int] = set()
 _SCROLL_FLUSH_MS = 16
 
 
-def _scroll_amount(event) -> int:
+def _scroll_amount(event, state: dict | None = None) -> int:
+    """
+    Tk scroll units for one wheel event.
+
+    Precision touchpads send deltas far below one notch (120). ``state`` is the
+    per-container accumulator: sub-notch remainders carry over to the next event
+    and reset when the direction changes (#125).
+    """
     num = getattr(event, "num", None)
     delta = getattr(event, "delta", 0) or 0
     if num == 5:
@@ -22,9 +29,15 @@ def _scroll_amount(event) -> int:
         return -1
     if not delta:
         return 0
-    steps = int(delta / 120)
-    if steps == 0:
-        steps = 1 if delta > 0 else -1
+    residue = 0
+    if state is not None:
+        residue = state.get("residue", 0)
+        if residue and (residue > 0) != (delta > 0):
+            residue = 0
+    total = residue + delta
+    steps = int(total / 120)
+    if state is not None:
+        state["residue"] = total - steps * 120
     # Positive Windows delta → scroll up → negative Tk units.
     return -steps
 
@@ -140,9 +153,10 @@ def bind_mousewheel(
     Wheel motion is coalesced (~60fps) so fast flicks do not tear embedded buttons (#66).
     """
     coalesced = coalesce_scroll_command(scroll_command, container)
+    wheel_state: dict = {"residue": 0}
 
     def on_mousewheel(event):
-        amount = _scroll_amount(event)
+        amount = _scroll_amount(event, wheel_state)
         if amount:
             coalesced("scroll", amount, "units")
         return "break"
