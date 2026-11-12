@@ -363,6 +363,58 @@ def show_security_dialog(tracker: PersonalDevelopmentTracker) -> None:
         wraplength=500,
     ).pack(anchor="w", padx=15, pady=8)
 
+    def _wait_for_save_idle() -> bool:
+        import time
+
+        deadline = time.monotonic() + 8.0
+        while getattr(tracker, "_save_write_in_progress", False):
+            if time.monotonic() > deadline:
+                return False
+            try:
+                tracker.root.update_idletasks()
+                tracker.root.update()
+            except tk.TclError:
+                return True
+        return True
+
+    def _save_security_settings() -> BaseException | None:
+        """Flush settings to disk; return an error when the write fails."""
+        err_holder: list[BaseException | None] = [None]
+        ok_holder: list[bool] = [False]
+
+        def on_complete(ok: bool, err: BaseException | None) -> None:
+            ok_holder[0] = ok
+            err_holder[0] = err
+
+        if not _wait_for_save_idle():
+            return OSError("Another save is still in progress. Try again in a moment.")
+        tracker.save_data(flush=True, on_complete=on_complete)
+        if ok_holder[0]:
+            return None
+        return err_holder[0] or OSError("Could not save data.")
+
+    enc_busy = {"active": False}
+    enc_action_buttons: list[ttk.Button] = []
+
+    def _set_enc_actions_enabled(enabled: bool) -> None:
+        state = tk.NORMAL if enabled else tk.DISABLED
+        for btn in enc_action_buttons:
+            try:
+                btn.configure(state=state)
+            except tk.TclError:
+                pass
+
+    def _run_enc_action(action: Callable[[], None]) -> None:
+        if enc_busy["active"]:
+            return
+        enc_busy["active"] = True
+        _set_enc_actions_enabled(False)
+        try:
+            action()
+        finally:
+            enc_busy["active"] = False
+            _set_enc_actions_enabled(True)
+
     def enable_encryption() -> None:
         if not CRYPTO_AVAILABLE:
             messagebox.showwarning("Unavailable", "Install cryptography first.")
@@ -371,29 +423,52 @@ def show_security_dialog(tracker: PersonalDevelopmentTracker) -> None:
         if not passphrase:
             return
         confirm = simpledialog.askstring("Confirm", "Re-enter passphrase:", show="*", parent=window)
+        if not confirm:
+            return
         if passphrase != confirm:
             messagebox.showerror("Mismatch", "Passphrases do not match.")
             return
+        prev_enabled = bool(tracker.settings.get("encryption_enabled"))
+        prev_passphrase = tracker.vault_passphrase
         try:
             tracker.vault_passphrase = passphrase
             tracker.settings["encryption_enabled"] = True
-            tracker.save_data()
+            save_err = _save_security_settings()
+            if save_err is not None:
+                tracker.settings["encryption_enabled"] = prev_enabled
+                tracker.vault_passphrase = prev_passphrase
+                messagebox.showerror("Failed", str(save_err))
+                return
             window.destroy()
             messagebox.showinfo("Enabled", "Journal encryption is now enabled.")
         except Exception as exc:  # noqa: BLE001
+            tracker.settings["encryption_enabled"] = prev_enabled
+            tracker.vault_passphrase = prev_passphrase
             messagebox.showerror("Failed", str(exc))
 
     def disable_encryption() -> None:
+        prev_enabled = bool(tracker.settings.get("encryption_enabled"))
+        prev_passphrase = tracker.vault_passphrase
         if encrypted:
             passphrase = simpledialog.askstring("Unlock", "Enter current passphrase:", show="*", parent=window)
             if not passphrase:
                 return
             tracker.vault_passphrase = passphrase
-        tracker.settings["encryption_enabled"] = False
-        tracker.vault_passphrase = None
-        tracker.save_data()
-        window.destroy()
-        messagebox.showinfo("Disabled", "Journal saved as plain JSON.")
+        try:
+            tracker.settings["encryption_enabled"] = False
+            tracker.vault_passphrase = None
+            save_err = _save_security_settings()
+            if save_err is not None:
+                tracker.settings["encryption_enabled"] = prev_enabled
+                tracker.vault_passphrase = prev_passphrase
+                messagebox.showerror("Failed", str(save_err))
+                return
+            window.destroy()
+            messagebox.showinfo("Disabled", "Journal saved as plain JSON.")
+        except Exception as exc:  # noqa: BLE001
+            tracker.settings["encryption_enabled"] = prev_enabled
+            tracker.vault_passphrase = prev_passphrase
+            messagebox.showerror("Failed", str(exc))
 
     def change_passphrase() -> None:
         if not encrypted:
@@ -409,22 +484,49 @@ def show_security_dialog(tracker: PersonalDevelopmentTracker) -> None:
         if new != confirm:
             messagebox.showerror("Mismatch", "Passphrases do not match.")
             return
+        prev_passphrase = tracker.vault_passphrase
         try:
             payload = tracker._payload()
             encrypt_payload(payload, new)  # validate crypto works
             tracker.vault_passphrase = new
-            tracker.save_data()
+            save_err = _save_security_settings()
+            if save_err is not None:
+                tracker.vault_passphrase = prev_passphrase
+                messagebox.showerror("Failed", str(save_err))
+                return
             messagebox.showinfo("Updated", "Passphrase changed.")
         except Exception as exc:  # noqa: BLE001
+            tracker.vault_passphrase = prev_passphrase
             messagebox.showerror("Failed", str(exc))
 
     enc_buttons = ttk.Frame(inner)
     enc_buttons.pack(fill=tk.X, padx=15, pady=(8, 12))
     if not encrypted:
-        ttk.Button(enc_buttons, text="Enable encryption…", command=enable_encryption).pack(side=tk.LEFT)
+        enc_action_buttons.append(
+            ttk.Button(
+                enc_buttons,
+                text="Enable encryption…",
+                command=lambda: _run_enc_action(enable_encryption),
+            )
+        )
+        enc_action_buttons[-1].pack(side=tk.LEFT)
     else:
-        ttk.Button(enc_buttons, text="Change passphrase…", command=change_passphrase).pack(side=tk.LEFT, padx=4)
-        ttk.Button(enc_buttons, text="Disable encryption…", command=disable_encryption).pack(side=tk.LEFT, padx=4)
+        enc_action_buttons.append(
+            ttk.Button(
+                enc_buttons,
+                text="Change passphrase…",
+                command=lambda: _run_enc_action(change_passphrase),
+            )
+        )
+        enc_action_buttons[-1].pack(side=tk.LEFT, padx=4)
+        enc_action_buttons.append(
+            ttk.Button(
+                enc_buttons,
+                text="Disable encryption…",
+                command=lambda: _run_enc_action(disable_encryption),
+            )
+        )
+        enc_action_buttons[-1].pack(side=tk.LEFT, padx=4)
 
     ttk.Separator(inner, orient=tk.HORIZONTAL).pack(fill=tk.X, padx=15, pady=8)
     ttk.Label(inner, text="Life-area logging", font=("Helvetica", 13, "bold")).pack(
