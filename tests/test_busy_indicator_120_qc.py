@@ -7,6 +7,7 @@ import tkinter as tk
 import unittest
 from unittest import mock
 
+import quick_capture
 import quick_capture_ui
 import todos
 from busy_indicator import BusyIndicator
@@ -49,6 +50,7 @@ class TestQuickCaptureBusyIndicator120(unittest.TestCase):
                     }
                 )
             tracker.todos = todos.normalize_todos({"items": items})
+            tracker.settings = {"quick_capture": {"enabled": True}}
 
             shown = {"value": False}
             orig_show = BusyIndicator._show
@@ -59,8 +61,9 @@ class TestQuickCaptureBusyIndicator120(unittest.TestCase):
 
             BusyIndicator._show = tracked_show  # type: ignore[method-assign]
             try:
-                win = quick_capture_ui.open_quick_capture_panel(tracker)
-                for _ in range(60):
+                with mock.patch.object(quick_capture, "QC_TODO_INITIAL_VISIBLE", 300):
+                    win = quick_capture_ui.open_quick_capture_panel(tracker)
+                for _ in range(120):
                     root.update()
             finally:
                 BusyIndicator._show = orig_show  # type: ignore[method-assign]

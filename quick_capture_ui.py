@@ -15,8 +15,10 @@ from busy_indicator import (
 )
 import deep_work as dw
 import focus_shield
+from integral_logging import log_exception
 import quick_capture
 import todos
+from today_build_errors import open_details_dialog
 from category_picker import bind_category_typeahead, resolve_category_name
 from theme import FONTS, style_canvas, style_text_widget
 import ui_scroll
@@ -37,6 +39,91 @@ class _CooperativeStepIndicator:
         pass
 
 
+QC_BUILD_ERROR_BANNER = "Quick Capture couldn't open, so it's been turned off."
+QC_INTERRUPTED_NOTICE = (
+    "Quick Capture didn't finish opening last time, so it's off for now."
+)
+
+
+def _show_quick_capture_build_error_banner(tracker: PersonalDevelopmentTracker) -> None:
+    state = getattr(tracker, "_qc_build_error_state", None) or {}
+
+    def try_again() -> None:
+        tracker.set_quick_capture_enabled(True)
+
+    def show_details() -> None:
+        open_details_dialog(
+            tracker.root,
+            tracker.theme,
+            state.get("log_path"),
+            state.get("traceback_text"),
+        )
+
+    tracker.ensure_status_banner().show_error(
+        QC_BUILD_ERROR_BANNER,
+        extra_actions=[("Try again", try_again), ("Details", show_details)],
+        focusable_actions=True,
+    )
+
+
+def _open_full_todos_list(tracker: PersonalDevelopmentTracker) -> None:
+    tracker.set_quick_capture_enabled(False, persist=True)
+    tracker._raise_or_open("today")
+    entry = getattr(tracker, "_inline_todo_entry", None)
+    if entry is not None:
+        try:
+            if entry.winfo_exists():
+                entry.focus_set()
+        except tk.TclError:
+            pass
+
+
+def _format_show_more_label(batch: int, hidden_in_section: int) -> str:
+    if batch <= 0 or hidden_in_section <= 0:
+        return ""
+    return f"Show {batch} more ({hidden_in_section} left)"
+
+
+def quick_capture_panel_is_open(tracker: PersonalDevelopmentTracker) -> bool:
+    win = getattr(tracker, "_quick_capture_win", None)
+    if win is None:
+        return False
+    try:
+        if not win.winfo_exists():
+            return False
+    except tk.TclError:
+        return False
+    if getattr(win, "_qc_building", False):
+        return False
+    return True
+
+
+def _make_show_more_row(parent, theme, *, text: str, on_activate) -> ttk.Frame:
+    row = ttk.Frame(parent)
+    row.pack(fill=tk.X, pady=(4, 2))
+    accent = theme.get("accent", "#2F7A7B")
+    link = tk.Label(
+        row,
+        text=text,
+        fg=accent,
+        bg=theme.get("bg", parent.cget("bg")),
+        cursor="hand2",
+        font=("Helvetica", 10, "underline"),
+        takefocus=1,
+    )
+    link.pack(anchor="w")
+
+    def activate(_event=None) -> None:
+        on_activate()
+
+    link.bind("<Button-1>", activate)
+    link.bind("<Return>", activate)
+    link.bind("<space>", activate)
+    link.bind("<KP_Enter>", activate)
+    row._qc_show_more_link = link  # type: ignore[attr-defined]
+    return row
+
+
 QUICK_LOG_CHOICES = (
     ("Life domain log…", "life"),
     ("Journal", "journal"),
@@ -54,6 +141,11 @@ def open_quick_capture_panel(tracker: PersonalDevelopmentTracker) -> tk.Toplevel
     if existing is not None:
         try:
             if existing.winfo_exists():
+                if quick_capture.is_quick_capture_building(tracker.settings) and not getattr(
+                    existing, "_qc_building", False
+                ):
+                    tracker.settings = quick_capture.commit_build_success(tracker.settings)
+                    tracker.save_data(flush=True)
                 existing.lift()
                 # Don't steal focus when just refreshing lists
                 if getattr(tracker, "_qc_should_focus", False):
@@ -91,6 +183,8 @@ def open_quick_capture_panel(tracker: PersonalDevelopmentTracker) -> tk.Toplevel
 
     win.protocol("WM_DELETE_WINDOW", on_close)
     win._qc_building = True
+    win._qc_visible_today_limit = quick_capture.QC_TODO_INITIAL_VISIBLE
+    win._qc_visible_upcoming_limit = quick_capture.QC_TODO_INITIAL_VISIBLE
 
     # Show a delayed busy indicator during build (issue #120).
     # The indicator appears only if the build takes longer than 180 ms.
@@ -107,6 +201,8 @@ def open_quick_capture_panel(tracker: PersonalDevelopmentTracker) -> tk.Toplevel
                 return
         except tk.TclError:
             return
+        tracker.settings = quick_capture.commit_build_success(tracker.settings)
+        tracker.save_data(flush=True)
         indicator.stop()
         try:
             busy_host.destroy()
@@ -122,11 +218,16 @@ def open_quick_capture_panel(tracker: PersonalDevelopmentTracker) -> tk.Toplevel
                 indicator.stop()
         except tk.TclError:
             pass
+        log_path, tb_text = log_exception(exc, context="quick_capture_build")
+        tracker._qc_build_error_state = {"log_path": log_path, "traceback_text": tb_text}
+        tracker.settings = quick_capture.commit_build_failure(tracker.settings)
+        tracker.save_data(flush=True)
         tracker._quick_capture_win = None
         try:
             win.destroy()
         except tk.TclError:
             pass
+        _show_quick_capture_build_error_banner(tracker)
         raise exc
 
     def build_content() -> None:
@@ -184,9 +285,34 @@ class _QuickCaptureBuild:
             [
                 self._clear_todo_lists,
                 *self._todo_row_batch_steps(),
+                self._append_show_more_rows,
                 self._finish_todo_lists,
                 self._phase_finalize,
             ]
+        )
+
+    def _visible_limits(self) -> tuple[int, int]:
+        win = self.win
+        today_lim = int(
+            getattr(win, "_qc_visible_today_limit", quick_capture.QC_TODO_INITIAL_VISIBLE)
+        )
+        upcoming_lim = int(
+            getattr(win, "_qc_visible_upcoming_limit", quick_capture.QC_TODO_INITIAL_VISIBLE)
+        )
+        return today_lim, upcoming_lim
+
+    def _rendered_slices(self) -> tuple[list, list, int, int]:
+        today_n, upcoming_n = quick_capture.compute_rendered_todo_counts(
+            today_count=len(self._today_items),
+            upcoming_count=len(self._upcoming_items),
+            visible_today_limit=self._visible_limits()[0],
+            visible_upcoming_limit=self._visible_limits()[1],
+        )
+        return (
+            self._today_items[:today_n],
+            self._upcoming_items[:upcoming_n],
+            today_n,
+            upcoming_n,
         )
 
     def _set_suspend_scroll_refresh(self, suspended: bool) -> None:
@@ -209,9 +335,10 @@ class _QuickCaptureBuild:
     def _todo_row_batch_steps(self) -> tuple:
         win = self.win
         tracker = self.tracker
+        today_slice, upcoming_slice, _, _ = self._rendered_slices()
 
         def today_batch(start: int, end: int) -> None:
-            for item in self._today_items[start:end]:
+            for item in today_slice[start:end]:
                 _todo_row(
                     self.today_list,
                     tracker,
@@ -224,7 +351,7 @@ class _QuickCaptureBuild:
                 )
 
         def upcoming_batch(start: int, end: int) -> None:
-            for item in self._upcoming_items[start:end]:
+            for item in upcoming_slice[start:end]:
                 _todo_row(
                     self.upcoming_list,
                     tracker,
@@ -238,18 +365,92 @@ class _QuickCaptureBuild:
                 )
 
         steps = cooperative_batch_steps(
-            len(self._today_items),
+            len(today_slice),
             DEFAULT_COOPERATIVE_BATCH_SIZE,
             today_batch,
         )
         steps.extend(
             cooperative_batch_steps(
-                len(self._upcoming_items),
+                len(upcoming_slice),
                 DEFAULT_COOPERATIVE_BATCH_SIZE,
                 upcoming_batch,
             )
         )
         return tuple(steps)
+
+    def _append_show_more_rows(self) -> None:
+        win = self.win
+        tracker = self.tracker
+        theme = self.theme
+        today_count = len(self._today_items)
+        upcoming_count = len(self._upcoming_items)
+        total = quick_capture.todo_list_total(today_count, upcoming_count)
+        today_lim, upcoming_lim = self._visible_limits()
+        today_render, upcoming_render = quick_capture.compute_rendered_todo_counts(
+            today_count=today_count,
+            upcoming_count=upcoming_count,
+            visible_today_limit=today_lim,
+            visible_upcoming_limit=upcoming_lim,
+        )
+        rendered_total = today_render + upcoming_render
+        at_ceiling = rendered_total >= quick_capture.QC_TODO_MAX_VISIBLE_TOTAL and total > rendered_total
+
+        if at_ceiling:
+            total_fmt = f"{total:,}"
+            text = (
+                f"Showing {quick_capture.QC_TODO_MAX_VISIBLE_TOTAL} of {total_fmt}. "
+                "Open the full Todos list"
+            )
+
+            def open_full() -> None:
+                _open_full_todos_list(tracker)
+
+            host = self.today_list if today_count else self.upcoming_list
+            _make_show_more_row(host, theme, text=text, on_activate=open_full)
+            return
+
+        if today_render < today_count and rendered_total < quick_capture.QC_TODO_MAX_VISIBLE_TOTAL:
+            hidden = today_count - today_render
+            can_add = min(
+                quick_capture.QC_TODO_SHOW_MORE_STEP,
+                hidden,
+                quick_capture.QC_TODO_MAX_VISIBLE_TOTAL - rendered_total,
+            )
+            if can_add > 0:
+                label = _format_show_more_label(can_add, hidden)
+
+                def show_more_today() -> None:
+                    win._qc_after_rebuild_scroll = (
+                        self.canvas.yview()[0] if self.canvas is not None else None
+                    )
+                    win._qc_after_rebuild_focus = ("today", today_render)
+                    win._qc_visible_today_limit = today_lim + quick_capture.QC_TODO_SHOW_MORE_STEP
+                    self.rebuild_todo_lists()
+
+                _make_show_more_row(self.today_list, theme, text=label, on_activate=show_more_today)
+
+        rendered_total = today_render + upcoming_render
+        if upcoming_render < upcoming_count and rendered_total < quick_capture.QC_TODO_MAX_VISIBLE_TOTAL:
+            hidden = upcoming_count - upcoming_render
+            can_add = min(
+                quick_capture.QC_TODO_SHOW_MORE_STEP,
+                hidden,
+                quick_capture.QC_TODO_MAX_VISIBLE_TOTAL - rendered_total,
+            )
+            if can_add > 0:
+                label = _format_show_more_label(can_add, hidden)
+
+                def show_more_upcoming() -> None:
+                    win._qc_after_rebuild_scroll = (
+                        self.canvas.yview()[0] if self.canvas is not None else None
+                    )
+                    win._qc_after_rebuild_focus = ("upcoming", upcoming_render)
+                    win._qc_visible_upcoming_limit = (
+                        upcoming_lim + quick_capture.QC_TODO_SHOW_MORE_STEP
+                    )
+                    self.rebuild_todo_lists()
+
+                _make_show_more_row(self.upcoming_list, theme, text=label, on_activate=show_more_upcoming)
 
     def _finish_todo_lists(self, *, gen: int | None = None) -> None:
         win = self.win
@@ -268,6 +469,38 @@ class _QuickCaptureBuild:
         self._set_suspend_scroll_refresh(False)
         self.win.update_idletasks()
         refresh_scroll_region(self.canvas, self.inner)
+
+    def _apply_post_rebuild_focus(self) -> None:
+        win = self.win
+        spec = getattr(win, "_qc_after_rebuild_focus", None)
+        if not spec:
+            return
+        win._qc_after_rebuild_focus = None
+        scroll_y = getattr(win, "_qc_after_rebuild_scroll", None)
+        win._qc_after_rebuild_scroll = None
+        section, row_index = spec
+        parent = self.today_list if section == "today" else self.upcoming_list
+        if self.canvas is not None and scroll_y is not None:
+            try:
+                self.canvas.yview_moveto(scroll_y)
+            except tk.TclError:
+                pass
+        todo_rows = [
+            child
+            for child in parent.winfo_children()
+            if not hasattr(child, "_qc_show_more_link")
+        ]
+        if row_index >= len(todo_rows):
+            return
+        row = todo_rows[row_index]
+        try:
+            for child in row.winfo_children():
+                if isinstance(child, (ttk.Checkbutton, ttk.Button)):
+                    child.focus_set()
+                    return
+            row.focus_set()
+        except tk.TclError:
+            pass
 
     def _schedule_cooperative_todo_rebuild(self) -> None:
         """Refresh todo rows in batches so the UI thread can process wheel input (#121)."""
@@ -297,6 +530,7 @@ class _QuickCaptureBuild:
             return run
 
         steps: list = [guarded(step) for step in self._todo_row_batch_steps()]
+        steps.append(guarded(self._append_show_more_rows))
         steps.append(guarded(lambda: self._finish_todo_lists(gen=gen)))
 
         indicator = getattr(win, "_qc_rebuild_indicator", None)
@@ -309,6 +543,7 @@ class _QuickCaptureBuild:
                 return
             win._qc_rebuild_running = False
             indicator.stop()
+            self._apply_post_rebuild_focus()
 
         indicator.start()
         run_cooperative_steps(win, indicator, steps, on_complete=on_complete)
