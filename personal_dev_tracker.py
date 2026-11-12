@@ -933,6 +933,35 @@ class PersonalDevelopmentTracker:
         merge_extra_top_level_into_payload(payload, self._extra_top_level)
         return payload
 
+    def cancel_pending_save(self) -> None:
+        """Drop debounced save state so a restore cannot be overwritten by stale memory."""
+        if self._save_after_id:
+            try:
+                self.root.after_cancel(self._save_after_id)
+            except tk.TclError:
+                pass
+            self._save_after_id = None
+        self._pending_save_payload = None
+        self._save_after_callbacks = []
+
+    def wait_for_save_idle(self, *, timeout_s: float = 8.0) -> bool:
+        """Wait until an in-flight save finishes (does not start a new save)."""
+        import time
+
+        deadline = time.monotonic() + timeout_s
+        while getattr(self, "_save_write_in_progress", False):
+            if time.monotonic() > deadline:
+                return False
+            idle = getattr(self, "_save_idle_event", None)
+            if idle is not None:
+                idle.wait(timeout=0.05)
+            try:
+                self.root.update_idletasks()
+                self.root.update()
+            except tk.TclError:
+                return True
+        return True
+
     def save_data(
         self,
         categories: dict | None = None,

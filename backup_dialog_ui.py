@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -15,7 +17,7 @@ from typing import TYPE_CHECKING, Callable
 
 import backup
 import integral_io
-from busy_indicator import BusyIndicator, DEFAULT_DELAY_MS, pump_event_loop
+from busy_indicator import BusyIndicator, DEFAULT_DELAY_MS
 from inline_validation import (
     focus_first_invalid,
     make_inline_error_label,
@@ -28,6 +30,7 @@ from vault import (
     PassphraseRequiredError,
     WrongPassphraseError,
     is_encrypted_file,
+    load_data_file,
     save_data_file,
 )
 
@@ -37,6 +40,109 @@ if TYPE_CHECKING:
 BACKUP_WRONG_FILE_MSG = "This file isn't an Integral backup."
 TYPED_PASSPHRASE_MIN_LEN = 12
 MARKER_LOG_SCAN = "marker-backup-pass-267268"
+GENERIC_BACKUP_ERROR = "Backup failed. Try again or check the application log."
+GENERIC_RESTORE_ERROR = "Restore failed. Try again or check the application log."
+GENERIC_REENCRYPT_ERROR = (
+    "Restore completed but could not secure your journal with encryption. "
+    "Your previous journal file was kept."
+)
+
+_PATH_LIKE = re.compile(
+    r"(?:/[A-Za-z0-9._\-]+)+|(?:[A-Za-z]:\\[^\s]+)|(?:~[^\s]+)"
+)
+
+
+def typed_passphrase_error(passphrase: str) -> str | None:
+    if not passphrase.strip():
+        return "Passphrase is required."
+    if len(unicodedata.normalize("NFC", passphrase)) < TYPED_PASSPHRASE_MIN_LEN:
+        return f"Passphrase must be at least {TYPED_PASSPHRASE_MIN_LEN} characters."
+    return None
+
+
+def resolve_export_passphrase(
+    *,
+    use_vault: bool,
+    vault_unlocked: bool,
+    vault_passphrase: str | None,
+    typed_passphrase: str,
+) -> str | None:
+    if use_vault and vault_unlocked and vault_passphrase:
+        return vault_passphrase
+    return typed_passphrase
+
+
+def _redact_banner_message(message: str) -> str:
+    return _PATH_LIKE.sub("[…]", message).strip()
+
+
+def _generic_error(exc: BaseException | None, *, context: str) -> str:
+    if isinstance(exc, WrongPassphraseError):
+        return str(exc)
+    if isinstance(exc, PassphraseRequiredError):
+        return "Passphrase required for encrypted backup."
+    if exc is not None:
+        text = _redact_banner_message(str(exc))
+        if MARKER_LOG_SCAN in text or text:
+            pass
+    if context == "backup":
+        return GENERIC_BACKUP_ERROR
+    return GENERIC_RESTORE_ERROR
+
+
+def _journal_snapshot_path(data_path: str) -> str:
+    return f"{data_path}.pre-restore-snap"
+
+
+def _snapshot_journal_if_present(data_path: str) -> str | None:
+    if os.path.isfile(data_path):
+        snap = _journal_snapshot_path(data_path)
+        shutil.copy2(data_path, snap)
+        return snap
+    return None
+
+
+def _remove_snapshot(snap: str | None) -> None:
+    if snap and os.path.isfile(snap):
+        try:
+            os.remove(snap)
+        except OSError:
+            pass
+
+
+def _rollback_journal_from_snapshot(data_path: str, snap: str | None) -> None:
+    if os.path.isfile(data_path) and not is_encrypted_file(data_path):
+        try:
+            os.remove(data_path)
+        except OSError:
+            pass
+    if snap and os.path.isfile(snap):
+        shutil.copy2(snap, data_path)
+
+
+def prepare_restore_apply(tracker: PersonalDevelopmentTracker) -> bool:
+    """Cancel debounced saves and wait for any in-flight write before importing."""
+    tracker.cancel_pending_save()
+    return tracker.wait_for_save_idle()
+
+
+def reencrypt_restored_journal_from_disk(tracker: PersonalDevelopmentTracker) -> tuple[bool, str | None]:
+    """Re-encrypt using on-disk plaintext only. Returns (ok, user_message)."""
+    if not _vault_active(tracker) or not tracker.vault_passphrase:
+        return True, None
+    data_path = tracker.data_path
+    if is_encrypted_file(data_path):
+        return True, None
+    if not os.path.isfile(data_path):
+        return True, None
+    try:
+        payload = load_data_file(data_path, None)
+        save_data_file(data_path, payload, encrypted=True, passphrase=tracker.vault_passphrase)
+    except Exception:
+        return False, GENERIC_REENCRYPT_ERROR
+    if not is_encrypted_file(data_path):
+        return False, GENERIC_REENCRYPT_ERROR
+    return True, None
 
 
 def _open_containing_folder(path: str) -> None:
@@ -124,15 +230,8 @@ def _clear_entries(*entries: ttk.Entry) -> None:
             pass
 
 
-def _safe_user_error(exc: BaseException) -> str:
-    if isinstance(exc, WrongPassphraseError):
-        return str(exc)
-    if isinstance(exc, PassphraseRequiredError):
-        return "Passphrase required for encrypted backup."
-    text = str(exc)
-    if MARKER_LOG_SCAN in text:
-        return "Backup failed."
-    return text
+def _safe_user_error(exc: BaseException, *, context: str = "backup") -> str:
+    return _generic_error(exc, context=context)
 
 
 def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
@@ -186,7 +285,11 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         encrypt_chk.state(["disabled"])
 
     use_vault_var = tk.BooleanVar(value=_vault_unlocked(tracker))
-    use_vault_chk = ttk.Checkbutton(options, text="Use my vault passphrase")
+    use_vault_chk = ttk.Checkbutton(
+        options,
+        text="Use my vault passphrase",
+        variable=use_vault_var,
+    )
     if not _vault_unlocked(tracker):
         use_vault_chk.state(["disabled"])
 
@@ -327,10 +430,13 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
     confirm_entry.bind("<KeyRelease>", lambda _e: update_caps_hints(), add="+")
     restore_pass_entry.bind("<KeyRelease>", lambda _e: update_caps_hints(), add="+")
 
-    def resolve_export_passphrase() -> str | None:
-        if use_vault_var.get() and _vault_unlocked(tracker):
-            return tracker.vault_passphrase
-        return pass_entry.get()
+    def resolve_export_passphrase_dialog() -> str | None:
+        return resolve_export_passphrase(
+            use_vault=use_vault_var.get(),
+            vault_unlocked=_vault_unlocked(tracker),
+            vault_passphrase=getattr(tracker, "vault_passphrase", None),
+            typed_passphrase=pass_entry.get(),
+        )
 
     def validate_export_passphrase() -> bool:
         if not encrypt_var.get():
@@ -352,15 +458,9 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
             errors.append((confirm_entry, confirm_err, "Passphrases do not match."))
         else:
             errors.append((confirm_entry, confirm_err, None))
-        nfc = unicodedata.normalize("NFC", pw)
-        if pw.strip() and len(nfc) < TYPED_PASSPHRASE_MIN_LEN:
-            errors.append(
-                (
-                    pass_entry,
-                    pass_err,
-                    f"Passphrase must be at least {TYPED_PASSPHRASE_MIN_LEN} characters.",
-                )
-            )
+        min_err = typed_passphrase_error(pw) if pw.strip() else None
+        if min_err and pw.strip():
+            errors.append((pass_entry, pass_err, min_err))
         return not focus_first_invalid(errors)
 
     wire_focusout_validation(
@@ -379,7 +479,7 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
     export_btn.pack(side=tk.LEFT, padx=(0, 4))
     restore_btn = ttk.Button(buttons, text="&Restore from Backup…")
     restore_btn.pack(side=tk.LEFT, padx=4)
-    close_btn = ttk.Button(buttons, text="&Close", command=window.destroy)
+    close_btn = ttk.Button(buttons, text="&Close")
     close_btn.pack(side=tk.RIGHT)
 
     busy_host = ttk.Frame(window)
@@ -409,6 +509,7 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         window.destroy()
 
     close_btn.configure(command=on_close)
+    window.protocol("WM_DELETE_WINDOW", on_close)
 
     def run_plain_export() -> None:
         path = filedialog.asksaveasfilename(
@@ -437,13 +538,23 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
                 f"({manifest.get('creative_file_count', 0)} creative files, {fitness_note})."
             )
             clear_passphrase_widgets()
-        except OSError as exc:
-            tracker.ensure_status_banner().show_error(f"Backup failed: {exc}")
+        except OSError:
+            tracker.ensure_status_banner().show_error(GENERIC_BACKUP_ERROR)
+
+    def _confirm_overwrite_encrypted(dest: str) -> bool:
+        if not os.path.exists(dest):
+            return True
+        return messagebox.askyesno(
+            "Replace file?",
+            "A backup file already exists at this location. Replace it?",
+            parent=window,
+            default=messagebox.NO,
+        )
 
     def run_encrypted_export() -> None:
         if not validate_export_passphrase():
             return
-        passphrase = resolve_export_passphrase()
+        passphrase = resolve_export_passphrase_dialog()
         if not passphrase:
             set_field_error(pass_err, "Passphrase is required.")
             return
@@ -461,10 +572,12 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         if not path:
             return
         dest = _ensure_encrypted_suffix(path)
+        if not _confirm_overwrite_encrypted(dest):
+            return
         try:
             tracker.save_data(flush=True)
-        except OSError as exc:
-            tracker.ensure_status_banner().show_error(f"Backup failed: {exc}")
+        except OSError:
+            tracker.ensure_status_banner().show_error(GENERIC_BACKUP_ERROR)
             return
         export_busy["active"] = True
         set_buttons_enabled(False, False)
@@ -486,10 +599,10 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
             indicator.stop()
             set_buttons_enabled(True, True)
             if exc is not None:
-                tracker.ensure_status_banner().show_error(f"Backup failed: {_safe_user_error(exc)}")
+                tracker.ensure_status_banner().show_error(_safe_user_error(exc, context="backup"))
                 return
             tracker.ensure_status_banner().show_success(
-                f"Backup saved (encrypted) — {dest_path}",
+                "Backup saved (encrypted).",
                 extra_actions=[("Open folder", lambda: _open_containing_folder(dest_path))],
             )
             encrypt_var.set(False)
@@ -558,46 +671,42 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
 
     cancel_confirm_btn.configure(command=cancel_restore_flow)
 
-    def _flush_pending_save() -> None:
-        try:
-            tracker.save_data(flush=True)
-        except Exception:
-            if getattr(tracker, "_save_after_id", None):
-                try:
-                    tracker.root.after_cancel(tracker._save_after_id)
-                except tk.TclError:
-                    pass
-                tracker._save_after_id = None
-
-    def _reencrypt_if_needed() -> None:
-        if not _vault_active(tracker) or not tracker.vault_passphrase:
-            return
-        data_path = tracker.data_path
-        if is_encrypted_file(data_path):
-            return
-        try:
-            payload = tracker._payload()
-            save_data_file(
-                data_path,
-                payload,
-                encrypted=True,
-                passphrase=tracker.vault_passphrase,
-            )
-        except Exception:
-            pass
-
-    def finish_restore_success() -> None:
+    def _complete_restore_after_import(*, journal_snap: str | None) -> bool:
+        tracker.cancel_pending_save()
+        ok, msg = reencrypt_restored_journal_from_disk(tracker)
+        if not ok:
+            _rollback_journal_from_snapshot(tracker.data_path, journal_snap)
+            _remove_snapshot(journal_snap)
+            tracker.cancel_pending_save()
+            try:
+                tracker.load_data()
+            except Exception:
+                pass
+            tracker.ensure_status_banner().show_error(msg or GENERIC_REENCRYPT_ERROR)
+            cancel_restore_flow()
+            return False
+        _remove_snapshot(journal_snap)
+        tracker.cancel_pending_save()
         tracker.load_data()
         tracker.create_dashboard()
         tracker.ensure_status_banner().show_success("Journal restored from backup.")
         cancel_restore_flow()
         window.destroy()
+        return True
+
+    def finish_restore_success(journal_snap: str | None = None) -> None:
+        _complete_restore_after_import(journal_snap=journal_snap)
 
     def apply_encrypted_restore() -> None:
         path = restore_state.get("path")
         passphrase = restore_state.get("passphrase")
         if not path or not passphrase:
             return
+        if not prepare_restore_apply(tracker):
+            tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
+            return
+        journal_snap = _snapshot_journal_if_present(tracker.data_path)
+        restore_state["journal_snap"] = journal_snap
         restore_busy["active"] = True
         set_buttons_enabled(False, False)
         indicator.start()
@@ -618,8 +727,11 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
             restore_busy["active"] = False
             indicator.stop()
             set_buttons_enabled(True, True)
+            snap = restore_state.get("journal_snap")
             if exc is not None:
-                msg = _safe_user_error(exc)
+                _remove_snapshot(snap)
+                restore_state["journal_snap"] = None
+                msg = _safe_user_error(exc, context="restore")
                 if isinstance(exc, WrongPassphraseError):
                     set_field_error(restore_err, msg)
                     try:
@@ -633,9 +745,7 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
                     set_field_error(restore_err, BACKUP_WRONG_FILE_MSG)
                     cancel_restore_flow()
                 return
-            _flush_pending_save()
-            _reencrypt_if_needed()
-            finish_restore_success()
+            _complete_restore_after_import(journal_snap=snap)
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -688,6 +798,8 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         pw = restore_pass_entry.get()
         if use_vault_var.get() and _vault_unlocked(tracker) and not pw.strip():
             pw = tracker.vault_passphrase or ""
+        elif not use_vault_var.get():
+            pw = restore_pass_entry.get()
         if not pw.strip():
             set_field_error(restore_err, "Passphrase is required.")
             return
@@ -703,8 +815,11 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
             parent=window,
         ):
             return
+        if not prepare_restore_apply(tracker):
+            tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
+            return
+        journal_snap = _snapshot_journal_if_present(tracker.data_path)
         try:
-            _flush_pending_save()
             result = integral_io.restore_backup_file(
                 path,
                 tracker.data_path,
@@ -712,26 +827,22 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
                 fitness_db_path=_active_fitness_db_path(tracker, require_exists=False),
                 make_copy=True,
             )
-            _reencrypt_if_needed()
-            tracker.load_data()
-            tracker.create_dashboard()
-            window.destroy()
+            if not _complete_restore_after_import(journal_snap=journal_snap):
+                return
             warning = result.get("warning")
-            msg = "Journal restored from backup."
-            if result.get("restored_creative_files"):
-                msg += f"\nCreative files restored: {result['restored_creative_files']}"
             if warning:
-                msg += f"\n\nNote: {warning}"
-            tracker.ensure_status_banner().show_success(msg)
+                tracker.ensure_status_banner().show_info(warning)
             clear_passphrase_widgets()
-        except (OSError, ValueError) as exc:
-            tracker.ensure_status_banner().show_error(f"Restore failed: {exc}")
+        except (OSError, ValueError):
+            _rollback_journal_from_snapshot(tracker.data_path, journal_snap)
+            _remove_snapshot(journal_snap)
+            tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
 
     def profile_zip_restore(path: str) -> None:
         try:
             manifest = backup.validate_backup(path)
-        except (OSError, ValueError) as exc:
-            tracker.ensure_status_banner().show_error(_safe_user_error(exc))
+        except (OSError, ValueError):
+            tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
             return
         date_txt = _format_backup_date(str(manifest.get("exported_at", "")))
         profile_count = len(manifest.get("profiles") or [])
@@ -741,13 +852,17 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
             parent=window,
         ):
             return
+        if not prepare_restore_apply(tracker):
+            tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
+            return
+        journal_snap = _snapshot_journal_if_present(tracker.data_path)
         try:
-            _flush_pending_save()
             backup.import_backup(path, merge_profiles=True, creative_root=creative_projects_dir())
-            _reencrypt_if_needed()
-            finish_restore_success()
-        except (OSError, ValueError) as exc:
-            tracker.ensure_status_banner().show_error(f"Restore failed: {_safe_user_error(exc)}")
+            finish_restore_success(journal_snap=journal_snap)
+        except (OSError, ValueError):
+            _rollback_journal_from_snapshot(tracker.data_path, journal_snap)
+            _remove_snapshot(journal_snap)
+            tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
 
     def restore_now() -> None:
         if restore_busy["active"]:
