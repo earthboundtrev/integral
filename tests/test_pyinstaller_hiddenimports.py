@@ -59,7 +59,10 @@ def test_onefile_static_datas_match_spec():
 
 
 def test_onefile_collect_all_matches_spec_matplotlib():
-    assert "matplotlib" in parse_collect_all_packages_from_spec(SPEC_PATH)
+    packages = parse_collect_all_packages_from_spec(SPEC_PATH)
+    assert "matplotlib" in packages
+    assert "ollama" in packages
+    assert "httpx" in packages
 
 
 def test_print_onefile_script_emits_one_module_per_line():

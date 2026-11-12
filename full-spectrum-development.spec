@@ -10,19 +10,8 @@ ROOT = os.path.dirname(os.path.abspath(SPEC))
 ICON = os.path.join(ROOT, "assets", "icon.ico")
 
 matplotlib_datas = collect_data_files("matplotlib")
-
-# Optional AI client — not bundled; keeps httpx/pydantic/anyio out of the build graph.
-OLLAMA_EXCLUDES = [
-    "ollama",
-    "httpx",
-    "httpcore",
-    "h11",
-    "anyio",
-    "sniffio",
-    "dns",
-    "rich",
-    "pygments",
-]
+ollama_datas = collect_data_files("ollama")
+httpx_datas = collect_data_files("httpx")
 
 a = Analysis(
     ["personal_dev_tracker.py"],
@@ -33,8 +22,18 @@ a = Analysis(
         ("assets", "assets"),
         (os.path.join(ROOT, "progression", "seed", "v1"), "progression/seed/v1"),
         *matplotlib_datas,
+        *ollama_datas,
+        *httpx_datas,
     ],
     hiddenimports=[
+        "ollama",
+        "httpx",
+        "httpcore",
+        "h11",
+        "anyio",
+        "sniffio",
+        "certifi",
+        "idna",
         "activity_grid",
         "paths",
         "theme",
@@ -134,7 +133,7 @@ a = Analysis(
         },
     },
     runtime_hooks=[],
-    excludes=OLLAMA_EXCLUDES,
+    excludes=[],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
