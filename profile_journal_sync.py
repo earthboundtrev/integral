@@ -57,7 +57,6 @@ def _refuse_link(path: str) -> None:
 
 def _profiles_root_real() -> str:
     profiles_root = profiles.get_profiles_root()
-    _refuse_link(profiles_root)
     if os.path.isdir(profiles_root):
         return os.path.normcase(os.path.realpath(profiles_root))
     return os.path.normcase(os.path.abspath(profiles_root))
@@ -84,7 +83,7 @@ def _layout_paths(safe_id: str) -> tuple[str, str, str]:
 def _validate_layout_before_io(safe_id: str) -> tuple[str, str, str]:
     """Validate id, containment, and links/junctions before migration or file writes."""
     profiles_root, profile_dir, journal_path = _layout_paths(safe_id)
-    for path in (profiles_root, profile_dir, journal_path):
+    for path in (profile_dir, journal_path):
         _refuse_link(path)
     root_real = _profiles_root_real()
     _assert_contained(profiles_root, root_real)
