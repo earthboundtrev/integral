@@ -36,15 +36,17 @@ def _validated_active_profile_id() -> str:
 def _is_link_or_junction(path: str) -> bool:
     if os.path.islink(path):
         return True
-    if sys.platform != "win32":
-        return False
-    try:
-        st = os.lstat(path)
-    except OSError:
-        return False
-    attrs = getattr(st, "st_file_attributes", 0)
-    if attrs & _WIN_REPARSE:
-        return True
+    if sys.platform == "win32":
+        is_junction = getattr(os.path, "isjunction", None)
+        if is_junction is not None and is_junction(path):
+            return True
+        try:
+            st = os.lstat(path)
+        except OSError:
+            return False
+        attrs = getattr(st, "st_file_attributes", 0)
+        if attrs & _WIN_REPARSE:
+            return True
     return False
 
 
@@ -81,9 +83,8 @@ def _layout_paths(safe_id: str) -> tuple[str, str, str]:
 
 def _validate_layout_before_io(safe_id: str) -> tuple[str, str, str]:
     """Validate id, containment, and links/junctions before migration or file writes."""
-    app_dir = profiles.get_app_dir()
     profiles_root, profile_dir, journal_path = _layout_paths(safe_id)
-    for path in (app_dir, profiles_root, profile_dir, journal_path):
+    for path in (profiles_root, profile_dir, journal_path):
         _refuse_link(path)
     root_real = _profiles_root_real()
     _assert_contained(profiles_root, root_real)
