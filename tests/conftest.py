@@ -7,8 +7,12 @@ import sys
 
 if sys.platform == "win32" and os.environ.get("INTEGRAL_WINDOWS_EXE_CI") == "1":
     _py_base = sys.base_prefix
-    os.environ.setdefault("TCL_LIBRARY", os.path.join(_py_base, "tcl", "tcl8.6"))
-    os.environ.setdefault("TK_LIBRARY", os.path.join(_py_base, "tcl", "tk8.6"))
+    _tcl_lib = os.path.join(_py_base, "tcl", "tcl8.6")
+    _tk_lib = os.path.join(_py_base, "tcl", "tk8.6")
+    if os.path.isdir(_tcl_lib):
+        os.environ["TCL_LIBRARY"] = _tcl_lib
+    if os.path.isdir(_tk_lib):
+        os.environ["TK_LIBRARY"] = _tk_lib
 
 import tkinter as tk
 from collections.abc import Iterator

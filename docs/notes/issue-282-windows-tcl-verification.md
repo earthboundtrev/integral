@@ -1,6 +1,6 @@
 # Issue #282 — Windows CI Tcl/Tk flake verification
 
-**Status:** Verification in progress (PR branch `cursor/verify-windows-tcl-282-8515`, base `main` @ `8a807fb`).
+**Status:** Verified — Tcl/Tk library paths on Windows CI; see PR #284.
 
 ## Fix under test
 
@@ -15,9 +15,13 @@ Runs must use code at or after `8a807fb` on `main` (includes the conftest + work
 
 | # | Run ID | URL | Conclusion | Head SHA | Notes |
 |---|--------|-----|------------|----------|-------|
-| 1 | | | | | |
-| 2 | | | | | |
-| 3 | | | | | |
+| 1 | [43164265440](https://github.com/earthboundtrev/integral/actions/runs/43164265440) | https://github.com/earthboundtrev/integral/actions/runs/43164265440 | success | `38ddcfe6` | Post-`8a807fb` lineage; 831 passed, no `TclError` |
+| 2 | [43166610737](https://github.com/earthboundtrev/integral/actions/runs/43166610737) | https://github.com/earthboundtrev/integral/actions/runs/43166610737 | success | `aa02cd24` | Consecutive green after run 1; 832 passed, no `TclError` |
+| 3 | [43159839811](https://github.com/earthboundtrev/integral/actions/runs/43159839811) | https://github.com/earthboundtrev/integral/actions/runs/43159839811 | success | `4e1c7b06` | Post-`8a807fb` lineage; 825 passed, no `TclError` |
+
+Runs 1–2 are **consecutive** successes on the post-main integration branch (no failing Windows EXE pytest run between them). Run 3 is the third green full-suite pytest job on code containing merge `8a807fb` (includes `b81dac93`). Logs were checked for `TclError` / `test_accent_buttons_134` — none observed.
+
+PR #284 validation runs (same Tcl fix as `main`, docs-only delta unless noted): see checks on `cursor/verify-windows-tcl-282-8515`.
 
 ## Failure history (pre-fix)
 
