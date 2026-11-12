@@ -2,26 +2,181 @@
 
 Includes profile artifacts (data.json, fitness.db) plus app-level creative/
 document sidecars so Writing Projects manuscripts round-trip with the archive.
+
+Optional passphrase encryption writes a non-zip container (magic header + Fernet
+ciphertext). Plain zip backups are unchanged for backward compatibility.
 """
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import shutil
+import struct
 import tempfile
+import unicodedata
 import zipfile
+from contextlib import contextmanager
 from datetime import datetime
+from typing import Iterator
 
 import paths
 import profiles
 import storage
 import zip_import_safety
 
+from vault import CRYPTO_AVAILABLE, PassphraseRequiredError, WrongPassphraseError
+
+if CRYPTO_AVAILABLE:
+    from cryptography.fernet import Fernet, InvalidToken
+    from vault import _derive_key
+else:
+    InvalidToken = None  # type: ignore[misc, assignment]
+    Fernet = None  # type: ignore[misc, assignment]
+
+    def _derive_key(passphrase: str, salt: bytes) -> bytes:  # type: ignore[misc]
+        raise RuntimeError("Install cryptography: pip install cryptography")
+
 BACKUP_VERSION = 1
 MANIFEST_NAME = "manifest.json"
 PROFILE_ARTIFACTS = ("data.json", "fitness.db")
 CREATIVE_PREFIX = "creative/"
+
+ENCRYPTED_BACKUP_MAGIC = b"INTGRBAK"
+ENCRYPTED_BACKUP_FORMAT_VERSION = 1
+ENCRYPTED_BACKUP_KDF_ITERATIONS = 390_000
+ENCRYPTED_BACKUP_SALT_BYTES = 16
+ENCRYPTED_BACKUP_DEFAULT_SUFFIX = ".integral-backup.enc"
+
+
+def normalize_backup_passphrase(passphrase: str) -> str:
+    """Normalize passphrase for stable UTF-8 key derivation (NFC)."""
+    return unicodedata.normalize("NFC", passphrase)
+
+
+def is_encrypted_backup_file(path: str) -> bool:
+    """True when the file begins with the encrypted backup magic (not a zip)."""
+    try:
+        with open(path, "rb") as handle:
+            header = handle.read(len(ENCRYPTED_BACKUP_MAGIC) + 1)
+        return (
+            len(header) >= len(ENCRYPTED_BACKUP_MAGIC) + 1
+            and header[: len(ENCRYPTED_BACKUP_MAGIC)] == ENCRYPTED_BACKUP_MAGIC
+            and header[len(ENCRYPTED_BACKUP_MAGIC)] == ENCRYPTED_BACKUP_FORMAT_VERSION
+        )
+    except OSError:
+        return False
+
+
+def _require_crypto() -> None:
+    if not CRYPTO_AVAILABLE:
+        raise RuntimeError("Install cryptography: pip install cryptography")
+
+
+def _pack_encrypted_backup(zip_bytes: bytes, passphrase: str) -> bytes:
+    _require_crypto()
+    salt = os.urandom(ENCRYPTED_BACKUP_SALT_BYTES)
+    key = _derive_key(passphrase, salt)
+    token = Fernet(key).encrypt(zip_bytes)
+    header = b"".join(
+        [
+            ENCRYPTED_BACKUP_MAGIC,
+            bytes([ENCRYPTED_BACKUP_FORMAT_VERSION]),
+            struct.pack(">I", ENCRYPTED_BACKUP_KDF_ITERATIONS),
+            bytes([len(salt)]),
+            salt,
+            struct.pack(">Q", len(token)),
+        ]
+    )
+    return header + token
+
+
+def _unpack_encrypted_backup(data: bytes, passphrase: str) -> bytes:
+    _require_crypto()
+    min_len = len(ENCRYPTED_BACKUP_MAGIC) + 1 + 4 + 1 + ENCRYPTED_BACKUP_SALT_BYTES + 8
+    if len(data) < min_len:
+        raise ValueError("Not a valid Integral backup file.")
+    if data[: len(ENCRYPTED_BACKUP_MAGIC)] != ENCRYPTED_BACKUP_MAGIC:
+        raise ValueError("Not a valid Integral backup file.")
+    pos = len(ENCRYPTED_BACKUP_MAGIC)
+    if data[pos] != ENCRYPTED_BACKUP_FORMAT_VERSION:
+        raise ValueError(f"Unsupported encrypted backup version: {data[pos]}")
+    pos += 1
+    (iterations,) = struct.unpack_from(">I", data, pos)
+    pos += 4
+    salt_len = data[pos]
+    pos += 1
+    if salt_len <= 0 or salt_len > 64:
+        raise ValueError("Encrypted backup header is invalid.")
+    salt = data[pos : pos + salt_len]
+    pos += salt_len
+    (ct_len,) = struct.unpack_from(">Q", data, pos)
+    pos += 8
+    if ct_len <= 0 or pos + ct_len != len(data):
+        raise ValueError("Encrypted backup header is invalid.")
+    if iterations < ENCRYPTED_BACKUP_KDF_ITERATIONS:
+        raise ValueError("Encrypted backup uses unsupported KDF parameters.")
+    token = data[pos : pos + ct_len]
+    key = _derive_key(passphrase, salt)
+    try:
+        return Fernet(key).decrypt(token)
+    except InvalidToken:
+        raise WrongPassphraseError("That passphrase didn't work for this backup.") from None
+
+
+def _atomic_write_bytes(dest_path: str, payload: bytes) -> None:
+    directory = os.path.dirname(os.path.abspath(dest_path)) or "."
+    os.makedirs(directory, exist_ok=True)
+    fd, temp_path = tempfile.mkstemp(
+        dir=directory,
+        prefix=".integral-backup-",
+        suffix=".partial",
+    )
+    closed = False
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            closed = True
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_path, dest_path)
+    except Exception:
+        if not closed:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+        try:
+            os.unlink(temp_path)
+        except OSError:
+            pass
+        raise
+
+
+def _load_backup_zip_bytes(path: str, passphrase: str | None) -> bytes:
+    with open(path, "rb") as handle:
+        raw = handle.read()
+    if is_encrypted_backup_file(path):
+        if passphrase is None:
+            raise PassphraseRequiredError("Passphrase required for encrypted backup.")
+        normalized = normalize_backup_passphrase(passphrase)
+        if not normalized.strip():
+            raise ValueError("Passphrase required for encrypted backup.")
+        return _unpack_encrypted_backup(raw, normalized)
+    return raw
+
+
+@contextmanager
+def _backup_zipfile(path: str, passphrase: str | None = None) -> Iterator[zipfile.ZipFile]:
+    zip_bytes = _load_backup_zip_bytes(path, passphrase)
+    if not zipfile.is_zipfile(io.BytesIO(zip_bytes)):
+        raise ValueError("Backup payload is not a valid zip archive.")
+    zf = zipfile.ZipFile(io.BytesIO(zip_bytes), "r")
+    try:
+        yield zf
+    finally:
+        zf.close()
 
 
 def _manifest_profile_ids(manifest: dict) -> list[str]:
@@ -69,6 +224,35 @@ def _write_creative_files(zf: zipfile.ZipFile, creative_root: str | None = None)
     return included
 
 
+def _populate_backup_zip(
+    zf: zipfile.ZipFile,
+    *,
+    profile_id: str | None,
+    creative_root: str | None,
+) -> dict:
+    profiles.ensure_app_structure()
+    config = profiles.load_config()
+    profile_ids = [profile_id] if profile_id else [p["id"] for p in config["profiles"]]
+
+    manifest = {
+        "backup_version": BACKUP_VERSION,
+        "exported_at": datetime.now().isoformat(timespec="seconds"),
+        "profiles": profile_ids,
+        "active_profile_id": config.get("active_profile_id"),
+        "files": [],
+        "creative_file_count": 0,
+    }
+
+    zf.writestr("config.json", json.dumps(config, indent=2, ensure_ascii=False))
+    for pid in profile_ids:
+        manifest["files"].extend(_write_profile_files(zf, pid))
+    creative_files = _write_creative_files(zf, creative_root=creative_root)
+    manifest["files"].extend(creative_files)
+    manifest["creative_file_count"] = len(creative_files)
+    zf.writestr(MANIFEST_NAME, json.dumps(manifest, indent=2, ensure_ascii=False))
+    return manifest
+
+
 def _restore_creative_files(
     zf: zipfile.ZipFile,
     creative_root: str,
@@ -77,14 +261,23 @@ def _restore_creative_files(
     os.makedirs(creative_root, exist_ok=True)
     restored = 0
     for name in zf.namelist():
+        zip_import_safety.require_safe_zip_member_path(name)
         normalized = name.replace("\\", "/")
         if not normalized.startswith(CREATIVE_PREFIX) or normalized.endswith("/"):
             continue
         rel = normalized[len(CREATIVE_PREFIX) :]
         dest = os.path.join(creative_root, *rel.split("/"))
+        _assert_path_within_root(dest, creative_root)
         zip_import_safety.copy_zip_member_to_file(zf, name, dest, budget)
         restored += 1
     return restored
+
+
+def _assert_path_within_root(dest_path: str, root: str) -> None:
+    dest_real = os.path.realpath(dest_path)
+    root_real = os.path.realpath(root)
+    if dest_real != root_real and not dest_real.startswith(root_real + os.sep):
+        raise ValueError("Backup archive contains an unsafe path.")
 
 
 def _install_profile_artifacts(staging_profiles: str, profile_id: str) -> None:
@@ -120,38 +313,44 @@ def export_backup(
     profile_id: str | None = None,
     *,
     creative_root: str | None = None,
+    passphrase: str | None = None,
 ) -> dict:
-    """Write a zip backup. One profile if profile_id set, else all profiles."""
-    profiles.ensure_app_structure()
-    config = profiles.load_config()
-    profile_ids = [profile_id] if profile_id else [p["id"] for p in config["profiles"]]
+    """Write a zip backup. One profile if profile_id set, else all profiles.
 
-    manifest = {
-        "backup_version": BACKUP_VERSION,
-        "exported_at": datetime.now().isoformat(timespec="seconds"),
-        "profiles": profile_ids,
-        "active_profile_id": config.get("active_profile_id"),
-        "files": [],
-        "creative_file_count": 0,
-    }
+    When ``passphrase`` is set, the zip is built in memory and written as an
+    encrypted container (not readable as a zip file). No plaintext zip is left on disk.
+    """
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        manifest = _populate_backup_zip(
+            zf,
+            profile_id=profile_id,
+            creative_root=creative_root,
+        )
+    zip_bytes = buffer.getvalue()
 
-    with zipfile.ZipFile(dest_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("config.json", json.dumps(config, indent=2, ensure_ascii=False))
-        for pid in profile_ids:
-            manifest["files"].extend(_write_profile_files(zf, pid))
-        creative_files = _write_creative_files(zf, creative_root=creative_root)
-        manifest["files"].extend(creative_files)
-        manifest["creative_file_count"] = len(creative_files)
-        zf.writestr(MANIFEST_NAME, json.dumps(manifest, indent=2, ensure_ascii=False))
+    if passphrase is not None:
+        normalized = normalize_backup_passphrase(passphrase)
+        if not normalized.strip():
+            raise ValueError("Passphrase required for encrypted backup.")
+        payload = _pack_encrypted_backup(zip_bytes, normalized)
+        _atomic_write_bytes(dest_path, payload)
+        manifest = {**manifest, "encrypted": True}
+    else:
+        with open(dest_path, "wb") as handle:
+            handle.write(zip_bytes)
+        manifest = {**manifest, "encrypted": False}
 
     return manifest
 
 
-def validate_backup(zip_path: str) -> dict:
+def validate_backup(zip_path: str, *, passphrase: str | None = None) -> dict:
     """Verify backup structure. Raises ValueError if invalid."""
-    with zipfile.ZipFile(zip_path, "r") as zf:
+    with _backup_zipfile(zip_path, passphrase) as zf:
         budget = zip_import_safety.prepare_zip_import(zf)
         names = set(zf.namelist())
+        for member in names:
+            zip_import_safety.require_safe_zip_member_path(member)
         if MANIFEST_NAME not in names:
             raise ValueError("Backup missing manifest.json")
         if "config.json" not in names:
@@ -183,13 +382,14 @@ def import_backup(
     merge_profiles: bool = True,
     *,
     creative_root: str | None = None,
+    passphrase: str | None = None,
 ) -> dict:
     """Restore profiles and creative documents from a validated backup zip."""
-    manifest = validate_backup(zip_path)
+    manifest = validate_backup(zip_path, passphrase=passphrase)
     profiles.ensure_app_structure()
     creative_dest = creative_root if creative_root is not None else paths.creative_projects_dir()
 
-    with zipfile.ZipFile(zip_path, "r") as zf:
+    with _backup_zipfile(zip_path, passphrase) as zf:
         budget = zip_import_safety.prepare_zip_import(zf)
         imported_config = json.loads(
             zip_import_safety.read_zip_member_bytes(zf, "config.json", budget).decode("utf-8")
@@ -205,12 +405,14 @@ def import_backup(
                 staged_profile = os.path.join(staging_profiles, pid)
                 os.makedirs(staged_profile, exist_ok=True)
                 for name in zf.namelist():
+                    zip_import_safety.require_safe_zip_member_path(name)
                     if not name.startswith(prefix) or name.endswith("/"):
                         continue
                     filename = name[len(prefix) :]
                     if filename not in PROFILE_ARTIFACTS:
                         continue
                     target = os.path.join(staged_profile, filename)
+                    _assert_path_within_root(target, staged_profile)
                     zip_import_safety.copy_zip_member_to_file(zf, name, target, budget)
 
             restored_docs = _restore_creative_files(zf, staging_creative, budget)
@@ -238,11 +440,12 @@ def import_backup(
     return manifest
 
 
-def list_backup_contents(zip_path: str) -> dict:
+def list_backup_contents(zip_path: str, *, passphrase: str | None = None) -> dict:
     """Human-readable summary of a backup file."""
-    manifest = validate_backup(zip_path)
-    with zipfile.ZipFile(zip_path, "r") as zf:
+    manifest = validate_backup(zip_path, passphrase=passphrase)
+    with _backup_zipfile(zip_path, passphrase) as zf:
         return {
             "manifest": manifest,
             "files": sorted(zf.namelist()),
+            "encrypted": is_encrypted_backup_file(zip_path),
         }
