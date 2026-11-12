@@ -43,14 +43,6 @@ def immediate_threads(monkeypatch):
                 self._target()
 
     monkeypatch.setattr(backup_dialog_ui.threading, "Thread", _ImmediateThread)
-    _real_after = tk.Misc.after
-
-    def _immediate_after(self, ms, func=None, *args):
-        if ms == 0 and func is not None:
-            return func(*args)
-        return _real_after(self, ms, func, *args)
-
-    monkeypatch.setattr(tk.Misc, "after", _immediate_after)
 
 
 @pytest.fixture
