@@ -270,3 +270,4 @@ def test_import_staging_lives_under_app_dir_and_is_removed(seeded_profile, tmp_p
     assert staging_parent.startswith(app_dir)
     if os.path.isdir(staging_parent):
         assert not any(os.scandir(staging_parent)), "staging run dirs should be removed after import"
+    assert not os.path.isdir(staging_parent), "empty staging parent should be removed after import"

@@ -76,6 +76,27 @@ class TestStatusBanner(unittest.TestCase):
         self.root.update()
         self.assertEqual(self.banner._kind, "error")
 
+    def test_show_success_extra_actions(self):
+        fired: list[str] = []
+
+        def open_folder() -> None:
+            fired.append("open")
+
+        self.banner.show_success("Backed up.", extra_actions=[("Open folder", open_folder)])
+        self.root.update()
+
+        def walk(w):
+            yield w
+            for child in w.winfo_children():
+                yield from walk(child)
+
+        for widget in walk(self.banner._frame):
+            if widget.winfo_class() == "TButton" and widget.cget("text") == "Open folder":
+                widget.invoke()
+                break
+        self.root.update()
+        self.assertEqual(fired, ["open"])
+
     def test_set_theme_ignores_destroyed_frame(self):
         theme2 = dict(self.banner._theme)
         theme2["success_bg"] = "#111111"

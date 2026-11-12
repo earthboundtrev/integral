@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Callable
 
 import backup
 import integral_io
+import profile_journal_sync
 from busy_indicator import BusyIndicator, DEFAULT_DELAY_MS
 from inline_validation import (
     focus_first_invalid,
@@ -576,6 +577,7 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
             return
         try:
             tracker.save_data(flush=True)
+            profile_journal_sync.sync_tracker_journal_to_active_profile(tracker.data_path)
         except OSError:
             tracker.ensure_status_banner().show_error(GENERIC_BACKUP_ERROR)
             return
@@ -590,9 +592,9 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
                     creative_root=creative_projects_dir(),
                     passphrase=passphrase,
                 )
-                tracker.root.after(0, lambda: on_export_done(None, manifest, dest))
+                tracker.root.after(0, lambda m=manifest, d=dest: on_export_done(None, m, d))
             except BaseException as exc:  # noqa: BLE001
-                tracker.root.after(0, lambda: on_export_done(exc, None, dest))
+                tracker.root.after(0, lambda e=exc, d=dest: on_export_done(e, None, d))
 
         def on_export_done(exc: BaseException | None, manifest: dict | None, dest_path: str) -> None:
             export_busy["active"] = False
@@ -673,6 +675,7 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
 
     def _complete_restore_after_import(*, journal_snap: str | None) -> bool:
         tracker.cancel_pending_save()
+        profile_journal_sync.sync_active_profile_journal_to_tracker(tracker.data_path)
         ok, msg = reencrypt_restored_journal_from_disk(tracker)
         if not ok:
             _rollback_journal_from_snapshot(tracker.data_path, journal_snap)
@@ -721,7 +724,7 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
                 )
                 tracker.root.after(0, lambda: on_import_done(None))
             except BaseException as exc:  # noqa: BLE001
-                tracker.root.after(0, lambda: on_import_done(exc))
+                tracker.root.after(0, lambda e=exc: on_import_done(e))
 
         def on_import_done(exc: BaseException | None) -> None:
             restore_busy["active"] = False
@@ -742,7 +745,7 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
                     show_restore_passphrase_ui()
                     confirm_bar.pack_forget()
                 else:
-                    set_field_error(restore_err, BACKUP_WRONG_FILE_MSG)
+                    tracker.ensure_status_banner().show_error(msg)
                     cancel_restore_flow()
                 return
             _complete_restore_after_import(journal_snap=snap)
@@ -763,9 +766,9 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         def worker() -> None:
             try:
                 manifest = backup.validate_backup(path, passphrase=passphrase)
-                tracker.root.after(0, lambda: on_done(None, manifest))
+                tracker.root.after(0, lambda m=manifest: on_done(None, m))
             except BaseException as exc:  # noqa: BLE001
-                tracker.root.after(0, lambda: on_done(exc, None))
+                tracker.root.after(0, lambda e=exc: on_done(e, None))
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -776,13 +779,14 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         if exc is not None:
             if isinstance(exc, WrongPassphraseError):
                 set_field_error(restore_err, str(exc))
+                show_restore_passphrase_ui()
                 try:
                     restore_pass_entry.select_range(0, tk.END)
                     restore_pass_entry.focus_set()
                 except tk.TclError:
                     pass
                 return
-            set_field_error(restore_err, BACKUP_WRONG_FILE_MSG)
+            tracker.ensure_status_banner().show_error(BACKUP_WRONG_FILE_MSG)
             cancel_restore_flow()
             return
         if manifest:
@@ -806,7 +810,15 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         restore_state["passphrase"] = pw
         try_decrypt_manifest(path, pw, finish_decrypt_preview)
 
-    restore_pass_entry.bind("<Return>", lambda _e: submit_restore_passphrase(), add="+")
+    def _restore_pass_return(_event: tk.Event | None = None) -> str:
+        submit_restore_passphrase()
+        return "break"
+
+    restore_pass_entry.bind("<Return>", _restore_pass_return, add="+")
+    restore_pass_entry.bind("<KeyPress-Return>", _restore_pass_return, add="+")
+    ttk.Button(restore_pass_row, text="Continue", command=submit_restore_passphrase).pack(
+        side=tk.LEFT, padx=(8, 0)
+    )
 
     def legacy_restore(path: str) -> None:
         if not messagebox.askyesno(
@@ -889,6 +901,7 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         if encrypted:
             if use_vault_var.get() and _vault_unlocked(tracker):
                 restore_state["passphrase"] = tracker.vault_passphrase
+                show_restore_passphrase_ui()
                 try_decrypt_manifest(path, tracker.vault_passphrase, finish_decrypt_preview)
                 return
             show_restore_passphrase_ui()
@@ -915,6 +928,12 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         if confirm_bar.winfo_ismapped():
             cancel_restore_flow()
             return "break"
+        try:
+            if restore_panel.winfo_ismapped():
+                cancel_restore_flow()
+                return "break"
+        except tk.TclError:
+            pass
         on_close()
         return "break"
 

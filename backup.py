@@ -237,6 +237,11 @@ def _backup_import_staging() -> Iterator[str]:
         yield staging
     finally:
         shutil.rmtree(staging, ignore_errors=True)
+        try:
+            if os.path.isdir(parent) and not any(os.scandir(parent)):
+                os.rmdir(parent)
+        except OSError:
+            pass
 
 
 def _manifest_profile_ids(manifest: dict) -> list[str]:
