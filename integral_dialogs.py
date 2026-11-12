@@ -87,93 +87,9 @@ def show_export_dialog(tracker: PersonalDevelopmentTracker) -> None:
 
 
 def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
-    window = tk.Toplevel(tracker.root)
-    window.title("Backup & Restore")
-    window.geometry("560x360")
-    window.configure(bg=tracker.theme["bg"])
-    window.transient(tracker.root)
+    from backup_dialog_ui import show_backup_dialog as _open_backup_dialog
 
-    ttk.Label(
-        window,
-        text=(
-            "Full backup is a zip: life data (including todos, practices, day plans, settings), "
-            "Writing Projects documents under creative/, and fitness.db when present.\n\n"
-            "Restore replaces the current data file and creative documents (a .bak copy of data is kept). "
-            "Legacy JSON backups still restore the library index, but not manuscript files."
-        ),
-        wraplength=520,
-    ).pack(anchor="w", padx=15, pady=15)
-
-    def backup_now() -> None:
-        path = filedialog.asksaveasfilename(
-            title="Save full backup",
-            defaultextension=".zip",
-            filetypes=[
-                ("Integral full backup", "*.zip"),
-                ("All files", "*.*"),
-            ],
-            initialfile=f"integral-backup-{datetime.now().strftime('%Y%m%d')}.zip",
-        )
-        if not path:
-            return
-        try:
-            manifest = write_full_backup(
-                tracker._payload(),
-                path,
-                creative_root=creative_projects_dir(),
-                fitness_db_path=_active_fitness_db_path(tracker),
-            )
-            fitness_note = "with fitness DB" if manifest.get("has_fitness") else "no fitness DB"
-            tracker.ensure_status_banner().show_success(
-                f"Backup saved to {path} "
-                f"({manifest.get('creative_file_count', 0)} creative files, {fitness_note})."
-            )
-        except OSError as exc:
-            tracker.ensure_status_banner().show_error(f"Backup failed: {exc}")
-
-    def restore_now() -> None:
-        path = filedialog.askopenfilename(
-            title="Restore backup",
-            filetypes=[
-                ("Integral backups", "*.zip *.json"),
-                ("Full zip backup", "*.zip"),
-                ("Legacy JSON backup", "*.json"),
-                ("All files", "*.*"),
-            ],
-        )
-        if not path:
-            return
-        if not messagebox.askyesno(
-            "Confirm restore",
-            "This replaces your current journal and Writing Project documents with the backup. Continue?",
-        ):
-            return
-        try:
-            result = restore_backup_file(
-                path,
-                tracker.data_path,
-                creative_root=creative_projects_dir(),
-                fitness_db_path=_active_fitness_db_path(tracker, require_exists=False),
-                make_copy=True,
-            )
-            tracker.load_data()
-            tracker.create_dashboard()
-            window.destroy()
-            warning = result.get("warning")
-            msg = "Journal restored from backup."
-            if result.get("restored_creative_files"):
-                msg += f"\nCreative files restored: {result['restored_creative_files']}"
-            if warning:
-                msg += f"\n\nNote: {warning}"
-            messagebox.showinfo("Restored", msg)
-        except (OSError, ValueError) as exc:
-            messagebox.showerror("Restore failed", str(exc))
-
-    buttons = ttk.Frame(window)
-    buttons.pack(fill=tk.X, padx=15, pady=10)
-    ttk.Button(buttons, text="Export Backup…", command=backup_now).pack(side=tk.LEFT, padx=4)
-    ttk.Button(buttons, text="Restore from Backup…", command=restore_now).pack(side=tk.LEFT, padx=4)
-    ttk.Button(buttons, text="Close", command=window.destroy).pack(side=tk.RIGHT)
+    _open_backup_dialog(tracker)
 
 
 def show_milestones_dialog(tracker: PersonalDevelopmentTracker) -> None:

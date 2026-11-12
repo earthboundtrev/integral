@@ -206,6 +206,10 @@ def _backup_zipfile(path: str, passphrase: str | None = None) -> Iterator[zipfil
             raise ValueError("Backup payload is not a valid zip archive.")
         zf = zipfile.ZipFile(io.BytesIO(zip_bytes), "r")
     else:
+        if passphrase is not None:
+            normalized = normalize_backup_passphrase(passphrase)
+            if normalized.strip():
+                raise ValueError("Passphrase not accepted for an unencrypted backup.")
         zf = zipfile.ZipFile(path, "r")
     try:
         yield zf

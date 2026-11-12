@@ -60,6 +60,7 @@ a = Analysis(
         "progression.video_catalog",
         "progression.sessions",
         "backup",
+        "backup_dialog_ui",
         "body_composition_ui",
         "busy_indicator",
         "journal",
