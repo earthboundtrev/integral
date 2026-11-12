@@ -24,7 +24,7 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt -r requirements-build.txt -r requirements-ai.txt pyinstaller
+          python -m pip install -r requirements.txt -r requirements-build.txt -r requirements-ai.txt
 
       - name: Run pytest
         run: python -m pytest tests/ -q --timeout=60
@@ -38,6 +38,25 @@ jobs:
           INTEGRAL_CI_BUILD: "1"
         run: ./build-onefile.ps1
 
+      - name: Smoke test exe (test-data folder)
+        shell: pwsh
+        run: ./scripts/ci_smoke_windows_exe.ps1 -ExePath dist/Integral.exe -Seconds 20
+
+      - name: Bundle artifact files (BUILD.txt, Run-Test.cmd)
+        shell: pwsh
+        run: |
+          $pr = '${{ github.event.pull_request.number }}'
+          if (-not $pr) { $pr = 'manual' }
+          $built = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss'Z'")
+          @(
+            "pull_request: $pr",
+            "commit: $env:GITHUB_SHA",
+            "built_utc: $built",
+            "data_folder_default: %APPDATA%\Integral-test",
+            "run_test_cmd: sets INTEGRAL_DATA_DIR=%TEMP%\Integral-RunTest"
+          ) | Set-Content -Path dist/BUILD.txt -Encoding utf8
+          Copy-Item -Path scripts/Run-Test.cmd -Destination dist/Run-Test.cmd
+
       - name: Artifact name
         id: artifact
         shell: pwsh
@@ -48,10 +67,13 @@ jobs:
           $name = "integral-pr${pr}-${short}"
           "name=$name" >> $env:GITHUB_OUTPUT
 
-      - name: Upload Integral.exe
+      - name: Upload PR build bundle
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.artifact.outputs.name }}
-          path: dist/Integral.exe
+          path: |
+            dist/Integral.exe
+            dist/BUILD.txt
+            dist/Run-Test.cmd
           retention-days: 7
           if-no-files-found: error
