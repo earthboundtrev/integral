@@ -236,6 +236,44 @@ def test_change_passphrase_confirm_cancel_is_silent(tk_root, request):
     )
 
 
+def test_presave_retry_keeps_bak_when_primary_unreadable(tmp_path):
+    pytest.importorskip("cryptography")
+    data_file = tmp_path / "data.json"
+    bak_file = tmp_path / "data.json.bak"
+    save_data_file(str(bak_file), {"backup": 1}, encrypted=True, passphrase="secret")
+    with open(data_file, "w", encoding="utf-8") as handle:
+        handle.write('{"integral_encrypted": true, "truncated')
+
+    with patch("vault.open", side_effect=OSError("write blocked")):
+        with pytest.raises(OSError, match="write blocked"):
+            save_data_file(str(data_file), {"n": 1}, encrypted=False, passphrase=None)
+
+    assert bak_file.exists()
+
+
+def test_startup_skips_invalid_profile_id(tmp_path, monkeypatch):
+    log_file = _configure_integral_log(monkeypatch, tmp_path)
+    app_dir = tmp_path / "integral-home"
+    app_dir.mkdir()
+    profiles_root = app_dir / "profiles"
+    profiles_root.mkdir(parents=True)
+    config = {
+        "active_profile_id": "default",
+        "profiles": [
+            {"id": "default", "name": "Default"},
+            {"id": "../escape", "name": "Invalid"},
+        ],
+    }
+    with open(app_dir / "config.json", "w", encoding="utf-8") as handle:
+        json.dump(config, handle)
+
+    monkeypatch.setattr(paths, "user_data_dir", lambda: str(app_dir))
+    monkeypatch.setattr(profiles, "get_app_dir", lambda: str(app_dir))
+
+    sweep_journal_save_artifacts_at_startup()
+    assert _SWEEP_PATH_SKIPPED_WARNING in _read_log(log_file)
+
+
 def test_startup_keeps_bak_when_primary_unreadable(tmp_path, monkeypatch):
     pytest.importorskip("cryptography")
     log_file = _configure_integral_log(monkeypatch, tmp_path)

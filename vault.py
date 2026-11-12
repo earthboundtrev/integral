@@ -169,15 +169,9 @@ def drop_opposite_format_journal_backup(path: str, *, encrypted: bool) -> None:
     _remove_mismatched_journal_backup(path, encrypted=encrypted)
 
 
-def retry_journal_save_artifact_cleanup(data_path: str, *, encrypted: bool) -> None:
-    """Retry leftover temp and mismatched-backup cleanup for one journal path."""
+def retry_journal_save_artifact_cleanup(data_path: str) -> None:
+    """Retry removing a leftover save temp for one journal path (pre-save only)."""
     try_remove_leftover_save_temp(data_path)
-    _remove_mismatched_journal_backup(data_path, encrypted=encrypted)
-
-
-def iter_journal_data_paths() -> list[str]:
-    """Journal ``data.json`` paths to sweep at startup (all profiles + canonical root)."""
-    return [target.data_path for target in iter_journal_sweep_targets()]
 
 
 def iter_journal_sweep_targets() -> list[tuple[str, str]]:
@@ -420,7 +414,7 @@ def save_data_file(path: str, payload: dict[str, Any], *, encrypted: bool, passp
     current good data.json to data.json.bak. Use a lock to serialize saves.
     """
     with _save_lock:
-        retry_journal_save_artifact_cleanup(path, encrypted=encrypted)
+        retry_journal_save_artifact_cleanup(path)
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
         if encrypted:
             if not passphrase:
