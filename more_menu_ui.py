@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import sys
 import tkinter as tk
 from dataclasses import dataclass
@@ -11,6 +12,27 @@ import nav_items
 from integral_dialogs import show_backup_dialog, show_export_dialog
 from keyboard_shortcuts import MORE_ITEM_SHORTCUT_HINTS, show_keyboard_shortcuts
 from theme import FONTS
+
+logger = logging.getLogger(__name__)
+
+
+def unbind_all_func(root: tk.Misc, sequence: str, funcid: str) -> None:
+    """Remove one ``bind_all`` handler without clearing other global bindings."""
+    try:
+        scripts = root.bind_class("all", sequence)
+        if scripts:
+            kept = [
+                line
+                for line in scripts.splitlines()
+                if funcid not in line and line.strip()
+            ]
+            root.bind_class("all", sequence, "\n".join(kept) if kept else "")
+        root.deletecommand(funcid)
+    except tk.TclError:
+        logger.exception(
+            "Failed to remove global binding %s (%s)", sequence, funcid
+        )
+
 
 # Canonical menu structure (labels tested for reachability).
 MORE_GROUPS: tuple[dict[str, Any], ...] = (
@@ -746,10 +768,7 @@ class MoreMenuPopup:
                 pass
         self._binding_funcids.clear()
         for sequence, funcid in self._binding_all_funcids:
-            try:
-                self.root.tk.call("unbind", "all", sequence, funcid)
-            except tk.TclError:
-                pass
+            unbind_all_func(self.root, sequence, funcid)
         self._binding_all_funcids.clear()
         if self._had_grab:
             try:
