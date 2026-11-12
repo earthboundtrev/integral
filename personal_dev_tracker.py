@@ -250,7 +250,7 @@ class PersonalDevelopmentTracker:
         self._show_unreadable_reps_banner_if_needed()
         self._start_day_watch()
         self._start_reminder_scheduler()
-        self.sync_quick_capture_panel()
+        self._sync_quick_capture_at_startup()
         if not self.settings.get("onboarding_complete"):
             show_onboarding(self)
 
@@ -926,6 +926,9 @@ class PersonalDevelopmentTracker:
             self._fitness_state_dirty = False
         payload = build_known_top_level_payload(self)
         merge_extra_top_level_into_payload(payload, self._extra_top_level)
+        if quick_capture.is_quick_capture_building(self.settings):
+            payload = dict(payload)
+            payload["settings"] = quick_capture.settings_for_save(self.settings)
         return payload
 
     def save_data(
@@ -3288,15 +3291,46 @@ class PersonalDevelopmentTracker:
         self._track_window("journal", win)
 
     def set_quick_capture_enabled(self, enabled: bool, *, persist: bool = True) -> None:
-        self.settings = quick_capture.apply_quick_capture_settings(
-            self.settings,
-            {"enabled": bool(enabled)},
-        )
-        if persist:
-            self.save_data(flush=True)
-        if not enabled:
+        if enabled:
+            self.settings = quick_capture.apply_quick_capture_settings(
+                self.settings,
+                {"enabled": True},
+            )
+            if persist:
+                self.settings[quick_capture.QC_BUILDING_SETTINGS_KEY] = True
+                self.save_data(flush=True)
+        else:
+            self.settings = quick_capture.apply_quick_capture_settings(
+                self.settings,
+                {"enabled": False},
+            )
+            self.settings.pop(quick_capture.QC_BUILDING_SETTINGS_KEY, None)
+            if persist:
+                self.save_data(flush=True)
             self.stop_focus_shield()
         self.sync_quick_capture_panel()
+
+    def _sync_quick_capture_at_startup(self) -> None:
+        if quick_capture.is_quick_capture_building(self.settings):
+            self.settings = quick_capture.commit_build_failure(self.settings)
+            self.save_data(flush=True)
+            close_quick_capture_panel(self)
+            self.root.after(50, self._show_quick_capture_interrupted_notice)
+            return
+        self.sync_quick_capture_panel()
+
+    def _show_quick_capture_interrupted_notice(self) -> None:
+        from quick_capture_ui import QC_INTERRUPTED_NOTICE
+
+        def turn_on() -> None:
+            self.ensure_status_banner().dismiss()
+            self.set_quick_capture_enabled(True)
+
+        self.ensure_status_banner().show_info(
+            QC_INTERRUPTED_NOTICE,
+            extra_actions=[("Turn on", turn_on)],
+            dismissible=True,
+        )
 
     def sync_quick_capture_panel(self) -> None:
         if quick_capture.is_quick_capture_enabled(self.settings):
