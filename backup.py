@@ -239,7 +239,12 @@ def _backup_import_staging() -> Iterator[str]:
         shutil.rmtree(staging, ignore_errors=True)
         try:
             if os.path.isdir(parent) and not any(os.scandir(parent)):
-                os.rmdir(parent)
+                app_dir = profiles.get_app_dir()
+                parent_real = os.path.normcase(os.path.realpath(parent))
+                app_real = os.path.normcase(os.path.realpath(app_dir))
+                sep = os.path.normcase(os.sep)
+                if parent_real.startswith(app_real + sep):
+                    os.rmdir(parent)
         except OSError:
             pass
 

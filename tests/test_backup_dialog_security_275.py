@@ -14,12 +14,17 @@ pytest.importorskip("cryptography")
 import backup_dialog_ui
 import paths
 import personal_dev_tracker
+import profile_journal_sync
+import profiles
 import storage
 from backup_dialog_ui import (
     GENERIC_REENCRYPT_ERROR,
+    _rollback_journal_from_snapshot,
+    _snapshot_journal_if_present,
     prepare_restore_apply,
     reencrypt_restored_journal_from_disk,
     resolve_export_passphrase,
+    save_data_file,
     typed_passphrase_error,
 )
 from tests.conftest import pump_tk
@@ -116,6 +121,86 @@ def test_reencrypt_reads_disk_not_memory(temp_app):
     assert reencrypt_restored_journal_from_disk(tracker)[0] is True
     assert is_encrypted_file(data_path)
     tracker._payload.assert_not_called()
+
+
+def test_reencrypt_encrypts_tracker_and_profile_journal(temp_app):
+    import os
+
+    profiles.set_active_profile("default")
+    _seed_data_file(_minimal_v2_payload())
+    tracker_path = paths.data_file()
+    profile_path = profile_journal_sync.resolved_active_profile_data_path()
+    os.makedirs(os.path.dirname(tracker_path), exist_ok=True)
+    os.makedirs(os.path.dirname(profile_path), exist_ok=True)
+    plain = storage.empty_data()
+    plain["entries"]["2099-03-01"] = {
+        "Emotional Wellbeing": {"rating": 1, "checklist": {}, "metrics": {}, "notes": "both"}
+    }
+    payload = json.dumps(plain)
+    for path in (tracker_path, profile_path):
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(payload)
+
+    tracker = MagicMock()
+    tracker.settings = {"encryption_enabled": True}
+    tracker.vault_passphrase = "vault-passphrase-12"
+    tracker.data_path = tracker_path
+
+    assert reencrypt_restored_journal_from_disk(tracker)[0] is True
+    assert is_encrypted_file(tracker_path)
+    assert is_encrypted_file(profile_path)
+
+
+def test_reencrypt_failure_leaves_profile_without_restored_plaintext(temp_app):
+    import os
+
+    profiles.set_active_profile("default")
+    _seed_data_file(_minimal_v2_payload())
+    tracker_path = paths.data_file()
+    profile_path = profile_journal_sync.resolved_active_profile_data_path()
+    os.makedirs(os.path.dirname(tracker_path), exist_ok=True)
+    os.makedirs(os.path.dirname(profile_path), exist_ok=True)
+    prior = storage.empty_data()
+    prior["entries"]["2000-01-01"] = {
+        "Emotional Wellbeing": {"rating": 3, "checklist": {}, "metrics": {}, "notes": "prior"}
+    }
+    restored = storage.empty_data()
+    restored["entries"]["2099-02-01"] = {
+        "Emotional Wellbeing": {"rating": 9, "checklist": {}, "metrics": {}, "notes": "restored-plain"}
+    }
+    for path in (tracker_path, profile_path):
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(prior, handle)
+    journal_snap = _snapshot_journal_if_present(tracker_path)
+    profile_snap = _snapshot_journal_if_present(profile_path)
+    for path in (tracker_path, profile_path):
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(restored, handle)
+
+    tracker = MagicMock()
+    tracker.settings = {"encryption_enabled": True}
+    tracker.vault_passphrase = "vault-passphrase-12"
+    tracker.data_path = tracker_path
+
+    call_paths: list[str] = []
+
+    def flaky_save(path, payload, **kwargs):
+        call_paths.append(path)
+        if len(call_paths) >= 2:
+            raise OSError("fail second file")
+        return save_data_file(path, payload, **kwargs)
+    with patch("backup_dialog_ui.save_data_file", side_effect=flaky_save):
+        ok, msg = reencrypt_restored_journal_from_disk(tracker)
+    assert ok is False
+    assert msg == GENERIC_REENCRYPT_ERROR
+    _rollback_journal_from_snapshot(tracker_path, journal_snap)
+    _rollback_journal_from_snapshot(profile_path, profile_snap)
+    assert not is_encrypted_file(tracker_path)
+    with open(profile_path, encoding="utf-8") as handle:
+        on_disk = json.load(handle)
+    assert "2099-02-01" not in on_disk.get("entries", {})
+    assert on_disk["entries"]["2000-01-01"]["Emotional Wellbeing"]["notes"] == "prior"
+    assert not is_encrypted_file(profile_path)
 
 
 def test_reencrypt_failure_returns_error_not_success(temp_app):

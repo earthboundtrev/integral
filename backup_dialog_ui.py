@@ -127,22 +127,61 @@ def prepare_restore_apply(tracker: PersonalDevelopmentTracker) -> bool:
     return tracker.wait_for_save_idle()
 
 
+def _restore_snapshots_for_vault(
+    tracker: PersonalDevelopmentTracker,
+) -> tuple[str | None, str | None, str | None]:
+    journal_snap = _snapshot_journal_if_present(tracker.data_path)
+    profile_snap: str | None = None
+    profile_path: str | None = None
+    if _vault_active(tracker):
+        try:
+            profile_path = profile_journal_sync.resolved_active_profile_data_path()
+            profile_snap = _snapshot_journal_if_present(profile_path)
+        except profile_journal_sync.ProfileJournalSyncError:
+            profile_path = None
+    return journal_snap, profile_snap, profile_path
+
+
+def _journal_paths_after_restore(tracker: PersonalDevelopmentTracker) -> list[str]:
+    paths = [tracker.data_path]
+    try:
+        profile_path = profile_journal_sync.resolved_active_profile_data_path()
+    except profile_journal_sync.ProfileJournalSyncError:
+        return paths
+    if not _same_journal_path(tracker.data_path, profile_path):
+        paths.append(profile_path)
+    return paths
+
+
+def _same_journal_path(path_a: str, path_b: str) -> bool:
+    return os.path.normcase(os.path.abspath(path_a)) == os.path.normcase(os.path.abspath(path_b))
+
+
 def reencrypt_restored_journal_from_disk(tracker: PersonalDevelopmentTracker) -> tuple[bool, str | None]:
-    """Re-encrypt using on-disk plaintext only. Returns (ok, user_message)."""
+    """Re-encrypt on-disk plaintext journal copies (tracker + active profile). Returns (ok, user_message)."""
     if not _vault_active(tracker) or not tracker.vault_passphrase:
         return True, None
-    data_path = tracker.data_path
-    if is_encrypted_file(data_path):
-        return True, None
-    if not os.path.isfile(data_path):
+    passphrase = tracker.vault_passphrase
+    targets: list[str] = []
+    for path in _journal_paths_after_restore(tracker):
+        if not os.path.isfile(path):
+            continue
+        if is_encrypted_file(path):
+            continue
+        targets.append(path)
+    if not targets:
         return True, None
     try:
-        payload = load_data_file(data_path, None)
-        save_data_file(data_path, payload, encrypted=True, passphrase=tracker.vault_passphrase)
+        for path in targets:
+            payload = load_data_file(path, None)
+            save_data_file(path, payload, encrypted=True, passphrase=passphrase)
+            if not is_encrypted_file(path):
+                return False, GENERIC_REENCRYPT_ERROR
     except Exception:
         return False, GENERIC_REENCRYPT_ERROR
-    if not is_encrypted_file(data_path):
-        return False, GENERIC_REENCRYPT_ERROR
+    for path in _journal_paths_after_restore(tracker):
+        if os.path.isfile(path) and not is_encrypted_file(path):
+            return False, GENERIC_REENCRYPT_ERROR
     return True, None
 
 
@@ -581,6 +620,9 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         except OSError:
             tracker.ensure_status_banner().show_error(GENERIC_BACKUP_ERROR)
             return
+        except profile_journal_sync.ProfileJournalSyncError:
+            tracker.ensure_status_banner().show_error(GENERIC_BACKUP_ERROR)
+            return
         export_busy["active"] = True
         set_buttons_enabled(False, False)
         indicator.start()
@@ -673,13 +715,49 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
 
     cancel_confirm_btn.configure(command=cancel_restore_flow)
 
-    def _complete_restore_after_import(*, journal_snap: str | None) -> bool:
+    def _rollback_journal_copies(
+        tracker_path: str,
+        journal_snap: str | None,
+        profile_snap: str | None,
+        profile_path: str | None,
+    ) -> None:
+        _rollback_journal_from_snapshot(tracker_path, journal_snap)
+        _remove_snapshot(journal_snap)
+        if profile_path and profile_snap:
+            _rollback_journal_from_snapshot(profile_path, profile_snap)
+            _remove_snapshot(profile_snap)
+
+    def _complete_restore_after_import(
+        *,
+        journal_snap: str | None,
+        profile_snap: str | None = None,
+        profile_journal_path: str | None = None,
+    ) -> bool:
         tracker.cancel_pending_save()
-        profile_journal_sync.sync_active_profile_journal_to_tracker(tracker.data_path)
+        try:
+            profile_journal_sync.sync_active_profile_journal_to_tracker(tracker.data_path)
+        except profile_journal_sync.ProfileJournalSyncError:
+            _rollback_journal_copies(
+                tracker.data_path, journal_snap, profile_snap, profile_journal_path
+            )
+            tracker.cancel_pending_save()
+            try:
+                tracker.load_data()
+            except Exception:
+                pass
+            tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
+            cancel_restore_flow()
+            return False
         ok, msg = reencrypt_restored_journal_from_disk(tracker)
         if not ok:
-            _rollback_journal_from_snapshot(tracker.data_path, journal_snap)
-            _remove_snapshot(journal_snap)
+            if profile_journal_path is None:
+                try:
+                    profile_journal_path = profile_journal_sync.resolved_active_profile_data_path()
+                except profile_journal_sync.ProfileJournalSyncError:
+                    profile_journal_path = None
+            _rollback_journal_copies(
+                tracker.data_path, journal_snap, profile_snap, profile_journal_path
+            )
             tracker.cancel_pending_save()
             try:
                 tracker.load_data()
@@ -689,6 +767,8 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
             cancel_restore_flow()
             return False
         _remove_snapshot(journal_snap)
+        if profile_journal_path and profile_snap:
+            _remove_snapshot(profile_snap)
         tracker.cancel_pending_save()
         tracker.load_data()
         tracker.create_dashboard()
@@ -697,8 +777,16 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         window.destroy()
         return True
 
-    def finish_restore_success(journal_snap: str | None = None) -> None:
-        _complete_restore_after_import(journal_snap=journal_snap)
+    def finish_restore_success(
+        journal_snap: str | None = None,
+        profile_snap: str | None = None,
+        profile_journal_path: str | None = None,
+    ) -> None:
+        _complete_restore_after_import(
+            journal_snap=journal_snap,
+            profile_snap=profile_snap,
+            profile_journal_path=profile_journal_path,
+        )
 
     def apply_encrypted_restore() -> None:
         path = restore_state.get("path")
@@ -708,8 +796,10 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         if not prepare_restore_apply(tracker):
             tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
             return
-        journal_snap = _snapshot_journal_if_present(tracker.data_path)
+        journal_snap, profile_snap, profile_path = _restore_snapshots_for_vault(tracker)
         restore_state["journal_snap"] = journal_snap
+        restore_state["profile_snap"] = profile_snap
+        restore_state["profile_journal_path"] = profile_path
         restore_busy["active"] = True
         set_buttons_enabled(False, False)
         indicator.start()
@@ -731,9 +821,13 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
             indicator.stop()
             set_buttons_enabled(True, True)
             snap = restore_state.get("journal_snap")
+            profile_snap = restore_state.get("profile_snap")
+            profile_path = restore_state.get("profile_journal_path")
             if exc is not None:
                 _remove_snapshot(snap)
+                _remove_snapshot(profile_snap)
                 restore_state["journal_snap"] = None
+                restore_state["profile_snap"] = None
                 msg = _safe_user_error(exc, context="restore")
                 if isinstance(exc, WrongPassphraseError):
                     set_field_error(restore_err, msg)
@@ -748,7 +842,11 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
                     tracker.ensure_status_banner().show_error(msg)
                     cancel_restore_flow()
                 return
-            _complete_restore_after_import(journal_snap=snap)
+            _complete_restore_after_import(
+                journal_snap=snap,
+                profile_snap=profile_snap,
+                profile_journal_path=profile_path,
+            )
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -830,7 +928,7 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         if not prepare_restore_apply(tracker):
             tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
             return
-        journal_snap = _snapshot_journal_if_present(tracker.data_path)
+        journal_snap, profile_snap, profile_path = _restore_snapshots_for_vault(tracker)
         try:
             result = integral_io.restore_backup_file(
                 path,
@@ -839,15 +937,20 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
                 fitness_db_path=_active_fitness_db_path(tracker, require_exists=False),
                 make_copy=True,
             )
-            if not _complete_restore_after_import(journal_snap=journal_snap):
+            if not _complete_restore_after_import(
+                journal_snap=journal_snap,
+                profile_snap=profile_snap,
+                profile_journal_path=profile_path,
+            ):
                 return
             warning = result.get("warning")
             if warning:
                 tracker.ensure_status_banner().show_info(warning)
             clear_passphrase_widgets()
         except (OSError, ValueError):
-            _rollback_journal_from_snapshot(tracker.data_path, journal_snap)
-            _remove_snapshot(journal_snap)
+            _rollback_journal_copies(
+                tracker.data_path, journal_snap, profile_snap, profile_path
+            )
             tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
 
     def profile_zip_restore(path: str) -> None:
@@ -867,13 +970,18 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         if not prepare_restore_apply(tracker):
             tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
             return
-        journal_snap = _snapshot_journal_if_present(tracker.data_path)
+        journal_snap, profile_snap, profile_path = _restore_snapshots_for_vault(tracker)
         try:
             backup.import_backup(path, merge_profiles=True, creative_root=creative_projects_dir())
-            finish_restore_success(journal_snap=journal_snap)
+            finish_restore_success(
+                journal_snap=journal_snap,
+                profile_snap=profile_snap,
+                profile_journal_path=profile_path,
+            )
         except (OSError, ValueError):
-            _rollback_journal_from_snapshot(tracker.data_path, journal_snap)
-            _remove_snapshot(journal_snap)
+            _rollback_journal_copies(
+                tracker.data_path, journal_snap, profile_snap, profile_path
+            )
             tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
 
     def restore_now() -> None:
