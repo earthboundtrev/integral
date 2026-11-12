@@ -284,6 +284,27 @@ def test_recovery_handles_missing_backup_file(tmp_path):
     assert loaded == {}
 
 
+def test_encrypted_journal_envelope_path_ignores_bak_when_main_plaintext(tmp_path):
+    """Plaintext data.json must not trigger unlock because an encrypted .bak exists."""
+    pytest.importorskip("cryptography")
+
+    data_file = tmp_path / "data.json"
+    bak_file = tmp_path / "data.json.bak"
+    save_data_file(
+        str(data_file),
+        {"entries": {}, "settings": {"encryption_enabled": False}},
+        encrypted=False,
+        passphrase=None,
+    )
+    save_data_file(
+        str(bak_file),
+        {"from": "backup"},
+        encrypted=True,
+        passphrase="secret",
+    )
+    assert encrypted_journal_envelope_path(str(data_file)) is None
+
+
 def test_encrypted_journal_envelope_path_uses_backup_when_main_corrupt(tmp_path):
     """Unlock prompt must verify passphrase against .bak when main JSON is corrupt."""
     pytest.importorskip("cryptography")

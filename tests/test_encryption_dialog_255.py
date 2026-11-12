@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import os
+import threading
+import time
 import tkinter as tk
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -12,7 +14,9 @@ pytest.importorskip("cryptography", reason="cryptography required for encryption
 
 import paths
 import personal_dev_tracker
+import vault
 from integral_dialogs import show_security_dialog
+from tests.conftest import pump_tk, pump_tk_until
 from tests.test_data_payload_registry_177 import _minimal_v2_payload, _seed_data_file
 from vault import is_encrypted_file, load_data_file
 
@@ -201,3 +205,123 @@ def test_change_passphrase_success_persists_before_confirmation(tk_root, request
     with pytest.raises(Exception):
         load_data_file(data_path, old_pass)
     assert _had_showinfo_title(request, "Updated")
+
+
+def test_enable_confirm_cancel_is_not_mismatch(tk_root, request):
+    _seed_data_file(_minimal_v2_payload())
+    tracker = personal_dev_tracker.PersonalDevelopmentTracker(tk_root)
+
+    with patch(
+        "integral_dialogs.simpledialog.askstring",
+        side_effect=["chosen-pass", None],
+    ):
+        show_security_dialog(tracker)
+        _click_button(tk_root, "Enable encryption")
+
+    assert not tracker.settings.get("encryption_enabled")
+    assert not any(
+        name == "showerror" and args and args[0] == "Mismatch"
+        for name, args, _kwargs in _messagebox_calls(request)
+    )
+
+
+def test_enable_then_disable_reopen_does_not_prompt_unlock(tk_root):
+    passphrase = "round-trip"
+    data_path = _seed_data_file(_minimal_v2_payload())
+    tracker = personal_dev_tracker.PersonalDevelopmentTracker(tk_root)
+
+    with patch(
+        "integral_dialogs.simpledialog.askstring",
+        side_effect=[passphrase, passphrase],
+    ):
+        show_security_dialog(tracker)
+        _click_button(tk_root, "Enable encryption")
+
+    tracker = _load_tracker_encrypted(tk_root, passphrase)
+    tracker.vault_passphrase = passphrase
+    with patch("integral_dialogs.simpledialog.askstring", return_value=passphrase):
+        show_security_dialog(tracker)
+        _click_button(tk_root, "Disable encryption")
+
+    assert not is_encrypted_file(data_path)
+    bak_path = f"{data_path}.bak"
+    assert not os.path.exists(bak_path) or not is_encrypted_file(bak_path)
+
+    tk_root.destroy()
+    root2 = tk.Tk()
+    root2.withdraw()
+    try:
+        unlock = MagicMock(side_effect=AssertionError("unlock prompt must not run"))
+        with patch("personal_dev_tracker.prompt_vault_unlock", unlock):
+            personal_dev_tracker.PersonalDevelopmentTracker(root2)
+        unlock.assert_not_called()
+    finally:
+        try:
+            root2.destroy()
+        except tk.TclError:
+            pass
+
+
+def test_enable_waits_for_slow_in_flight_save(tk_root, request):
+    data_path = _seed_data_file(_minimal_v2_payload())
+    tracker = personal_dev_tracker.PersonalDevelopmentTracker(tk_root)
+    passphrase = "after-async"
+
+    real_save = vault.save_data_file
+
+    def slow_save(path, payload, *, encrypted, passphrase):
+        time.sleep(4)
+        return real_save(path, payload, encrypted=encrypted, passphrase=passphrase)
+
+    tracker.entries["2026-11-11"] = {"Body & Presence": {"rating": 3}}
+    with patch("personal_dev_tracker.save_data_file", side_effect=slow_save):
+        tracker.save_data(flush=False)
+    assert pump_tk_until(tk_root, lambda: tracker._save_write_in_progress, timeout_s=2.0)
+
+    with patch(
+        "integral_dialogs.simpledialog.askstring",
+        side_effect=[passphrase, passphrase],
+    ):
+        show_security_dialog(tracker)
+        _click_button(tk_root, "Enable encryption")
+
+    assert tracker.settings.get("encryption_enabled") is True
+    assert _had_showinfo_title(request, "Enabled")
+    assert not tracker._save_write_in_progress
+    tracker.save_data(flush=True)
+    pump_tk(tk_root, steps=3)
+    assert not tracker._save_write_in_progress
+
+
+def test_double_submit_encryption_ignored(tk_root, request):
+    data_path = _seed_data_file(_minimal_v2_payload())
+    tracker = personal_dev_tracker.PersonalDevelopmentTracker(tk_root)
+    passphrase = "once-only"
+    flush_calls = {"n": 0}
+    real_save = personal_dev_tracker.PersonalDevelopmentTracker.save_data
+
+    def counting_save(self, *args, **kwargs):
+        if kwargs.get("flush"):
+            flush_calls["n"] += 1
+        return real_save(self, *args, **kwargs)
+
+    show_security_dialog(tracker)
+    btn = next(
+        w
+        for w in _walk_widgets(tk_root)
+        if w.winfo_class() == "TButton" and "Enable encryption" in str(w.cget("text"))
+    )
+    ask_values = [passphrase, passphrase]
+
+    def askstring(*_args, **_kwargs):
+        value = ask_values.pop(0)
+        tk_root.after(1, btn.invoke)
+        return value
+
+    with patch("integral_dialogs.simpledialog.askstring", side_effect=askstring):
+        with patch.object(personal_dev_tracker.PersonalDevelopmentTracker, "save_data", counting_save):
+            btn.invoke()
+            pump_tk(tk_root, steps=10)
+
+    assert is_encrypted_file(data_path)
+    assert flush_calls["n"] == 1

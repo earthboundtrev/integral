@@ -36,14 +36,45 @@ class WrongPassphraseError(VaultPassphraseError):
     """Decryption failed because the passphrase does not match."""
 
 
+def _is_readable_plaintext_journal(path: str) -> bool:
+    if not os.path.exists(path):
+        return False
+    try:
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+        return isinstance(data, dict) and not data.get("integral_encrypted")
+    except (json.JSONDecodeError, OSError, TypeError):
+        return False
+
+
 def encrypted_journal_envelope_path(data_path: str) -> str | None:
     """Return the path to an encrypted journal envelope (main file or .bak)."""
     if is_encrypted_file(data_path):
         return data_path
+    if _is_readable_plaintext_journal(data_path):
+        return None
     bak_path = f"{data_path}.bak"
     if is_encrypted_file(bak_path):
         return bak_path
     return None
+
+
+def drop_opposite_format_journal_backup(path: str, *, encrypted: bool) -> None:
+    """Remove a .bak that does not match the on-disk journal format after a successful save."""
+    bak_path = f"{path}.bak"
+    if not os.path.exists(bak_path):
+        return
+    bak_encrypted = is_encrypted_file(bak_path)
+    if encrypted and not bak_encrypted:
+        try:
+            os.remove(bak_path)
+        except OSError:
+            pass
+    elif not encrypted and bak_encrypted:
+        try:
+            os.remove(bak_path)
+        except OSError:
+            pass
 
 
 def is_encrypted_file(path: str) -> bool:
@@ -259,6 +290,7 @@ def save_data_file(path: str, payload: dict[str, Any], *, encrypted: bool, passp
                 rotated = True
 
             os.replace(temp_path, path)
+            drop_opposite_format_journal_backup(path, encrypted=encrypted)
         except Exception:
             if os.path.exists(temp_path):
                 try:

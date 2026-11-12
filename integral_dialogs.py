@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import time
 import zipfile
 from datetime import datetime
 from tkinter import filedialog, messagebox, scrolledtext, simpledialog, ttk
@@ -365,16 +364,18 @@ def show_security_dialog(tracker: PersonalDevelopmentTracker) -> None:
     ).pack(anchor="w", padx=15, pady=8)
 
     def _wait_for_save_idle() -> bool:
-        for _ in range(500):
-            if not getattr(tracker, "_save_write_in_progress", False):
-                return True
+        import time
+
+        deadline = time.monotonic() + 8.0
+        while getattr(tracker, "_save_write_in_progress", False):
+            if time.monotonic() > deadline:
+                return False
             try:
                 tracker.root.update_idletasks()
                 tracker.root.update()
             except tk.TclError:
                 return True
-            time.sleep(0.01)
-        return not getattr(tracker, "_save_write_in_progress", False)
+        return True
 
     def _save_security_settings() -> BaseException | None:
         """Flush settings to disk; return an error when the write fails."""
@@ -392,6 +393,28 @@ def show_security_dialog(tracker: PersonalDevelopmentTracker) -> None:
             return None
         return err_holder[0] or OSError("Could not save data.")
 
+    enc_busy = {"active": False}
+    enc_action_buttons: list[ttk.Button] = []
+
+    def _set_enc_actions_enabled(enabled: bool) -> None:
+        state = tk.NORMAL if enabled else tk.DISABLED
+        for btn in enc_action_buttons:
+            try:
+                btn.configure(state=state)
+            except tk.TclError:
+                pass
+
+    def _run_enc_action(action: Callable[[], None]) -> None:
+        if enc_busy["active"]:
+            return
+        enc_busy["active"] = True
+        _set_enc_actions_enabled(False)
+        try:
+            action()
+        finally:
+            enc_busy["active"] = False
+            _set_enc_actions_enabled(True)
+
     def enable_encryption() -> None:
         if not CRYPTO_AVAILABLE:
             messagebox.showwarning("Unavailable", "Install cryptography first.")
@@ -400,6 +423,8 @@ def show_security_dialog(tracker: PersonalDevelopmentTracker) -> None:
         if not passphrase:
             return
         confirm = simpledialog.askstring("Confirm", "Re-enter passphrase:", show="*", parent=window)
+        if not confirm:
+            return
         if passphrase != confirm:
             messagebox.showerror("Mismatch", "Passphrases do not match.")
             return
@@ -477,10 +502,31 @@ def show_security_dialog(tracker: PersonalDevelopmentTracker) -> None:
     enc_buttons = ttk.Frame(inner)
     enc_buttons.pack(fill=tk.X, padx=15, pady=(8, 12))
     if not encrypted:
-        ttk.Button(enc_buttons, text="Enable encryption…", command=enable_encryption).pack(side=tk.LEFT)
+        enc_action_buttons.append(
+            ttk.Button(
+                enc_buttons,
+                text="Enable encryption…",
+                command=lambda: _run_enc_action(enable_encryption),
+            )
+        )
+        enc_action_buttons[-1].pack(side=tk.LEFT)
     else:
-        ttk.Button(enc_buttons, text="Change passphrase…", command=change_passphrase).pack(side=tk.LEFT, padx=4)
-        ttk.Button(enc_buttons, text="Disable encryption…", command=disable_encryption).pack(side=tk.LEFT, padx=4)
+        enc_action_buttons.append(
+            ttk.Button(
+                enc_buttons,
+                text="Change passphrase…",
+                command=lambda: _run_enc_action(change_passphrase),
+            )
+        )
+        enc_action_buttons[-1].pack(side=tk.LEFT, padx=4)
+        enc_action_buttons.append(
+            ttk.Button(
+                enc_buttons,
+                text="Disable encryption…",
+                command=lambda: _run_enc_action(disable_encryption),
+            )
+        )
+        enc_action_buttons[-1].pack(side=tk.LEFT, padx=4)
 
     ttk.Separator(inner, orient=tk.HORIZONTAL).pack(fill=tk.X, padx=15, pady=8)
     ttk.Label(inner, text="Life-area logging", font=("Helvetica", 13, "bold")).pack(
