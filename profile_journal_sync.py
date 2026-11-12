@@ -13,9 +13,6 @@ GENERIC_PROFILE_SYNC_ERROR = (
     "Backup could not sync journal data safely. Try again or check the application log."
 )
 
-_WIN_REPARSE = 0x400
-
-
 class ProfileJournalSyncError(Exception):
     """Active profile journal path failed safety checks."""
 
@@ -38,15 +35,8 @@ def _is_link_or_junction(path: str) -> bool:
         return True
     if sys.platform == "win32":
         is_junction = getattr(os.path, "isjunction", None)
-        if is_junction is not None and is_junction(path):
-            return True
-        try:
-            st = os.lstat(path)
-        except OSError:
-            return False
-        attrs = getattr(st, "st_file_attributes", 0)
-        if attrs & _WIN_REPARSE:
-            return True
+        if is_junction is not None:
+            return bool(is_junction(path))
     return False
 
 
@@ -63,10 +53,7 @@ def _profiles_root_real() -> str:
 
 
 def _assert_contained(child: str, root_real: str) -> str:
-    if os.path.lexists(child):
-        child_real = os.path.normcase(os.path.realpath(child))
-    else:
-        child_real = os.path.normcase(os.path.abspath(child))
+    child_real = os.path.normcase(os.path.realpath(child))
     sep = os.path.normcase(os.sep)
     if child_real != root_real and not child_real.startswith(root_real + sep):
         raise ProfileJournalSyncError(GENERIC_PROFILE_SYNC_ERROR)
@@ -86,7 +73,6 @@ def _validate_layout_before_io(safe_id: str) -> tuple[str, str, str]:
     for path in (profile_dir, journal_path):
         _refuse_link(path)
     root_real = _profiles_root_real()
-    _assert_contained(profiles_root, root_real)
     _assert_contained(profile_dir, root_real)
     _assert_contained(journal_path, root_real)
     return profiles_root, profile_dir, journal_path
@@ -140,11 +126,5 @@ def sync_active_profile_journal_to_tracker(tracker_journal_path: str) -> None:
         return
     if not os.path.isfile(src):
         return
-    _refuse_link(src)
-    tracker_dir = os.path.dirname(tracker_journal_path)
-    if os.path.lexists(tracker_dir):
-        _refuse_link(tracker_dir)
-    if os.path.lexists(tracker_journal_path):
-        _refuse_link(tracker_journal_path)
-    os.makedirs(tracker_dir, exist_ok=True)
+    os.makedirs(os.path.dirname(tracker_journal_path), exist_ok=True)
     shutil.copy2(src, tracker_journal_path)

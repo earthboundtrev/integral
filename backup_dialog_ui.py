@@ -161,10 +161,7 @@ def _restore_snapshots_for_vault(
 
 def _journal_paths_after_restore(tracker: PersonalDevelopmentTracker) -> list[str]:
     paths = [tracker.data_path]
-    try:
-        profile_path = profile_journal_sync.resolved_active_profile_data_path()
-    except profile_journal_sync.ProfileJournalSyncError:
-        return paths
+    profile_path = profile_journal_sync.resolved_active_profile_data_path()
     if not _same_journal_path(tracker.data_path, profile_path):
         paths.append(profile_path)
     return paths
