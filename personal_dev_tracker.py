@@ -46,7 +46,7 @@ import practices
 import youtube_takeout
 from milestones import merge_milestones, milestone_summary
 from notifications import ReminderScheduler, normalize_notification_settings, show_windows_notification
-from paths import APP_NAME, APP_VERSION, data_file, ensure_data_file, icon_path
+from paths import APP_NAME, APP_VERSION, data_file, ensure_data_file, icon_path, show_test_build_window_marker
 from progression.sessions import bridge_fitness_to_daily_entries, sync_fitness_sessions_to_entries
 import streak
 from theme import (
@@ -224,7 +224,7 @@ class PersonalDevelopmentTracker:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         title = f"{APP_NAME} {APP_VERSION}"
-        if paths.show_test_build_window_marker():
+        if show_test_build_window_marker():
             title = f"{title} — TEST BUILD"
         self.root.title(title)
         self.root.geometry("1200x800")
