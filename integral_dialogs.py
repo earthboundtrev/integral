@@ -363,6 +363,20 @@ def show_security_dialog(tracker: PersonalDevelopmentTracker) -> None:
         wraplength=500,
     ).pack(anchor="w", padx=15, pady=8)
 
+    def _save_security_settings() -> BaseException | None:
+        """Flush settings to disk; return an error when the write fails."""
+        err_holder: list[BaseException | None] = [None]
+        ok_holder: list[bool] = [False]
+
+        def on_complete(ok: bool, err: BaseException | None) -> None:
+            ok_holder[0] = ok
+            err_holder[0] = err
+
+        tracker.save_data(flush=True, on_complete=on_complete)
+        if ok_holder[0]:
+            return None
+        return err_holder[0] or OSError("Could not save data.")
+
     def enable_encryption() -> None:
         if not CRYPTO_AVAILABLE:
             messagebox.showwarning("Unavailable", "Install cryptography first.")
@@ -374,13 +388,22 @@ def show_security_dialog(tracker: PersonalDevelopmentTracker) -> None:
         if passphrase != confirm:
             messagebox.showerror("Mismatch", "Passphrases do not match.")
             return
+        prev_enabled = bool(tracker.settings.get("encryption_enabled"))
+        prev_passphrase = tracker.vault_passphrase
         try:
             tracker.vault_passphrase = passphrase
             tracker.settings["encryption_enabled"] = True
-            tracker.save_data()
+            save_err = _save_security_settings()
+            if save_err is not None:
+                tracker.settings["encryption_enabled"] = prev_enabled
+                tracker.vault_passphrase = prev_passphrase
+                messagebox.showerror("Failed", str(save_err))
+                return
             window.destroy()
             messagebox.showinfo("Enabled", "Journal encryption is now enabled.")
         except Exception as exc:  # noqa: BLE001
+            tracker.settings["encryption_enabled"] = prev_enabled
+            tracker.vault_passphrase = prev_passphrase
             messagebox.showerror("Failed", str(exc))
 
     def disable_encryption() -> None:
@@ -389,9 +412,16 @@ def show_security_dialog(tracker: PersonalDevelopmentTracker) -> None:
             if not passphrase:
                 return
             tracker.vault_passphrase = passphrase
+        prev_enabled = bool(tracker.settings.get("encryption_enabled"))
+        prev_passphrase = tracker.vault_passphrase
         tracker.settings["encryption_enabled"] = False
         tracker.vault_passphrase = None
-        tracker.save_data()
+        save_err = _save_security_settings()
+        if save_err is not None:
+            tracker.settings["encryption_enabled"] = prev_enabled
+            tracker.vault_passphrase = prev_passphrase
+            messagebox.showerror("Failed", str(save_err))
+            return
         window.destroy()
         messagebox.showinfo("Disabled", "Journal saved as plain JSON.")
 
@@ -409,13 +439,19 @@ def show_security_dialog(tracker: PersonalDevelopmentTracker) -> None:
         if new != confirm:
             messagebox.showerror("Mismatch", "Passphrases do not match.")
             return
+        prev_passphrase = tracker.vault_passphrase
         try:
             payload = tracker._payload()
             encrypt_payload(payload, new)  # validate crypto works
             tracker.vault_passphrase = new
-            tracker.save_data()
+            save_err = _save_security_settings()
+            if save_err is not None:
+                tracker.vault_passphrase = prev_passphrase
+                messagebox.showerror("Failed", str(save_err))
+                return
             messagebox.showinfo("Updated", "Passphrase changed.")
         except Exception as exc:  # noqa: BLE001
+            tracker.vault_passphrase = prev_passphrase
             messagebox.showerror("Failed", str(exc))
 
     enc_buttons = ttk.Frame(inner)
