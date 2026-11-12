@@ -171,10 +171,11 @@ def drop_opposite_format_journal_backup(path: str, *, encrypted: bool) -> None:
 
 def drop_mismatched_journal_backup_after_journal_open(data_path: str) -> None:
     """Remove a format-mismatched .bak after the live journal has been opened."""
-    live_format = confirmed_live_journal_encrypted(data_path)
-    if live_format is None:
-        return
-    _remove_mismatched_journal_backup(data_path, encrypted=live_format)
+    with _save_lock:
+        live_format = confirmed_live_journal_encrypted(data_path)
+        if live_format is None:
+            return
+        _remove_mismatched_journal_backup(data_path, encrypted=live_format)
 
 
 def retry_journal_save_artifact_cleanup(data_path: str) -> None:

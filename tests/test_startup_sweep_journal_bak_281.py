@@ -10,6 +10,7 @@ import pytest
 import tkinter as tk
 
 import personal_dev_tracker
+from integral_dialogs import wait_for_tracker_save_idle
 from tests.conftest import pump_tk
 from tests.test_data_payload_registry_177 import _minimal_v2_payload
 from vault import (
@@ -242,8 +243,9 @@ def test_tracker_open_drops_mismatched_bak_after_unlock(tmp_path, monkeypatch, t
         return True
 
     with patch("personal_dev_tracker.prompt_vault_unlock", side_effect=_unlock):
-        personal_dev_tracker.PersonalDevelopmentTracker(tk_root)
+        tracker = personal_dev_tracker.PersonalDevelopmentTracker(tk_root)
     pump_tk(tk_root, steps=5)
+    wait_for_tracker_save_idle(tracker)
     if bak_file.is_file():
         with open(bak_file, encoding="utf-8") as handle:
             assert json.load(handle) != {"orphan": True}
