@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import io
+import json
 import os
+import shutil
+import struct
 import tempfile
 import unicodedata
 import zipfile
@@ -38,6 +42,30 @@ def seeded_profile(temp_app):  # noqa: F811
 
 def _encrypted_path(tmp_path, name: str = "profile-backup") -> str:
     return str(tmp_path / f"{name}{backup.ENCRYPTED_BACKUP_DEFAULT_SUFFIX}")
+
+
+def _write_minimal_profile_zip(path: str, *, extra_member: str | None = None) -> None:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("config.json", json.dumps(profiles.load_config()))
+        zf.writestr(
+            backup.MANIFEST_NAME,
+            json.dumps(
+                {
+                    "backup_version": backup.BACKUP_VERSION,
+                    "profiles": ["default"],
+                    "files": [f"profiles/default/{storage.DATA_FILE_NAME}"],
+                }
+            ),
+        )
+        zf.writestr(
+            f"profiles/default/{storage.DATA_FILE_NAME}",
+            json.dumps(storage.empty_data()),
+        )
+        if extra_member is not None:
+            zf.writestr(extra_member, "blocked")
+    with open(path, "wb") as handle:
+        handle.write(buf.getvalue())
 
 
 def test_encrypted_export_not_a_zip_and_hides_journal(seeded_profile, tmp_path):
@@ -113,9 +141,14 @@ def test_encrypted_backup_requires_passphrase(seeded_profile, tmp_path):
         backup.validate_backup(out)
 
 
+def test_backup_kdf_defaults_at_six_hundred_thousand():
+    assert backup.ENCRYPTED_BACKUP_KDF_ITERATIONS == 600_000
+    assert backup.ENCRYPTED_BACKUP_KDF_ITERATIONS_MIN == 600_000
+
+
 @pytest.mark.skipif(not backup.CRYPTO_AVAILABLE, reason="cryptography not installed")
 def test_stored_kdf_iterations_roundtrip(seeded_profile, tmp_path, monkeypatch):
-    monkeypatch.setattr(backup, "ENCRYPTED_BACKUP_KDF_ITERATIONS", 480_000)
+    monkeypatch.setattr(backup, "ENCRYPTED_BACKUP_KDF_ITERATIONS", 650_000)
     out = _encrypted_path(tmp_path, "kdf")
     backup.export_backup(out, profile_id="default", passphrase=_PASS)
     storage.save({"categories": storage.get_default_categories(), "entries": {}})
@@ -159,31 +192,74 @@ def test_no_plaintext_zip_sidecar_in_export_dir(seeded_profile, tmp_path, monkey
 
 
 def test_unsafe_zip_member_rejected_on_import(temp_app, tmp_path):
-    """validate_backup rejects zip entries that escape via unsafe paths."""
-    import json
-    import io
-
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w") as zf:
-        zf.writestr("config.json", json.dumps(profiles.load_config()))
-        zf.writestr(
-            backup.MANIFEST_NAME,
-            json.dumps(
-                {
-                    "backup_version": backup.BACKUP_VERSION,
-                    "profiles": ["default"],
-                    "files": [f"profiles/default/{storage.DATA_FILE_NAME}"],
-                }
-            ),
-        )
-        zf.writestr("profiles/default/../../escape.txt", "oops")
-        zf.writestr(
-            f"profiles/default/{storage.DATA_FILE_NAME}",
-            json.dumps(storage.empty_data()),
-        )
     plain = str(tmp_path / "evil.zip")
-    with open(plain, "wb") as handle:
-        handle.write(buf.getvalue())
-
+    _write_minimal_profile_zip(plain, extra_member="profiles/default/../../escape.txt")
     with pytest.raises(ValueError, match="unsafe"):
         backup.validate_backup(plain)
+
+
+@pytest.mark.parametrize(
+    "member",
+    [
+        "C:x",
+        "C:/x",
+        "C:\\x",
+        "profiles/default/data.json:stream",
+    ],
+)
+def test_rejects_colon_and_drive_style_members(temp_app, tmp_path, member):
+    plain = str(tmp_path / "bad-member.zip")
+    _write_minimal_profile_zip(plain, extra_member=member)
+    with pytest.raises(ValueError, match="unsafe"):
+        backup.validate_backup(plain)
+
+
+@pytest.mark.skipif(not backup.CRYPTO_AVAILABLE, reason="cryptography not installed")
+def test_rejects_kdf_header_below_minimum(seeded_profile, tmp_path):
+    out = _encrypted_path(tmp_path, "weak-kdf")
+    backup.export_backup(out, profile_id="default", passphrase=_PASS)
+    with open(out, "rb") as handle:
+        data = bytearray(handle.read())
+    pos = len(backup.ENCRYPTED_BACKUP_MAGIC) + 1
+    struct.pack_into(">I", data, pos, 500_000)
+    with open(out, "wb") as handle:
+        handle.write(data)
+    with pytest.raises(ValueError, match="KDF"):
+        backup.validate_backup(out, passphrase=_PASS)
+
+
+def test_staging_removed_when_install_fails(seeded_profile, tmp_path, monkeypatch):
+    plain = str(tmp_path / "fail-install.zip")
+    backup.export_backup(plain, profile_id="default")
+    staging_parent = os.path.join(
+        profiles.get_app_dir(),
+        backup.BACKUP_IMPORT_STAGING_DIRNAME,
+    )
+
+    real_copy2 = shutil.copy2
+
+    def fail_first_copy(src, dst, *args, **kwargs):
+        raise OSError("simulated install failure")
+
+    monkeypatch.setattr(shutil, "copy2", fail_first_copy)
+
+    with pytest.raises(OSError, match="simulated"):
+        backup.import_backup(plain, merge_profiles=True)
+
+    if os.path.isdir(staging_parent):
+        assert not any(os.scandir(staging_parent))
+    monkeypatch.setattr(shutil, "copy2", real_copy2)
+
+
+def test_import_staging_lives_under_app_dir_and_is_removed(seeded_profile, tmp_path):
+    plain = str(tmp_path / "stage.zip")
+    backup.export_backup(plain, profile_id="default")
+    app_dir = profiles.get_app_dir()
+    staging_parent = os.path.join(app_dir, backup.BACKUP_IMPORT_STAGING_DIRNAME)
+
+    storage.save({"categories": storage.get_default_categories(), "entries": {}})
+    backup.import_backup(plain, merge_profiles=True)
+
+    assert staging_parent.startswith(app_dir)
+    if os.path.isdir(staging_parent):
+        assert not any(os.scandir(staging_parent)), "staging run dirs should be removed after import"

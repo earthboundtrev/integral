@@ -45,12 +45,13 @@ CREATIVE_PREFIX = "creative/"
 
 ENCRYPTED_BACKUP_MAGIC = b"INTGRBAK"
 ENCRYPTED_BACKUP_FORMAT_VERSION = 1
-ENCRYPTED_BACKUP_KDF_ITERATIONS = 390_000
-ENCRYPTED_BACKUP_KDF_ITERATIONS_MIN = 390_000
+ENCRYPTED_BACKUP_KDF_ITERATIONS = 600_000
+ENCRYPTED_BACKUP_KDF_ITERATIONS_MIN = 600_000
 ENCRYPTED_BACKUP_KDF_ITERATIONS_MAX = 2_000_000
 ENCRYPTED_BACKUP_SALT_BYTES = 16
 ENCRYPTED_BACKUP_MAX_CONTAINER_BYTES = 512 * 1024 * 1024
 ENCRYPTED_BACKUP_DEFAULT_SUFFIX = ".integral-backup.enc"
+BACKUP_IMPORT_STAGING_DIRNAME = ".backup-import-staging"
 
 
 def normalize_backup_passphrase(passphrase: str) -> str:
@@ -212,6 +213,28 @@ def _backup_zipfile(path: str, passphrase: str | None = None) -> Iterator[zipfil
         zf.close()
 
 
+def _validate_backup_zip_member(name: str) -> None:
+    """Reject unsafe zip entry names before backup import."""
+    normalized = name.replace("\\", "/")
+    if ":" in normalized:
+        raise ValueError(f"Backup archive contains an unsafe path: {name!r}")
+    zip_import_safety.require_safe_zip_member_path(name)
+
+
+@contextmanager
+def _backup_import_staging() -> Iterator[str]:
+    """Stage backup extracts under the app data directory; always removed after use."""
+    profiles.ensure_app_structure()
+    parent = os.path.join(profiles.get_app_dir(), BACKUP_IMPORT_STAGING_DIRNAME)
+    os.makedirs(parent, exist_ok=True)
+    staging = os.path.join(parent, f"run-{os.getpid()}-{os.urandom(4).hex()}")
+    os.makedirs(staging, exist_ok=True)
+    try:
+        yield staging
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+
+
 def _manifest_profile_ids(manifest: dict) -> list[str]:
     return profiles.validate_manifest_profile_ids(manifest)
 
@@ -294,7 +317,7 @@ def _restore_creative_files(
     os.makedirs(creative_root, exist_ok=True)
     restored = 0
     for name in zf.namelist():
-        zip_import_safety.require_safe_zip_member_path(name)
+        _validate_backup_zip_member(name)
         normalized = name.replace("\\", "/")
         if not normalized.startswith(CREATIVE_PREFIX) or normalized.endswith("/"):
             continue
@@ -307,9 +330,10 @@ def _restore_creative_files(
 
 
 def _assert_path_within_root(dest_path: str, root: str) -> None:
-    dest_real = os.path.realpath(dest_path)
-    root_real = os.path.realpath(root)
-    if dest_real != root_real and not dest_real.startswith(root_real + os.sep):
+    dest_real = os.path.normcase(os.path.realpath(dest_path))
+    root_real = os.path.normcase(os.path.realpath(root))
+    sep = os.path.normcase(os.sep)
+    if dest_real != root_real and not dest_real.startswith(root_real + sep):
         raise ValueError("Backup archive contains an unsafe path.")
 
 
@@ -383,7 +407,7 @@ def validate_backup(zip_path: str, *, passphrase: str | None = None) -> dict:
         budget = zip_import_safety.prepare_zip_import(zf)
         names = set(zf.namelist())
         for member in names:
-            zip_import_safety.require_safe_zip_member_path(member)
+            _validate_backup_zip_member(member)
         if MANIFEST_NAME not in names:
             raise ValueError("Backup missing manifest.json")
         if "config.json" not in names:
@@ -428,7 +452,7 @@ def import_backup(
             zip_import_safety.read_zip_member_bytes(zf, "config.json", budget).decode("utf-8")
         )
 
-        with tempfile.TemporaryDirectory() as staging:
+        with _backup_import_staging() as staging:
             staging_profiles = os.path.join(staging, "profiles")
             staging_creative = os.path.join(staging, CREATIVE_PREFIX.rstrip("/"))
             os.makedirs(staging_profiles, exist_ok=True)
@@ -438,7 +462,7 @@ def import_backup(
                 staged_profile = os.path.join(staging_profiles, pid)
                 os.makedirs(staged_profile, exist_ok=True)
                 for name in zf.namelist():
-                    zip_import_safety.require_safe_zip_member_path(name)
+                    _validate_backup_zip_member(name)
                     if not name.startswith(prefix) or name.endswith("/"):
                         continue
                     filename = name[len(prefix) :]
