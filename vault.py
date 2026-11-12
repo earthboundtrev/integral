@@ -197,12 +197,13 @@ def retry_journal_save_artifact_cleanup(data_path: str) -> None:
     try_remove_leftover_save_temp(data_path)
 
 
-def iter_journal_sweep_targets() -> list[tuple[str, str]]:
+def iter_journal_sweep_targets(*, prepare_layout: bool = True) -> list[tuple[str, str]]:
     """Return ``(data.json path, owning profile directory)`` pairs for startup sweeps."""
     import paths
     import profiles
 
-    profiles.ensure_app_structure()
+    if prepare_layout:
+        profiles.ensure_app_structure()
     profiles_root = profiles.get_profiles_root()
     seen: set[str] = set()
     out: list[tuple[str, str]] = []
@@ -218,7 +219,23 @@ def iter_journal_sweep_targets() -> list[tuple[str, str]]:
     root_container = os.path.dirname(root_data) or "."
     _append(root_data, root_container)
 
-    for profile in profiles.list_profiles():
+    if prepare_layout:
+        profile_rows = profiles.list_profiles()
+    else:
+        profile_rows: list[dict[str, Any]] = []
+        config_path = profiles.get_config_path()
+        if os.path.isfile(config_path):
+            try:
+                with open(config_path, encoding="utf-8") as handle:
+                    loaded = json.load(handle)
+                if isinstance(loaded, dict):
+                    raw_profiles = loaded.get("profiles")
+                    if isinstance(raw_profiles, list):
+                        profile_rows = [p for p in raw_profiles if isinstance(p, dict)]
+            except (json.JSONDecodeError, OSError, TypeError):
+                profile_rows = []
+
+    for profile in profile_rows:
         try:
             profile_id = profiles.require_safe_profile_id(profile.get("id"))
         except ValueError:
@@ -236,7 +253,7 @@ def iter_journal_sweep_targets() -> list[tuple[str, str]]:
 def _validated_journal_sweep_data_paths() -> list[str]:
     """Journal ``data.json`` paths that pass container validation (issue #275-style paths)."""
     paths_out: list[str] = []
-    for data_path, container_dir in iter_journal_sweep_targets():
+    for data_path, container_dir in iter_journal_sweep_targets(prepare_layout=False):
         if _journal_artifacts_contained(data_path, container_dir):
             paths_out.append(data_path)
     return paths_out
