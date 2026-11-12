@@ -107,6 +107,27 @@ def _label_texts(dialog) -> list[str]:
     return texts
 
 
+def _trigger_encrypted_export(dialog, tk_root) -> None:
+    for chk in _walk(dialog):
+        if chk.winfo_class() == "TCheckbutton" and "Use my vault" in str(chk.cget("text")):
+            if chk.instate(["!disabled"]) and not chk.instate(["selected"]):
+                chk.invoke()
+    for chk in _walk(dialog):
+        if chk.winfo_class() == "TCheckbutton" and "Encrypt" in str(chk.cget("text")):
+            if not chk.instate(["selected"]):
+                chk.invoke()
+            break
+    pump_tk(tk_root, 8)
+    if any(
+        w.winfo_class() == "TButton" and "Encrypt instead" in str(w.cget("text")).replace("&", "")
+        for w in _walk(dialog)
+        if w.winfo_ismapped()
+    ):
+        _find_button(dialog, "Encrypt instead").invoke()
+        pump_tk(tk_root, 8)
+    _find_button(dialog, "Backup", exclude="unencrypted").invoke()
+
+
 def _find_button(dialog, substring: str, *, exclude: str | None = None):
     needle = substring.replace("&", "")
     for w in _walk(dialog):
@@ -122,10 +143,17 @@ def _find_button(dialog, substring: str, *, exclude: str | None = None):
 
 def test_encrypted_export_success_banner_extra_actions(tk_root, temp_app, tmp_path, immediate_threads):  # noqa: F811
     _seed_data_file(_minimal_v2_payload())
-    with patch("personal_dev_tracker.prompt_vault_unlock", return_value=True):
+    vault_pp = "twelve-char-pp"
+    with patch("personal_dev_tracker.prompt_vault_unlock") as unlock:
+
+        def _unlock(tr):
+            tr.vault_passphrase = vault_pp
+            return True
+
+        unlock.side_effect = _unlock
         tracker = personal_dev_tracker.PersonalDevelopmentTracker(tk_root)
-    tracker.settings["encryption_enabled"] = False
-    tracker.vault_passphrase = None
+    tracker.settings["encryption_enabled"] = True
+    tracker.vault_passphrase = vault_pp
     banner = tracker.ensure_status_banner()
 
     out_enc = str(tmp_path / "out.integral-backup.enc")
@@ -134,29 +162,16 @@ def test_encrypted_export_success_banner_extra_actions(tk_root, temp_app, tmp_pa
         patch("backup_dialog_ui.filedialog.asksaveasfilename", return_value=out_enc),
         patch("backup_dialog_ui.backup.export_backup", export_mock),
         patch("backup_dialog_ui.profile_journal_sync.sync_tracker_journal_to_active_profile"),
-        patch("backup_dialog_ui.integral_io.write_full_backup", side_effect=AssertionError("plain export")),
+        patch.object(tracker, "save_data"),
     ):
         backup_dialog_ui.show_backup_dialog(tracker)
         pump_tk(tk_root)
         dialog = next(w for w in tk_root.winfo_children() if isinstance(w, tk.Toplevel))
-        encrypt_chk = next(
-            w for w in _walk(dialog) if w.winfo_class() == "TCheckbutton" and "Encrypt" in str(w.cget("text"))
-        )
-        if not encrypt_chk.instate(["selected"]):
-            encrypt_chk.invoke()
-        pump_tk(tk_root, 10)
-        for chk in _walk(dialog):
-            if chk.winfo_class() == "TCheckbutton" and "Use my vault" in str(chk.cget("text")) and chk.instate(["selected"]):
-                chk.invoke()
-        pump_tk(tk_root, 5)
-        typed = [w for w in _walk(dialog) if isinstance(w, ttk.Entry)]
-        for entry in typed[:2]:
-            entry.delete(0, tk.END)
-            entry.insert(0, "twelve-char-pp")
-        _find_button(dialog, "Backup", exclude="unencrypted").invoke()
-        pump_tk(tk_root, 20)
+        _trigger_encrypted_export(dialog, tk_root)
+        pump_tk_until(tk_root, lambda: export_mock.call_count > 0, timeout_s=3.0)
 
     export_mock.assert_called_once()
+    pump_tk_until(tk_root, lambda: banner._kind == "success", timeout_s=3.0)
     assert banner._kind == "success"
     assert "Backup saved (encrypted)" in banner._message_var.get()
     for frame in [banner._frame]:
@@ -267,29 +282,28 @@ def test_truncated_encrypted_shows_generic_restore_error(tk_root, tmp_path, imme
 
 def test_encrypted_export_worker_error_shows_generic_banner(tk_root, temp_app, tmp_path, immediate_threads):  # noqa: F811
     _seed_data_file(_minimal_v2_payload())
-    with patch("personal_dev_tracker.prompt_vault_unlock", return_value=True):
+    with patch("personal_dev_tracker.prompt_vault_unlock") as unlock:
+
+        def _unlock(tr):
+            tr.vault_passphrase = "twelve-char-pp"
+            return True
+
+        unlock.side_effect = _unlock
         tracker = personal_dev_tracker.PersonalDevelopmentTracker(tk_root)
-    tracker.settings["encryption_enabled"] = False
-    tracker.vault_passphrase = None
+    tracker.settings["encryption_enabled"] = True
+    tracker.vault_passphrase = "twelve-char-pp"
     banner = tracker.ensure_status_banner()
     out_enc = str(tmp_path / "fail.enc")
     with (
         patch("backup_dialog_ui.filedialog.asksaveasfilename", return_value=out_enc),
         patch("backup_dialog_ui.backup.export_backup", side_effect=OSError("simulated")),
-        patch("backup_dialog_ui.integral_io.write_full_backup", side_effect=AssertionError("plain export")),
+        patch.object(tracker, "save_data"),
     ):
         backup_dialog_ui.show_backup_dialog(tracker)
         pump_tk(tk_root)
         dialog = next(w for w in tk_root.winfo_children() if isinstance(w, tk.Toplevel))
-        encrypt_chk = next(
-            w for w in _walk(dialog) if w.winfo_class() == "TCheckbutton" and "Encrypt" in str(w.cget("text"))
-        )
-        if not encrypt_chk.instate(["selected"]):
-            encrypt_chk.invoke()
-        for entry in [w for w in _walk(dialog) if isinstance(w, ttk.Entry)][:2]:
-            entry.insert(0, "twelve-char-pp")
-        _find_button(dialog, "Backup", exclude="unencrypted").invoke()
-        pump_tk(tk_root, 20)
+        _trigger_encrypted_export(dialog, tk_root)
+        pump_tk_until(tk_root, lambda: banner._kind == "error", timeout_s=3.0)
     assert banner._kind == "error"
     assert GENERIC_BACKUP_ERROR in banner._message_var.get()
 
