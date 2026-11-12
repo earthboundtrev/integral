@@ -68,6 +68,8 @@ jobs:
           $tclRoot = python -c "import sys, pathlib; print(pathlib.Path(sys.base_prefix) / 'tcl')"
           $tcl = Join-Path $tclRoot 'tcl8.6'
           $tk = Join-Path $tclRoot 'tk8.6'
+          if (-not (Test-Path (Join-Path $tcl 'init.tcl'))) { throw "Missing init.tcl under $tcl" }
+          if (-not (Test-Path (Join-Path $tk 'tk.tcl'))) { throw "Missing tk.tcl under $tk" }
           "TCL_LIBRARY=$tcl" >> $env:GITHUB_ENV
           "TK_LIBRARY=$tk" >> $env:GITHUB_ENV
 

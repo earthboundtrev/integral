@@ -5,16 +5,37 @@ from __future__ import annotations
 import os
 import sys
 
-if sys.platform == "win32" and os.environ.get("INTEGRAL_WINDOWS_EXE_CI") == "1":
-    _py_base = sys.base_prefix
-    os.environ.setdefault("TCL_LIBRARY", os.path.join(_py_base, "tcl", "tcl8.6"))
-    os.environ.setdefault("TK_LIBRARY", os.path.join(_py_base, "tcl", "tk8.6"))
+from tests.tcl_tk_env import ensure_windows_ci_tcl_tk_env, install_tk_constructor_guard
+
+ensure_windows_ci_tcl_tk_env()
 
 import tkinter as tk
+
+install_tk_constructor_guard()
 from collections.abc import Iterator
 from unittest.mock import patch
 
 import pytest
+
+
+def create_tk_root(*, withdraw: bool = True) -> tk.Tk:
+    """Create a Tk root with Windows CI Tcl/Tk paths applied."""
+    last_err: tk.TclError | None = None
+    trials = 5 if (sys.platform == "win32" and os.environ.get("INTEGRAL_WINDOWS_EXE_CI") == "1") else 1
+    for _ in range(trials):
+        ensure_windows_ci_tcl_tk_env()
+        try:
+            root = tk.Tk()
+            if withdraw:
+                root.withdraw()
+            return root
+        except tk.TclError as exc:
+            last_err = exc
+            import time
+
+            time.sleep(0.25)
+    assert last_err is not None
+    raise last_err
 
 
 def pump_tk(root: tk.Misc, steps: int = 25) -> None:
@@ -56,6 +77,14 @@ def pump_tk_until(
     except tk.TclError:
         pass
     return bool(predicate())
+
+
+@pytest.fixture(autouse=True)
+def _windows_ci_tcl_tk_env_each_test() -> Iterator[None]:
+    """Re-apply Tcl/Tk paths before every test (ttk import runs in-test)."""
+    ensure_windows_ci_tcl_tk_env()
+    yield
+    ensure_windows_ci_tcl_tk_env()
 
 
 @pytest.fixture(autouse=True)
@@ -114,10 +143,17 @@ def _stub_tk_messageboxes(request: pytest.FixtureRequest) -> Iterator[None]:
 
 
 def pytest_configure(config: pytest.Config) -> None:
+    ensure_windows_ci_tcl_tk_env()
+    install_tk_constructor_guard()
     config.addinivalue_line(
         "markers",
         "allow_tk_messagebox: do not stub tkinter.messagebox for this test",
     )
+
+
+def pytest_sessionstart(session: pytest.Session) -> None:
+    ensure_windows_ci_tcl_tk_env()
+    install_tk_constructor_guard()
 
 
 # GitHub Actions windows-latest: Tk focus / clamp geometry differs from dev machines.
