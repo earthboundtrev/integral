@@ -51,6 +51,18 @@ def read_text_file(path: str) -> str:
     return Path(path).read_text(encoding="utf-8")
 
 
+def delete_temp_file(path: str) -> None:
+    """Remove a temp file once its content has been re-imported.
+
+    A missing file is fine. Any other OS error is ignored so a failed cleanup
+    never blocks the re-import that already succeeded.
+    """
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
+
+
 GRAMMARLY_LIMITATION_BLURB = (
     "Grammarly (and similar desktop writing assistants) usually cannot underline "
     "text inside Integral itself. Integral uses Tkinter text boxes, which Windows "

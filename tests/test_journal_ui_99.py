@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import tkinter as tk
+from datetime import date
 from tkinter import font as tkfont
 import unittest
 from unittest.mock import MagicMock
@@ -44,6 +45,24 @@ def _mock_tracker(root: tk.Tk) -> MagicMock:
                 title="A very long journal title that should truncate in the list " + str(idx),
             ),
         )
+    return tracker
+
+
+def _empty_journal_tracker(root: tk.Tk) -> MagicMock:
+    tracker = MagicMock()
+    tracker.root = root
+    tracker.theme = get_theme(False)
+    apply_theme(root, tracker.theme)
+    tracker.entries = {}
+    tracker.sessions = []
+    tracker.creative_projects = {"projects": []}
+    tracker.today_str.return_value = date.today().isoformat()
+    tracker._invalidate_caches = MagicMock()
+    tracker.refresh_dashboard = MagicMock()
+    tracker.save_data = MagicMock()
+    tracker.open_integral_link = MagicMock()
+    tracker._reminder_scheduler = None
+    tracker.journal = journal.empty_journal()
     return tracker
 
 
@@ -236,3 +255,47 @@ class TestJournalWindowLayout(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def _find_button(parent: tk.Misc, label: str) -> tk.Button | None:
+    for child in parent.winfo_children():
+        try:
+            if str(child.cget("text")) == label and child.winfo_class() in ("TButton", "Button"):
+                return child
+        except tk.TclError:
+            pass
+        found = _find_button(child, label)
+        if found is not None:
+            return found
+    return None
+
+
+class TestExternalEditReimportCleanup(unittest.TestCase):
+    def test_reload_from_system_editor_deletes_temp_file(self) -> None:
+        import os
+        from unittest.mock import patch
+
+        import external_edit
+
+        root = tk.Tk()
+        root.withdraw()
+        opened: list[str] = []
+        try:
+            tracker = _empty_journal_tracker(root)
+            show_journal_window(tracker)
+            win = _journal_toplevels(root)[0]
+            win.update_idletasks()
+            with patch.object(external_edit, "open_path_with_default_app", side_effect=opened.append), patch(
+                "tkinter.messagebox.showinfo"
+            ):
+                _find_button(win, "Edit in system editor…").invoke()
+                assert len(opened) == 1
+                temp_path = opened[0]
+                self.assertTrue(os.path.isfile(temp_path))
+                with open(temp_path, "w", encoding="utf-8") as handle:
+                    handle.write("Edited externally")
+                _find_button(win, "Reload from system editor").invoke()
+            self.assertFalse(os.path.exists(temp_path))
+            win.destroy()
+        finally:
+            root.destroy()
