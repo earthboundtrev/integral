@@ -83,7 +83,7 @@ I care enough to use it. I just wasn't going to hand-write all of this code myse
 
 - **Everything lives on your machine** — searchable, reviewable, exportable
 - **Optional encryption** — journal-grade privacy for thoughts you would not put on a random cloud app
-- **Backups and CSV export** — full zip backup includes life data, Writing Project manuscripts (`creative/`), and fitness progress; CSV Export also ships a creative documents zip for offline copies
+- **Backups and CSV export** — full zip backup includes life data, Writing Project manuscripts (`creative/`), and fitness progress; optional passphrase-encrypted `.integral-backup.enc` export and restore from Backup & Restore; CSV Export also ships a creative documents zip for offline copies
 - **Backdated entries with a reason** — catch up honestly without pretending you logged on the day (accountability, not cheating the tool)
 - **Fitness Hub** — CC and other programs as structured progressions, not scattered notes
 - **Writing Projects** — novels and scripts with an inspiration document beside the manuscript (autosave, local files)
@@ -164,7 +164,7 @@ Prerelease tags (for example `v0.0.0-test`) are marked as GitHub **prerelease** 
 | **Quick Capture** | Optional always-on-top panel (off by default): open from **Today's Log** (next to Journal / More…) or the footer nav; today's todos + scheduled backlog with collapsible sections, inline edit, and drag-free ↑/↓ reordering; **finish always logs to a life domain** (prompts for category if missing — same idea as Link → day entry / YouTube); link starters; Journal now; quick-log opener; **domain typeahead** on category pickers; Deep Work timer + Windows focus shield (minimize chosen apps) |
 | **Fitness Hub** | CC1/CC2/SS/SM/OG/EC/FTR — nested book → program → steps; **Log Exercise** with **Add** (picker + metrics), **+ Set** (copy last queued row), **Repeat last session**, re-pick/remove queued sets without Canceling the draft, **Save Session** with banner **Undo**; **volume vs last log** while logging (↑/→/↓ on sets×reps or weighted volume; click for history carousel) |
 | **Fitness skill tree** | Progressive logging DAG for full CC1 Big Six, full CC2 ladders, and Strong Medicine resistance progressions (squat→barbell, sumo DL, DB bench/press, statue row, plank core) from official Hub tables |
-| **Safety net** | Export CSV (+ creative docs zip + YouTube history CSV when imported), full zip backup (data + `creative/` + fitness), optional vault encryption |
+| **Safety net** | Export CSV (+ creative docs zip + YouTube history CSV when imported), full zip backup (data + `creative/` + fitness), optional encrypted backup file (`.integral-backup.enc`) with separate restore passphrase, optional vault encryption |
 | **YouTube Takeout** | Import watch history from a free Google Takeout JSON/zip (Data & Security); merge/dedupe locally; optional day notes for Content / Art — no API keys, no account connect |
 | **Reminders** | Windows toasts while Integral is running; optional Start with Windows + minimize-on-close so reminders keep working |
 | **AI Insight (optional)** | Local Ollama review of recent logs — see below |

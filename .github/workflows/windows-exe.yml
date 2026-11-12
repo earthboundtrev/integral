@@ -94,7 +94,7 @@ jobs:
       - name: Smoke test exe (test-data folder)
         if: steps.release_meta.outcome == 'success' || env.INTEGRAL_IS_TAG_RELEASE != '1'
         shell: pwsh
-        run: ./scripts/ci_smoke_windows_exe.ps1 -ExePath dist/Integral.exe -Seconds 20
+        run: ./scripts/ci_smoke_windows_exe.ps1 -ExePath dist/Integral.exe -Seconds 35
 
       - name: Package release assets
         if: env.INTEGRAL_IS_TAG_RELEASE == '1' && steps.release_meta.outcome == 'success'

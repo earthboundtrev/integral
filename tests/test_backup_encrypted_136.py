@@ -100,6 +100,13 @@ def test_encrypted_roundtrip_and_wrong_passphrase(seeded_profile, tmp_path):
     assert after == before
 
 
+def test_plain_backup_rejects_passphrase(seeded_profile, tmp_path):
+    plain = str(tmp_path / "plain.zip")
+    backup.export_backup(plain, profile_id="default")
+    with pytest.raises(ValueError, match="unencrypted"):
+        backup.validate_backup(plain, passphrase=_PASS)
+
+
 def test_plain_backup_still_works(seeded_profile, tmp_path):
     plain = str(tmp_path / "plain.zip")
     backup.export_backup(plain, profile_id="default")
@@ -263,3 +270,4 @@ def test_import_staging_lives_under_app_dir_and_is_removed(seeded_profile, tmp_p
     assert staging_parent.startswith(app_dir)
     if os.path.isdir(staging_parent):
         assert not any(os.scandir(staging_parent)), "staging run dirs should be removed after import"
+    assert not os.path.isdir(staging_parent), "empty staging parent should be removed after import"

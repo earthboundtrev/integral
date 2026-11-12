@@ -350,6 +350,10 @@ def _banner_tracker(root: tk.Tk):
     tracker = MagicMock()
     tracker.root = root
     tracker.theme = theme
+    tracker.settings = {"encryption_enabled": False}
+    tracker.data_path = "/tmp/mock-data.json"
+    tracker.vault_passphrase = None
+    tracker.save_data = MagicMock()
     tracker.entries = {}
     tracker.categories = {}
     tracker.sessions = []
@@ -435,14 +439,14 @@ def test_show_backup_export_uses_banner_not_messagebox():
     root.withdraw()
     tracker, banner = _banner_tracker(root)
     try:
-        with patch("integral_dialogs.filedialog.asksaveasfilename", return_value="/tmp/backup.zip"):
+        with patch("backup_dialog_ui.filedialog.asksaveasfilename", return_value="/tmp/backup.zip"):
             with patch(
-                "integral_dialogs.write_full_backup",
+                "backup_dialog_ui.integral_io.write_full_backup",
                 return_value={"creative_file_count": 2, "has_fitness": True},
             ):
-                with patch("integral_dialogs.creative_projects_dir", return_value="/tmp/creative"):
+                with patch("backup_dialog_ui.creative_projects_dir", return_value="/tmp/creative"):
                     with patch(
-                        "integral_dialogs._active_fitness_db_path", return_value=None
+                        "backup_dialog_ui._active_fitness_db_path", return_value=None
                     ):
                         show_backup_dialog(tracker)
                         root.update()
@@ -452,7 +456,7 @@ def test_show_backup_export_uses_banner_not_messagebox():
                                 for child in win.winfo_children():
                                     if isinstance(child, ttk.Frame):
                                         for btn in child.winfo_children():
-                                            if isinstance(btn, ttk.Button) and btn.cget("text") == "Export Backup…":
+                                            if isinstance(btn, ttk.Button) and "Export" in btn.cget("text") and "Backup" in btn.cget("text"):
                                                 backup_btn = btn
                                                 break
                         assert backup_btn is not None
