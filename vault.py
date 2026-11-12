@@ -23,6 +23,13 @@ ENVELOPE_VERSION = 1
 _derived_key_cache: dict[tuple[str, bytes], bytes] = {}
 _save_lock = threading.Lock()
 
+_LEFTOVER_SAVE_TEMP_WARNING = (
+    "Could not remove a leftover save temp file; will retry on the next save."
+)
+_MISMATCHED_JOURNAL_BACKUP_WARNING = (
+    "Could not remove a mismatched journal backup file; will retry on the next save."
+)
+
 
 class VaultPassphraseError(Exception):
     """Passphrase missing or incorrect — not file corruption."""
@@ -59,22 +66,84 @@ def encrypted_journal_envelope_path(data_path: str) -> str | None:
     return None
 
 
+def _logger():
+    from integral_logging import get_logger
+
+    return get_logger()
+
+
+def save_temp_path(data_path: str) -> str:
+    return f"{data_path}.tmp"
+
+
+def try_remove_leftover_save_temp(data_path: str) -> bool:
+    """Remove ``data.json.tmp`` in the same folder as ``data_path`` if present."""
+    temp_path = save_temp_path(data_path)
+    if not os.path.exists(temp_path):
+        return True
+    try:
+        os.remove(temp_path)
+        return True
+    except OSError:
+        _logger().warning(_LEFTOVER_SAVE_TEMP_WARNING)
+        return False
+
+
+def _remove_mismatched_journal_backup(data_path: str, *, encrypted: bool) -> bool:
+    """Delete ``data.json.bak`` only when its envelope format differs from the live journal."""
+    bak_path = f"{data_path}.bak"
+    if not os.path.exists(bak_path):
+        return True
+    bak_encrypted = is_encrypted_file(bak_path)
+    mismatch = (encrypted and not bak_encrypted) or (not encrypted and bak_encrypted)
+    if not mismatch:
+        return True
+    try:
+        os.remove(bak_path)
+        return True
+    except OSError:
+        _logger().warning(_MISMATCHED_JOURNAL_BACKUP_WARNING)
+        return False
+
+
 def drop_opposite_format_journal_backup(path: str, *, encrypted: bool) -> None:
     """Remove a .bak that does not match the on-disk journal format after a successful save."""
-    bak_path = f"{path}.bak"
-    if not os.path.exists(bak_path):
-        return
-    bak_encrypted = is_encrypted_file(bak_path)
-    if encrypted and not bak_encrypted:
-        try:
-            os.remove(bak_path)
-        except OSError:
-            pass
-    elif not encrypted and bak_encrypted:
-        try:
-            os.remove(bak_path)
-        except OSError:
-            pass
+    _remove_mismatched_journal_backup(path, encrypted=encrypted)
+
+
+def retry_journal_save_artifact_cleanup(data_path: str, *, encrypted: bool) -> None:
+    """Retry leftover temp and mismatched-backup cleanup for one journal path."""
+    try_remove_leftover_save_temp(data_path)
+    _remove_mismatched_journal_backup(data_path, encrypted=encrypted)
+
+
+def iter_journal_data_paths() -> list[str]:
+    """Journal ``data.json`` paths to sweep at startup (all profiles + canonical root)."""
+    import paths
+    import profiles
+
+    profiles.ensure_app_structure()
+    ordered = [paths.data_file()]
+    for profile in profiles.list_profiles():
+        ordered.append(os.path.join(profiles.get_profile_dir(profile["id"]), "data.json"))
+    seen: set[str] = set()
+    out: list[str] = []
+    for path in ordered:
+        norm = os.path.normpath(path)
+        if norm in seen:
+            continue
+        seen.add(norm)
+        out.append(norm)
+    return out
+
+
+def sweep_journal_save_artifacts_at_startup() -> None:
+    """Remove leftover save temps and mismatched backups before the first save."""
+    for data_path in iter_journal_data_paths():
+        try_remove_leftover_save_temp(data_path)
+        if os.path.exists(data_path):
+            encrypted = is_encrypted_file(data_path)
+            _remove_mismatched_journal_backup(data_path, encrypted=encrypted)
 
 
 def is_encrypted_file(path: str) -> bool:
@@ -265,6 +334,7 @@ def save_data_file(path: str, payload: dict[str, Any], *, encrypted: bool, passp
     current good data.json to data.json.bak. Use a lock to serialize saves.
     """
     with _save_lock:
+        retry_journal_save_artifact_cleanup(path, encrypted=encrypted)
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
         if encrypted:
             if not passphrase:
@@ -291,12 +361,13 @@ def save_data_file(path: str, payload: dict[str, Any], *, encrypted: bool, passp
 
             os.replace(temp_path, path)
             drop_opposite_format_journal_backup(path, encrypted=encrypted)
+            try_remove_leftover_save_temp(path)
         except Exception:
             if os.path.exists(temp_path):
                 try:
                     os.remove(temp_path)
                 except OSError:
-                    pass
+                    _logger().warning(_LEFTOVER_SAVE_TEMP_WARNING)
             if rotated and os.path.exists(bak_path) and not os.path.exists(path):
                 try:
                     os.replace(bak_path, path)

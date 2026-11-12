@@ -239,6 +239,10 @@ class PersonalDevelopmentTracker:
 
         user_data_migration.run_at_startup()
 
+        from vault import sweep_journal_save_artifacts_at_startup
+
+        sweep_journal_save_artifacts_at_startup()
+
         if encrypted_journal_envelope_path(DATA_FILE) and not prompt_vault_unlock(self):
             messagebox.showerror("Locked", "Cannot open encrypted journal without passphrase.")
             root.destroy()
