@@ -112,13 +112,30 @@ def _remove_snapshot(snap: str | None) -> None:
 
 
 def _rollback_journal_from_snapshot(data_path: str, snap: str | None) -> None:
-    if os.path.isfile(data_path) and not is_encrypted_file(data_path):
+    if snap and os.path.isfile(snap):
         try:
-            os.remove(data_path)
+            shutil.copy2(snap, data_path)
         except OSError:
             pass
-    if snap and os.path.isfile(snap):
-        shutil.copy2(snap, data_path)
+        return
+    try:
+        if os.path.lexists(data_path):
+            os.remove(data_path)
+    except OSError:
+        pass
+
+
+def _rollback_journal_copies(
+    tracker_path: str,
+    journal_snap: str | None,
+    profile_snap: str | None,
+    profile_path: str | None,
+) -> None:
+    _rollback_journal_from_snapshot(tracker_path, journal_snap)
+    _remove_snapshot(journal_snap)
+    if profile_path:
+        _rollback_journal_from_snapshot(profile_path, profile_snap)
+        _remove_snapshot(profile_snap)
 
 
 def prepare_restore_apply(tracker: PersonalDevelopmentTracker) -> bool:
@@ -714,18 +731,6 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         set_buttons_enabled(True, True)
 
     cancel_confirm_btn.configure(command=cancel_restore_flow)
-
-    def _rollback_journal_copies(
-        tracker_path: str,
-        journal_snap: str | None,
-        profile_snap: str | None,
-        profile_path: str | None,
-    ) -> None:
-        _rollback_journal_from_snapshot(tracker_path, journal_snap)
-        _remove_snapshot(journal_snap)
-        if profile_path and profile_snap:
-            _rollback_journal_from_snapshot(profile_path, profile_snap)
-            _remove_snapshot(profile_snap)
 
     def _complete_restore_after_import(
         *,

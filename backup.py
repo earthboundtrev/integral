@@ -225,6 +225,20 @@ def _validate_backup_zip_member(name: str) -> None:
     zip_import_safety.require_safe_zip_member_path(name)
 
 
+def _remove_empty_staging_parent(parent: str) -> None:
+    if not os.path.isdir(parent) or any(os.scandir(parent)):
+        return
+    try:
+        app_dir = profiles.get_app_dir()
+        parent_real = os.path.normcase(os.path.realpath(parent))
+        app_real = os.path.normcase(os.path.realpath(app_dir))
+        sep = os.path.normcase(os.sep)
+        if parent_real.startswith(app_real + sep):
+            os.rmdir(parent)
+    except OSError:
+        pass
+
+
 @contextmanager
 def _backup_import_staging() -> Iterator[str]:
     """Stage backup extracts under the app data directory; always removed after use."""
@@ -237,16 +251,7 @@ def _backup_import_staging() -> Iterator[str]:
         yield staging
     finally:
         shutil.rmtree(staging, ignore_errors=True)
-        try:
-            if os.path.isdir(parent) and not any(os.scandir(parent)):
-                app_dir = profiles.get_app_dir()
-                parent_real = os.path.normcase(os.path.realpath(parent))
-                app_real = os.path.normcase(os.path.realpath(app_dir))
-                sep = os.path.normcase(os.sep)
-                if parent_real.startswith(app_real + sep):
-                    os.rmdir(parent)
-        except OSError:
-            pass
+        _remove_empty_staging_parent(parent)
 
 
 def _manifest_profile_ids(manifest: dict) -> list[str]:
