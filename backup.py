@@ -29,14 +29,14 @@ import zip_import_safety
 from vault import CRYPTO_AVAILABLE, PassphraseRequiredError, WrongPassphraseError
 
 if CRYPTO_AVAILABLE:
+    import base64
+
     from cryptography.fernet import Fernet, InvalidToken
-    from vault import _derive_key
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 else:
     InvalidToken = None  # type: ignore[misc, assignment]
     Fernet = None  # type: ignore[misc, assignment]
-
-    def _derive_key(passphrase: str, salt: bytes) -> bytes:  # type: ignore[misc]
-        raise RuntimeError("Install cryptography: pip install cryptography")
 
 BACKUP_VERSION = 1
 MANIFEST_NAME = "manifest.json"
@@ -46,7 +46,10 @@ CREATIVE_PREFIX = "creative/"
 ENCRYPTED_BACKUP_MAGIC = b"INTGRBAK"
 ENCRYPTED_BACKUP_FORMAT_VERSION = 1
 ENCRYPTED_BACKUP_KDF_ITERATIONS = 390_000
+ENCRYPTED_BACKUP_KDF_ITERATIONS_MIN = 390_000
+ENCRYPTED_BACKUP_KDF_ITERATIONS_MAX = 2_000_000
 ENCRYPTED_BACKUP_SALT_BYTES = 16
+ENCRYPTED_BACKUP_MAX_CONTAINER_BYTES = 512 * 1024 * 1024
 ENCRYPTED_BACKUP_DEFAULT_SUFFIX = ".integral-backup.enc"
 
 
@@ -57,16 +60,19 @@ def normalize_backup_passphrase(passphrase: str) -> str:
 
 def is_encrypted_backup_file(path: str) -> bool:
     """True when the file begins with the encrypted backup magic (not a zip)."""
+    return is_encrypted_backup_blob(_read_file_prefix(path, len(ENCRYPTED_BACKUP_MAGIC)))
+
+
+def is_encrypted_backup_blob(prefix: bytes) -> bool:
+    return len(prefix) >= len(ENCRYPTED_BACKUP_MAGIC) and prefix[: len(ENCRYPTED_BACKUP_MAGIC)] == ENCRYPTED_BACKUP_MAGIC
+
+
+def _read_file_prefix(path: str, nbytes: int) -> bytes:
     try:
         with open(path, "rb") as handle:
-            header = handle.read(len(ENCRYPTED_BACKUP_MAGIC) + 1)
-        return (
-            len(header) >= len(ENCRYPTED_BACKUP_MAGIC) + 1
-            and header[: len(ENCRYPTED_BACKUP_MAGIC)] == ENCRYPTED_BACKUP_MAGIC
-            and header[len(ENCRYPTED_BACKUP_MAGIC)] == ENCRYPTED_BACKUP_FORMAT_VERSION
-        )
+            return handle.read(nbytes)
     except OSError:
-        return False
+        return b""
 
 
 def _require_crypto() -> None:
@@ -74,10 +80,31 @@ def _require_crypto() -> None:
         raise RuntimeError("Install cryptography: pip install cryptography")
 
 
+def _coerce_kdf_iterations(iterations: int) -> int:
+    if iterations < ENCRYPTED_BACKUP_KDF_ITERATIONS_MIN:
+        raise ValueError("Encrypted backup uses unsupported KDF parameters.")
+    if iterations > ENCRYPTED_BACKUP_KDF_ITERATIONS_MAX:
+        raise ValueError("Encrypted backup uses unsupported KDF parameters.")
+    return iterations
+
+
+def _derive_backup_key(passphrase: str, salt: bytes, iterations: int) -> bytes:
+    _require_crypto()
+    iterations = _coerce_kdf_iterations(iterations)
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=salt,
+        iterations=iterations,
+    )
+    return base64.urlsafe_b64encode(kdf.derive(passphrase.encode("utf-8")))
+
+
 def _pack_encrypted_backup(zip_bytes: bytes, passphrase: str) -> bytes:
     _require_crypto()
     salt = os.urandom(ENCRYPTED_BACKUP_SALT_BYTES)
-    key = _derive_key(passphrase, salt)
+    iterations = ENCRYPTED_BACKUP_KDF_ITERATIONS
+    key = _derive_backup_key(passphrase, salt, iterations)
     token = Fernet(key).encrypt(zip_bytes)
     header = b"".join(
         [
@@ -94,8 +121,8 @@ def _pack_encrypted_backup(zip_bytes: bytes, passphrase: str) -> bytes:
 
 def _unpack_encrypted_backup(data: bytes, passphrase: str) -> bytes:
     _require_crypto()
-    min_len = len(ENCRYPTED_BACKUP_MAGIC) + 1 + 4 + 1 + ENCRYPTED_BACKUP_SALT_BYTES + 8
-    if len(data) < min_len:
+    header_floor = len(ENCRYPTED_BACKUP_MAGIC) + 1 + 4 + 1 + 1 + 8
+    if len(data) < header_floor:
         raise ValueError("Not a valid Integral backup file.")
     if data[: len(ENCRYPTED_BACKUP_MAGIC)] != ENCRYPTED_BACKUP_MAGIC:
         raise ValueError("Not a valid Integral backup file.")
@@ -109,16 +136,16 @@ def _unpack_encrypted_backup(data: bytes, passphrase: str) -> bytes:
     pos += 1
     if salt_len <= 0 or salt_len > 64:
         raise ValueError("Encrypted backup header is invalid.")
+    if pos + salt_len + 8 > len(data):
+        raise ValueError("Encrypted backup header is invalid.")
     salt = data[pos : pos + salt_len]
     pos += salt_len
     (ct_len,) = struct.unpack_from(">Q", data, pos)
     pos += 8
     if ct_len <= 0 or pos + ct_len != len(data):
         raise ValueError("Encrypted backup header is invalid.")
-    if iterations < ENCRYPTED_BACKUP_KDF_ITERATIONS:
-        raise ValueError("Encrypted backup uses unsupported KDF parameters.")
     token = data[pos : pos + ct_len]
-    key = _derive_key(passphrase, salt)
+    key = _derive_backup_key(passphrase, salt, iterations)
     try:
         return Fernet(key).decrypt(token)
     except InvalidToken:
@@ -154,25 +181,31 @@ def _atomic_write_bytes(dest_path: str, payload: bytes) -> None:
         raise
 
 
-def _load_backup_zip_bytes(path: str, passphrase: str | None) -> bytes:
+def _read_encrypted_backup_file(path: str, passphrase: str) -> bytes:
+    size = os.path.getsize(path)
+    if size > ENCRYPTED_BACKUP_MAX_CONTAINER_BYTES:
+        raise ValueError("Encrypted backup file is too large to import safely.")
     with open(path, "rb") as handle:
-        raw = handle.read()
+        raw = handle.read(size + 1)
+    if len(raw) > ENCRYPTED_BACKUP_MAX_CONTAINER_BYTES:
+        raise ValueError("Encrypted backup file is too large to import safely.")
+    return _unpack_encrypted_backup(raw, passphrase)
+
+
+@contextmanager
+def _backup_zipfile(path: str, passphrase: str | None = None) -> Iterator[zipfile.ZipFile]:
     if is_encrypted_backup_file(path):
         if passphrase is None:
             raise PassphraseRequiredError("Passphrase required for encrypted backup.")
         normalized = normalize_backup_passphrase(passphrase)
         if not normalized.strip():
             raise ValueError("Passphrase required for encrypted backup.")
-        return _unpack_encrypted_backup(raw, normalized)
-    return raw
-
-
-@contextmanager
-def _backup_zipfile(path: str, passphrase: str | None = None) -> Iterator[zipfile.ZipFile]:
-    zip_bytes = _load_backup_zip_bytes(path, passphrase)
-    if not zipfile.is_zipfile(io.BytesIO(zip_bytes)):
-        raise ValueError("Backup payload is not a valid zip archive.")
-    zf = zipfile.ZipFile(io.BytesIO(zip_bytes), "r")
+        zip_bytes = _read_encrypted_backup_file(path, normalized)
+        if not zipfile.is_zipfile(io.BytesIO(zip_bytes)):
+            raise ValueError("Backup payload is not a valid zip archive.")
+        zf = zipfile.ZipFile(io.BytesIO(zip_bytes), "r")
+    else:
+        zf = zipfile.ZipFile(path, "r")
     try:
         yield zf
     finally:

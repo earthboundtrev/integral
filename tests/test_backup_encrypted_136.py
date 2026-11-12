@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+import unicodedata
 import zipfile
 
 import pytest
@@ -11,7 +12,7 @@ import pytest
 import backup
 import profiles
 import storage
-from vault import WrongPassphraseError
+from vault import PassphraseRequiredError, WrongPassphraseError
 
 from tests.test_backup import temp_app  # noqa: F401 — pytest fixture
 
@@ -93,7 +94,7 @@ def test_empty_passphrase_rejected(seeded_profile, tmp_path):
 @pytest.mark.skipif(not backup.CRYPTO_AVAILABLE, reason="cryptography not installed")
 def test_nfc_passphrase_roundtrip(seeded_profile, tmp_path):
     composed = "Zażołć€"
-    decomposed = "Zażo" + "\u0142" + "\u0107" + "\u20ac"
+    decomposed = unicodedata.normalize("NFD", composed)
     assert backup.normalize_backup_passphrase(composed) == backup.normalize_backup_passphrase(
         decomposed
     )
@@ -102,6 +103,34 @@ def test_nfc_passphrase_roundtrip(seeded_profile, tmp_path):
     backup.export_backup(out, profile_id="default", passphrase=decomposed)
     storage.save({"categories": storage.get_default_categories(), "entries": {}})
     backup.import_backup(out, merge_profiles=True, passphrase=composed)
+
+
+@pytest.mark.skipif(not backup.CRYPTO_AVAILABLE, reason="cryptography not installed")
+def test_encrypted_backup_requires_passphrase(seeded_profile, tmp_path):
+    out = _encrypted_path(tmp_path)
+    backup.export_backup(out, profile_id="default", passphrase=_PASS)
+    with pytest.raises(PassphraseRequiredError):
+        backup.validate_backup(out)
+
+
+@pytest.mark.skipif(not backup.CRYPTO_AVAILABLE, reason="cryptography not installed")
+def test_stored_kdf_iterations_roundtrip(seeded_profile, tmp_path, monkeypatch):
+    monkeypatch.setattr(backup, "ENCRYPTED_BACKUP_KDF_ITERATIONS", 480_000)
+    out = _encrypted_path(tmp_path, "kdf")
+    backup.export_backup(out, profile_id="default", passphrase=_PASS)
+    storage.save({"categories": storage.get_default_categories(), "entries": {}})
+    backup.import_backup(out, merge_profiles=True, passphrase=_PASS)
+    assert storage.load()["entries"]["2026-11-01"]["Emotional Wellbeing"]["notes"] == _JOURNAL_MARK
+
+
+@pytest.mark.skipif(not backup.CRYPTO_AVAILABLE, reason="cryptography not installed")
+def test_truncated_encrypted_header_invalid(tmp_path):
+    garbage = backup.ENCRYPTED_BACKUP_MAGIC + bytes([1, 0, 0, 0, 0]) + b"\x10"
+    path = str(tmp_path / "trunc.bin")
+    with open(path, "wb") as handle:
+        handle.write(garbage)
+    with pytest.raises(ValueError, match="(invalid|Not a valid)"):
+        backup._unpack_encrypted_backup(garbage, "pw")
     assert storage.load()["entries"]["2026-11-01"]["Emotional Wellbeing"]["notes"] == _JOURNAL_MARK
 
 
