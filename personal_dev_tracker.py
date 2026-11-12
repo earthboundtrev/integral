@@ -39,7 +39,11 @@ import deep_work
 from deep_work_ui import open_writing_pair, show_deep_work_start_dialog
 import nav_items
 import quick_capture
-from quick_capture_ui import close_quick_capture_panel, open_quick_capture_panel
+from quick_capture_ui import (
+    close_quick_capture_panel,
+    open_quick_capture_panel,
+    quick_capture_panel_is_open,
+)
 import focus_shield
 import todos
 import practices
@@ -3297,7 +3301,10 @@ class PersonalDevelopmentTracker:
                 {"enabled": True},
             )
             if persist:
-                self.settings[quick_capture.QC_BUILDING_SETTINGS_KEY] = True
+                if quick_capture_panel_is_open(self):
+                    self.settings = quick_capture.commit_build_success(self.settings)
+                else:
+                    self.settings[quick_capture.QC_BUILDING_SETTINGS_KEY] = True
                 self.save_data(flush=True)
         else:
             self.settings = quick_capture.apply_quick_capture_settings(

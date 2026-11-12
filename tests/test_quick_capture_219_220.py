@@ -123,6 +123,18 @@ class TestQuickCaptureTodoCap219(unittest.TestCase):
             root.destroy()
 
 
+class TestQuickCaptureShowMoreLabels(unittest.TestCase):
+    def test_format_show_more_uses_actual_batch_size(self) -> None:
+        self.assertEqual(
+            quick_capture_ui._format_show_more_label(12, 12),
+            "Show 12 more (12 left)",
+        )
+        self.assertEqual(
+            quick_capture_ui._format_show_more_label(50, 200),
+            "Show 50 more (200 left)",
+        )
+
+
 class TestQuickCaptureBuildPersistence220(unittest.TestCase):
     def test_settings_for_save_hides_enabled_during_build(self) -> None:
         settings = {
@@ -141,6 +153,39 @@ class TestQuickCaptureBuildPersistence220(unittest.TestCase):
         out = quick_capture.commit_build_failure(settings)
         self.assertNotIn(quick_capture.QC_BUILDING_SETTINGS_KEY, out)
         self.assertFalse(quick_capture.is_quick_capture_enabled(out))
+
+    def test_enable_while_panel_open_persists_without_building_marker(self) -> None:
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            tracker = _tracker_mock(
+                todo_items=[
+                    {
+                        "id": "t1",
+                        "text": "Todo",
+                        "done": False,
+                        "work_date": "2026-07-20",
+                        "category": "",
+                    }
+                ],
+            )
+            tracker.root = root
+            win = quick_capture_ui.open_quick_capture_panel(tracker)
+            for _ in range(40):
+                root.update()
+            self.assertTrue(quick_capture_ui.quick_capture_panel_is_open(tracker))
+            tracker.settings = quick_capture.apply_quick_capture_settings(
+                tracker.settings, {"enabled": True}
+            )
+            if quick_capture_ui.quick_capture_panel_is_open(tracker):
+                tracker.settings = quick_capture.commit_build_success(tracker.settings)
+            else:
+                tracker.settings[quick_capture.QC_BUILDING_SETTINGS_KEY] = True
+            self.assertNotIn(quick_capture.QC_BUILDING_SETTINGS_KEY, tracker.settings)
+            self.assertTrue(quick_capture.is_quick_capture_enabled(tracker.settings))
+            win.destroy()
+        finally:
+            root.destroy()
 
     def test_startup_with_building_marker_skips_open(self) -> None:
         root = tk.Tk()
