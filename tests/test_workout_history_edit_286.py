@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gc
 import os
 import sqlite3
 import tempfile
@@ -31,6 +32,17 @@ def _temp_repo() -> tuple[FitnessRepository, str]:
     repo = FitnessRepository(db_path=handle.name)
     repo.initialize()
     return repo, handle.name
+
+
+def _dispose_temp_repo(repo: FitnessRepository | None, path: str) -> None:
+    """Release Windows SQLite file locks before deleting the temp db."""
+    if repo is not None:
+        del repo
+    gc.collect()
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
 
 
 class TestSetFieldValidation(unittest.TestCase):
@@ -95,10 +107,7 @@ class TestUpdateSavedSession(unittest.TestCase):
         )
 
     def tearDown(self):
-        try:
-            os.unlink(self.path)
-        except OSError:
-            pass
+        _dispose_temp_repo(self.repo, self.path)
 
     def test_form_quality_preserved_when_editing_reps_only(self):
         self.set1 = WorkoutSet(
@@ -386,10 +395,7 @@ class TestBuildPayload(unittest.TestCase):
         self.repo.add_exercise(self.ex)
 
     def tearDown(self):
-        try:
-            os.unlink(self.path)
-        except OSError:
-            pass
+        _dispose_temp_repo(self.repo, self.path)
 
     def test_unknown_typed_name_rejected(self):
         with self.assertRaises(SetFieldValidationError):
@@ -442,7 +448,7 @@ class TestOrdinalBackfillDb(unittest.TestCase):
             self.assertEqual(row.ordinal, 7)
             self.assertEqual(row.reps, 7)
         finally:
-            os.unlink(path)
+            _dispose_temp_repo(repo, path)
 
 
 class TestLogThenEditIntegration(unittest.TestCase):
@@ -471,4 +477,4 @@ class TestLogThenEditIntegration(unittest.TestCase):
             self.assertEqual(repo.list_workout_sets(session.id)[0].id, set_id)
             self.assertEqual(repo.list_workout_sets(session.id)[0].reps, 11)
         finally:
-            os.unlink(path)
+            _dispose_temp_repo(repo, path)
