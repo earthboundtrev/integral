@@ -930,6 +930,21 @@ def open_new_session_dialog(
     if theme is None:
         theme = app_theme.get_theme(False)
 
+    if tracker is not None:
+        existing = getattr(tracker, "_log_exercise_dialog", None)
+        if existing is not None:
+            try:
+                if existing.winfo_exists():
+                    existing.lift()
+                    existing.focus_force()
+                    if prefill_session_id:
+                        repeat_fn = getattr(existing, "_integral_repeat_session", None)
+                        if callable(repeat_fn):
+                            repeat_fn(prefill_session_id)
+                    return existing
+            except tk.TclError:
+                pass
+
     dialog = tk.Toplevel(parent)
     dialog.title("Log Exercise Session")
     dialog.geometry("560x720")
@@ -1223,7 +1238,6 @@ def open_new_session_dialog(
         weight_entry.bind("<Return>", on_metric_return)
 
     repeat_status = tk.StringVar(value="")
-    repeat_menu_family: dict = {"family": None}
     pending_repeat: dict = {"session_id": None, "family": None}
 
     def _apply_prefill_items(
@@ -1292,15 +1306,14 @@ def open_new_session_dialog(
             items, source_session, notes = prefill_from_session(repo, session_id)
             source_id = session_id if items or source_session else None
         else:
-            fam = family if family is not None else repeat_menu_family.get("family")
             items, source_id, notes = prefill_from_latest_session(
-                repo, exclude_date=log_date, family=fam
+                repo, exclude_date=log_date, family=family
             )
             if source_id:
                 source_session = repo.get_workout_session(source_id)
         items = enrich_prefill_pending_items(repo, items)
         if not items:
-            fam_key = (family or repeat_menu_family.get("family") or "").strip()
+            fam_key = (family or "").strip()
             if fam_key:
                 from fitness_programs import format_family_label
 
@@ -1326,16 +1339,26 @@ def open_new_session_dialog(
     def dismiss_replace() -> None:
         replace_row.pack_forget()
 
-    def _replace_key(event=None):
-        confirm_replace()
-        return "break"
+    def _on_escape_replace_bar(_event=None):
+        try:
+            if replace_row.winfo_ismapped():
+                dismiss_replace()
+                return "break"
+        except tk.TclError:
+            pass
+        return None
 
-    def _keep_current_key(event=None):
-        dismiss_replace()
-        return "break"
+    def _on_return_replace_bar(_event=None):
+        try:
+            if replace_row.winfo_ismapped():
+                confirm_replace()
+                return "break"
+        except tk.TclError:
+            pass
+        return None
 
-    replace_row.bind("<Return>", _replace_key)
-    replace_row.bind("<Escape>", _keep_current_key)
+    dialog.bind("<Escape>", _on_escape_replace_bar, add="+")
+    dialog.bind("<Return>", _on_return_replace_bar, add="+")
     ttk.Button(replace_row, text="Replace", command=confirm_replace).pack(side=tk.LEFT, padx=(0, 6))
     ttk.Button(replace_row, text="Keep current", command=dismiss_replace).pack(side=tk.LEFT)
 
@@ -1588,8 +1611,7 @@ def open_new_session_dialog(
             dialog,
             entries,
             on_pick_session=lambda sid: apply_session_prefill(session_id=sid, force=False),
-            on_pick_history=open_history_picker,
-            last_family_context=repeat_menu_family,
+            on_pick_history=lambda: open_history_picker(None),
         )
         old = type_menu_holder.get("menu")
         if old is not None:
@@ -1675,6 +1697,16 @@ def open_new_session_dialog(
 
     dialog.after_idle(_maybe_initial_prefill)
     date_var.trace_add("write", lambda *_a: refresh_type_menu())
+
+    if tracker is not None:
+        tracker._log_exercise_dialog = dialog
+
+        def clear_log_dialog_ref(_event: tk.Event | None = None) -> None:
+            if getattr(tracker, "_log_exercise_dialog", None) is dialog:
+                tracker._log_exercise_dialog = None
+
+        dialog.bind("<Destroy>", clear_log_dialog_ref, add="+")
+
     return dialog
 
 

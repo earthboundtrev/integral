@@ -69,7 +69,7 @@ class RecentSessionsOverlay:
         self._selection = 0
         self._popup: tk.Toplevel | None = None
         self._listbox: tk.Listbox | None = None
-        self._bound = False
+        self._escape_funcids: list[tuple[tk.Misc, str]] = []
 
     def is_open(self) -> bool:
         return self._popup is not None and self._popup.winfo_exists()
@@ -83,12 +83,12 @@ class RecentSessionsOverlay:
                 pass
         self._popup = None
         self._listbox = None
-        if self._bound:
+        for widget, funcid in self._escape_funcids:
             try:
-                self._parent.unbind_all("<Escape>")
+                widget.unbind("<Escape>", funcid)
             except tk.TclError:
                 pass
-            self._bound = False
+        self._escape_funcids.clear()
         self._on_close()
 
     def show(self, anchor_widget: tk.Misc, rows: list[RepeatableSessionRow]) -> None:
@@ -183,14 +183,14 @@ class RecentSessionsOverlay:
         listbox.bind("<Double-Button-1>", pick_selected)
         listbox.bind("<Up>", on_up)
         listbox.bind("<Down>", on_down)
-        listbox.bind("<Escape>", on_esc)
-        popup.bind("<Escape>", on_esc)
         popup.bind("<FocusOut>", lambda _e: popup.after(80, self._maybe_close_focus, popup))
 
         self._popup = popup
         self._listbox = listbox
-        self._parent.bind_all("<Escape>", on_esc, add="+")
-        self._bound = True
+        self._escape_funcids = [
+            (listbox, listbox.bind("<Escape>", on_esc)),
+            (popup, popup.bind("<Escape>", on_esc)),
+        ]
 
     def _maybe_close_focus(self, popup: tk.Toplevel) -> None:
         if self._popup is not popup or not popup.winfo_exists():
@@ -227,22 +227,15 @@ def build_repeat_type_menu(
     entries: list[tuple[str, str, str]],
     *,
     on_pick_session: Callable[[str], None],
-    on_pick_history: Callable[[str | None], None],
-    last_family_context: dict,
+    on_pick_history: Callable[[], None],
 ) -> tk.Menu:
     menu = tk.Menu(parent, tearoff=0)
-    for family, label, session_id in entries:
+    for _family, label, session_id in entries:
         menu.add_command(
             label=label,
-            command=lambda sid=session_id, fam=family: (
-                last_family_context.__setitem__("family", fam),
-                on_pick_session(sid),
-            ),
+            command=lambda sid=session_id: on_pick_session(sid),
         )
     if entries:
         menu.add_separator()
-    menu.add_command(
-        label="Pick from history…",
-        command=lambda: on_pick_history(last_family_context.get("family")),
-    )
+    menu.add_command(label="Pick from history…", command=on_pick_history)
     return menu
