@@ -535,6 +535,138 @@ class FitnessRepository:
             for row in rows
         ]
 
+    def session_has_family(self, session_id: str, family: str) -> bool:
+        family_key = (family or "").strip().lower()
+        if not family_key:
+            return False
+        self.initialize()
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT 1
+                FROM workout_sets ws
+                INNER JOIN exercises e ON e.id = ws.exercise_id
+                WHERE ws.session_id = ?
+                  AND LOWER(COALESCE(e.family, '')) = ?
+                  AND e.deleted_at IS NULL
+                LIMIT 1
+                """,
+                (session_id, family_key),
+            ).fetchone()
+        return row is not None
+
+    def summarize_session_families(self, session_id: str) -> dict[str, int]:
+        self.initialize()
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT LOWER(COALESCE(e.family, '')) AS family, COUNT(*) AS cnt
+                FROM workout_sets ws
+                INNER JOIN exercises e ON e.id = ws.exercise_id
+                WHERE ws.session_id = ?
+                  AND e.deleted_at IS NULL
+                GROUP BY LOWER(COALESCE(e.family, ''))
+                """,
+                (session_id,),
+            ).fetchall()
+        return {row["family"]: int(row["cnt"]) for row in rows if row["family"]}
+
+    def list_families_with_repeatable_sessions(
+        self,
+        *,
+        exclude_date: str | None = None,
+    ) -> list[str]:
+        """Families present in at least one session with sets, newest-first discovery order."""
+        exclude = (exclude_date or "").strip()
+        self.initialize()
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT DISTINCT LOWER(COALESCE(e.family, '')) AS family
+                FROM workout_sessions s
+                INNER JOIN workout_sets ws ON ws.session_id = s.id
+                INNER JOIN exercises e ON e.id = ws.exercise_id
+                WHERE e.deleted_at IS NULL
+                  AND (? = '' OR TRIM(s.date) <> ?)
+                ORDER BY family
+                """,
+                (exclude, exclude),
+            ).fetchall()
+        return [row["family"] for row in rows if row["family"]]
+
+    def list_repeatable_session_rows(
+        self,
+        *,
+        exclude_date: str | None = None,
+        limit: int = 10,
+    ) -> list[dict]:
+        """Up to ``limit`` repeatable sessions in one query (set count + families)."""
+        exclude = (exclude_date or "").strip()
+        cap = max(1, min(int(limit), 50))
+        self.initialize()
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                WITH candidates AS (
+                    SELECT
+                        s.id,
+                        s.date,
+                        s.created_at,
+                        (
+                            SELECT COUNT(DISTINCT ws2.exercise_id)
+                            FROM workout_sets ws2
+                            WHERE ws2.session_id = s.id
+                        ) AS exercise_count
+                    FROM workout_sessions s
+                    WHERE EXISTS (
+                        SELECT 1 FROM workout_sets ws WHERE ws.session_id = s.id
+                    )
+                      AND (? = '' OR TRIM(s.date) <> ?)
+                    ORDER BY COALESCE(s.created_at, '') DESC, s.id DESC
+                    LIMIT ?
+                ),
+                family_totals AS (
+                    SELECT
+                        c.id AS session_id,
+                        LOWER(COALESCE(e.family, '')) AS family,
+                        COUNT(*) AS cnt
+                    FROM candidates c
+                    INNER JOIN workout_sets ws ON ws.session_id = c.id
+                    INNER JOIN exercises e ON e.id = ws.exercise_id
+                    WHERE e.deleted_at IS NULL
+                    GROUP BY c.id, LOWER(COALESCE(e.family, ''))
+                )
+                SELECT
+                    c.id,
+                    c.date,
+                    c.created_at,
+                    c.exercise_count,
+                    ft.family,
+                    ft.cnt
+                FROM candidates c
+                LEFT JOIN family_totals ft ON ft.session_id = c.id
+                ORDER BY COALESCE(c.created_at, '') DESC, c.id DESC, ft.cnt DESC, ft.family
+                """,
+                (exclude, exclude, cap),
+            ).fetchall()
+        grouped: dict[str, dict] = {}
+        order: list[str] = []
+        for row in rows:
+            sid = row["id"]
+            if sid not in grouped:
+                grouped[sid] = {
+                    "session_id": sid,
+                    "date": row["date"],
+                    "created_at": row["created_at"],
+                    "exercise_count": int(row["exercise_count"] or 0),
+                    "family_counts": {},
+                }
+                order.append(sid)
+            fam = row["family"]
+            if fam:
+                grouped[sid]["family_counts"][fam] = int(row["cnt"] or 0)
+        return [grouped[sid] for sid in order]
+
     def insert_workout_session_with_sets(
         self,
         session: WorkoutSession,
@@ -669,6 +801,7 @@ class FitnessRepository:
         before_date: str | None = None,
         before_id: str | None = None,
         exercise_filter: str | None = None,
+        family_filter: str | None = None,
     ) -> list[WorkoutSession]:
         """Keyset paging for workout sessions (date DESC, created_at DESC, id DESC).
         
@@ -677,13 +810,48 @@ class FitnessRepository:
             before_date: Cursor date (exclusive)
             before_id: Cursor id (exclusive, required if before_date is set)
             exercise_filter: Filter to sessions containing this exercise name (case-insensitive)
+            family_filter: Filter to sessions containing any set in this exercise family
         
         Returns:
             Up to `limit` sessions, newest first
         """
         self.initialize()
         with self.connect() as conn:
-            if exercise_filter:
+            family_key = (family_filter or "").strip().lower()
+            if family_key:
+                query = """
+                    SELECT DISTINCT s.id, s.date, s.notes, s.duration_minutes, s.body_weight_kg, s.created_at
+                    FROM workout_sessions s
+                    INNER JOIN workout_sets ws ON ws.session_id = s.id
+                    INNER JOIN exercises e ON e.id = ws.exercise_id
+                    WHERE (? IS NULL OR (
+                        (s.date, COALESCE(s.created_at, ''), s.id) < (?, COALESCE(?, ''), ?)
+                    ))
+                    AND LOWER(COALESCE(e.family, '')) = ?
+                    AND e.deleted_at IS NULL
+                    ORDER BY s.date DESC, s.created_at DESC, s.id DESC
+                    LIMIT ?
+                """
+                before_created_at = None
+                if before_date and before_id:
+                    cursor_row = conn.execute(
+                        "SELECT created_at FROM workout_sessions WHERE id = ?",
+                        (before_id,),
+                    ).fetchone()
+                    if cursor_row:
+                        before_created_at = cursor_row["created_at"]
+                rows = conn.execute(
+                    query,
+                    (
+                        before_date,
+                        before_date,
+                        before_created_at,
+                        before_id or "",
+                        family_key,
+                        limit,
+                    ),
+                ).fetchall()
+            elif exercise_filter:
                 query = """
                     SELECT DISTINCT s.id, s.date, s.notes, s.duration_minutes, s.body_weight_kg, s.created_at
                     FROM workout_sessions s
