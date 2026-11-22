@@ -188,6 +188,9 @@ class WorkoutHistoryView:
         self._exercise_spark_values: list[float] = []
         self._exercise_spark_dates: list[str] = []
         self._exercise_spark_kind = ""
+        self._session_editing = False
+        self._edit_panel = None
+        self._alt_e_bindings: list[tuple] = []
         
         self._build_ui()
         self._load_first_page()
@@ -251,6 +254,21 @@ class WorkoutHistoryView:
         paned.add(detail_frame, weight=2)
 
         self._status_banner = StatusBanner(detail_frame, self.theme)
+
+        self.detail_actions = ttk.Frame(detail_frame, style="Surface.TFrame")
+        self.detail_actions.pack(side=tk.BOTTOM, fill=tk.X, padx=4, pady=(0, 6))
+        self.edit_btn = ttk.Button(
+            self.detail_actions,
+            text="Edit",
+            command=self._enter_edit_mode,
+        )
+        self.edit_btn.pack(side=tk.RIGHT)
+        ttk.Label(
+            self.detail_actions,
+            text="Alt+E to edit this session",
+            style="OnSurfaceMuted.TLabel",
+            font=("Helvetica", 9),
+        ).pack(side=tk.LEFT)
 
         self.detail_stack = ttk.Frame(detail_frame, style="Surface.TFrame")
         self.detail_stack.pack(fill=tk.BOTH, expand=True)
@@ -363,6 +381,9 @@ class WorkoutHistoryView:
         
         self._ctrl_f_binding = self.container.bind_all("<Control-f>", lambda e: self._focus_filter())
         top = self.container.winfo_toplevel()
+        for seq in ("<Alt-e>", "<Alt-E>"):
+            bid = top.bind_all(seq, lambda _e: self._enter_edit_mode(), add="+")
+            self._alt_e_bindings.append((top, seq, bid))
         top.bind("<Alt-r>", self._on_alt_repeat_session, add="+")
         top.bind("<Alt-R>", self._on_alt_repeat_session, add="+")
     
@@ -522,7 +543,7 @@ class WorkoutHistoryView:
             if self.is_loading:
                 self.loading_label.pack(side=tk.TOP, pady=20)
         
-        self.loading_after_id = self.container.after(150, show)
+        self.loading_after_id = self.container.after(180, show)
     
     def _hide_loading_indicator(self) -> None:
         """Hide loading indicator."""
@@ -573,6 +594,8 @@ class WorkoutHistoryView:
     
     def _on_session_selected(self) -> None:
         """Handle session selection."""
+        if self._session_editing:
+            self._exit_edit_mode()
         sel = self.session_list.curselection()
         if not sel:
             return
@@ -629,8 +652,74 @@ class WorkoutHistoryView:
             return "break"
         return ""
 
+    def _enter_edit_mode(self) -> str | None:
+        if self.detail_mode != "session" or not self.selected_session:
+            return None
+        if self._session_editing:
+            return None
+        if self.detail_mode == "exercise":
+            return None
+        session = self.selected_session
+        sets = self.sets_by_session.get(session.id, [])
+        if not sets:
+            return None
+        from workout_history_edit_ui import WorkoutSessionEditPanel
+
+        self._session_editing = True
+        self.edit_btn.state(["disabled"])
+        self.detail_text.pack_forget()
+        if self._edit_panel is not None:
+            self._edit_panel.destroy()
+        self._edit_panel = WorkoutSessionEditPanel(
+            self.detail_stack,
+            self.repo,
+            self.theme,
+            on_saved=self._on_edit_saved,
+            on_cancel=self._exit_edit_mode,
+        )
+        self._edit_panel.pack(fill=tk.BOTH, expand=True)
+        self._edit_panel.load_session(session, sets)
+        self._edit_panel.focus_set()
+        return "break"
+
+    def _exit_edit_mode(self) -> None:
+        if not self._session_editing:
+            return
+        self._session_editing = False
+        self.edit_btn.state(["!disabled"])
+        if self._edit_panel is not None:
+            self._edit_panel.unload_shortcuts()
+            self._edit_panel.destroy()
+            self._edit_panel = None
+        if not self.detail_text.winfo_ismapped():
+            self.detail_text.pack(fill=tk.BOTH, expand=True)
+        if self.selected_session:
+            self._display_session_detail(self.selected_session)
+
+    def _on_edit_saved(self) -> None:
+        session = self.selected_session
+        if not session:
+            self._exit_edit_mode()
+            return
+        try:
+            sets_dict = self.repo.list_workout_sets_batch([session.id])
+            self.sets_by_session[session.id] = sets_dict.get(session.id, [])
+            refreshed = self.repo.get_workout_session(session.id)
+            if refreshed:
+                self.selected_session = refreshed
+                for i, s in enumerate(self.sessions):
+                    if s.id == session.id:
+                        self.sessions[i] = refreshed
+                        break
+        except Exception as exc:
+            self._handle_db_error(exc, "Error refreshing session")
+        self._status_banner.show_success("Saved changes to this session.")
+        self._exit_edit_mode()
+
     def _display_session_detail(self, session: WorkoutSession) -> None:
         """Display detail for selected session."""
+        if self._session_editing:
+            self._exit_edit_mode()
         if self.detail_mode == "exercise":
             self._close_exercise_view()
         self._focused_exercise_id = None
@@ -1028,6 +1117,9 @@ class WorkoutHistoryView:
     
     def _on_escape_from_detail(self) -> str | None:
         """Return to session list or exit exercise view."""
+        if self._session_editing:
+            self._exit_edit_mode()
+            return "break"
         if self.detail_mode == "exercise":
             return self._close_exercise_view()
         self.session_list.focus_set()
@@ -1043,6 +1135,14 @@ class WorkoutHistoryView:
     
     def destroy(self) -> None:
         """Clean up and destroy the view."""
+        if self._session_editing and self._edit_panel is not None:
+            self._edit_panel.unload_shortcuts()
+        for top, seq, _bid in self._alt_e_bindings:
+            try:
+                top.unbind_all(seq)
+            except Exception:
+                pass
+        self._alt_e_bindings.clear()
         if self.loading_after_id is not None:
             self.container.after_cancel(self.loading_after_id)
         if self._ctrl_f_binding:
