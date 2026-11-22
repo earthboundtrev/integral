@@ -40,6 +40,10 @@ class TestSetFieldValidation(unittest.TestCase):
     def test_weight_round_trip(self):
         self.assertEqual(parse_optional_weight_text("40.5"), 40.5)
 
+    def test_weight_thousands_comma_rejected(self):
+        with self.assertRaises(SetFieldValidationError):
+            parse_optional_weight_text("1,000")
+
     def test_reps_range_rejected(self):
         with self.assertRaises(SetFieldValidationError):
             parse_required_reps("8-10")
@@ -95,6 +99,96 @@ class TestUpdateSavedSession(unittest.TestCase):
             os.unlink(self.path)
         except OSError:
             pass
+
+    def test_form_quality_preserved_when_editing_reps_only(self):
+        self.set1 = WorkoutSet(
+            id="set-1",
+            session_id=self.session.id,
+            exercise_id="ex_a",
+            sets=3,
+            reps=8,
+            weight_kg=50.0,
+            form_quality=7,
+            ordinal=0,
+        )
+        self.set2 = WorkoutSet(
+            id="set-2",
+            session_id=self.session.id,
+            exercise_id="ex_b",
+            sets=3,
+            reps=10,
+            form_quality=9,
+            ordinal=1,
+        )
+        with self.repo.connect() as conn:
+            conn.execute("DELETE FROM workout_sets WHERE session_id = ?", (self.session.id,))
+        self.repo.add_workout_set(self.set1)
+        self.repo.add_workout_set(self.set2)
+        payload = SessionEditPayload(
+            session_id=self.session.id,
+            notes="Note",
+            duration_minutes=30,
+            body_weight_kg=None,
+            sets=[
+                SetEditPayload("set-1", "ex_a", 3, 12, None, 50.0),
+                SetEditPayload("set-2", "ex_b", 3, 10, None, None),
+            ],
+        )
+        update_saved_workout_session(self.repo, payload)
+        by_id = {r.id: r for r in self.repo.list_workout_sets(self.session.id)}
+        self.assertEqual(by_id["set-1"].reps, 12)
+        self.assertEqual(by_id["set-1"].form_quality, 7)
+        self.assertEqual(by_id["set-2"].form_quality, 9)
+
+    def test_immutable_columns_unchanged_after_save(self):
+        session_date = "2026-06-01"
+        session_created = "2026-06-01T12:00:00+00:00"
+        set_created = "2026-06-01T12:00:03+00:00"
+        with self.repo.connect() as conn:
+            conn.execute(
+                """
+                UPDATE workout_sessions SET date = ?, created_at = ? WHERE id = ?
+                """,
+                (session_date, session_created, self.session.id),
+            )
+            conn.execute(
+                """
+                UPDATE workout_sets SET ordinal = 5, created_at = ? WHERE id = ?
+                """,
+                (set_created, "set-2"),
+            )
+        payload = SessionEditPayload(
+            session_id=self.session.id,
+            notes="Changed note",
+            duration_minutes=45,
+            body_weight_kg=None,
+            sets=[
+                SetEditPayload("set-1", "ex_a", 3, 9, None, 50.0),
+                SetEditPayload("set-2", "ex_b", 3, 11, None, None),
+            ],
+        )
+        update_saved_workout_session(self.repo, payload)
+        session = self.repo.get_workout_session(self.session.id)
+        self.assertEqual(session.date, session_date)
+        self.assertEqual(session.created_at, session_created)
+        row2 = next(r for r in self.repo.list_workout_sets(self.session.id) if r.id == "set-2")
+        self.assertEqual(row2.ordinal, 5)
+        self.assertEqual(row2.created_at, set_created)
+
+    def test_swap_to_exercise_without_progress_does_not_insert_row(self):
+        self.assertIsNone(self.repo.get_user_progress("ex_b"))
+        payload = SessionEditPayload(
+            session_id=self.session.id,
+            notes="Note",
+            duration_minutes=30,
+            body_weight_kg=None,
+            sets=[
+                SetEditPayload("set-1", "ex_b", 3, 8, None, 50.0),
+                SetEditPayload("set-2", "ex_b", 3, 10, None, None),
+            ],
+        )
+        update_saved_workout_session(self.repo, payload)
+        self.assertIsNone(self.repo.get_user_progress("ex_b"))
 
     def test_update_reps_keeps_ids_and_ordinals(self):
         payload = SessionEditPayload(

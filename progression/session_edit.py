@@ -155,7 +155,6 @@ def update_saved_workout_session(
                 "reps": s.reps,
                 "hold_seconds": s.hold_seconds,
                 "weight_kg": s.weight_kg,
-                "form_quality": s.form_quality,
             }
             for s in payload.sets
         ],

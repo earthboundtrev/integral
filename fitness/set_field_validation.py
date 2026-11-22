@@ -25,11 +25,23 @@ def _reject_non_finite(value: float, label: str) -> None:
         raise SetFieldValidationError(f"{label} must be a finite number.")
 
 
+def _reject_thousands_comma(raw: str) -> None:
+    """Thousands-style commas (e.g. 1,000) are not valid; decimal comma uses 1–2 digits after comma."""
+    if "," not in raw:
+        return
+    segment = raw.split(",", 1)[1]
+    if len(segment) == 3 and segment.isdigit():
+        raise SetFieldValidationError(
+            "Use a period for decimals (e.g. 40.5), not a thousands comma."
+        )
+
+
 def parse_optional_weight_text(text: str) -> float | None:
     """Parse weight entry; empty means None. Comma decimals accepted (e.g. 40,5 → 40.5)."""
     raw = (text or "").strip()
     if not raw:
         return None
+    _reject_thousands_comma(raw)
     normalized = raw.replace(",", ".")
     if "-" in normalized or normalized.count(".") > 1:
         raise SetFieldValidationError("Weight must be a number.")

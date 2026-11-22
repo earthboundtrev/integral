@@ -174,6 +174,7 @@ class WorkoutSessionEditPanel(ttk.Frame):
             widgets: dict[str, tk.Misc] = {
                 "set_id": wset.id,
                 "ordinal": wset.ordinal,
+                "form_quality": wset.form_quality,
                 "exercise": combo,
                 "sets": ttk.Entry(row, textvariable=sets_var, width=4),
                 "reps": ttk.Entry(row, textvariable=reps_var, width=4),
@@ -242,6 +243,7 @@ class WorkoutSessionEditPanel(ttk.Frame):
                     "reps": vars_map["reps"].get(),
                     "hold": vars_map["hold"].get(),
                     "weight": vars_map["weight"].get(),
+                    "form_quality": widgets.get("form_quality"),
                 }
             )
         return rows

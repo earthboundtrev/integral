@@ -829,24 +829,7 @@ class FitnessRepository:
             """,
             (eid,),
         ).fetchone()
-        if progress is None and not rows:
-            return
         if progress is None:
-            conn.execute(
-                """
-                INSERT INTO user_exercise_progress (
-                    exercise_id, status, current_step,
-                    best_reps, best_hold_time, best_weight, last_logged_at, achieved_at
-                ) VALUES (?, 'in_progress', NULL, ?, ?, ?, ?, NULL)
-                """,
-                (
-                    eid,
-                    rolling.best_reps,
-                    rolling.best_hold_time,
-                    rolling.best_weight,
-                    last_logged_at,
-                ),
-            )
             return
         conn.execute(
             """
@@ -908,7 +891,7 @@ class FitnessRepository:
                         """
                         UPDATE workout_sets
                         SET exercise_id = ?, sets = ?, reps = ?,
-                            hold_seconds = ?, weight_kg = ?, form_quality = ?
+                            hold_seconds = ?, weight_kg = ?
                         WHERE id = ? AND session_id = ?
                         """,
                         (
@@ -917,7 +900,6 @@ class FitnessRepository:
                             item.get("reps"),
                             item.get("hold_seconds"),
                             item.get("weight_kg"),
-                            item.get("form_quality"),
                             item["id"],
                             session_id,
                         ),
