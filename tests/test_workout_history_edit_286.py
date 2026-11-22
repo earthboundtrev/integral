@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 from fitness.set_field_validation import (
     SetFieldValidationError,
+    parse_optional_hold_text,
     parse_optional_weight_text,
     parse_required_reps,
 )
@@ -55,6 +56,10 @@ class TestSetFieldValidation(unittest.TestCase):
     def test_weight_thousands_comma_rejected(self):
         with self.assertRaises(SetFieldValidationError):
             parse_optional_weight_text("1,000")
+
+    def test_hold_thousands_comma_rejected(self):
+        with self.assertRaises(SetFieldValidationError):
+            parse_optional_hold_text("1,000")
 
     def test_reps_range_rejected(self):
         with self.assertRaises(SetFieldValidationError):
@@ -449,6 +454,146 @@ class TestOrdinalBackfillDb(unittest.TestCase):
             self.assertEqual(row.reps, 7)
         finally:
             _dispose_temp_repo(repo, path)
+
+
+class TestWorkoutSessionEditEsc(unittest.TestCase):
+    def test_reps_entry_binds_escape_on_toplevel_and_widget(self):
+        try:
+            import tkinter as tk
+
+            from theme import get_theme
+            from workout_history_edit_ui import WorkoutSessionEditPanel
+        except ImportError:
+            self.skipTest("tkinter not available")
+
+        repo, path = _temp_repo()
+        ex = Exercise(id="ex1", name="Pull", source_book="CC", family="pull", mastery_criteria={})
+        repo.add_exercise(ex)
+        session = WorkoutSession(date="2026-06-15", created_at="2026-06-15T10:00:00Z")
+        repo.add_workout_session(session)
+        wset = WorkoutSet(
+            id="s1",
+            session_id=session.id,
+            exercise_id="ex1",
+            sets=3,
+            reps=10,
+            ordinal=0,
+        )
+        repo.add_workout_set(wset)
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            panel = WorkoutSessionEditPanel(
+                root,
+                repo,
+                get_theme(False),
+                on_saved=lambda: None,
+                on_cancel=lambda: None,
+            )
+            panel.pack()
+            root.update_idletasks()
+            panel.load_session(session, [wset])
+            reps_entry = panel._row_widgets[0]["reps"]
+            self.assertTrue(
+                reps_entry.bind("<Escape>"),
+                "Esc must be bound on the reps entry (not only the panel frame)",
+            )
+            self.assertTrue(
+                panel.winfo_toplevel().bind("<Escape>"),
+                "Esc must be bound on the toplevel while editing",
+            )
+        finally:
+            panel.unload_shortcuts()
+            panel.destroy()
+            root.destroy()
+            _dispose_temp_repo(repo, path)
+
+    def test_escape_handler_cancels_without_persisting_reps(self):
+        try:
+            import tkinter as tk
+
+            from theme import get_theme
+            from workout_history_ui import WorkoutHistoryView
+        except ImportError:
+            self.skipTest("tkinter not available")
+
+        repo, path = _temp_repo()
+        ex = Exercise(id="ex1", name="Pull", source_book="CC", family="pull", mastery_criteria={})
+        repo.add_exercise(ex)
+        session = WorkoutSession(date="2026-06-15", created_at="2026-06-15T10:00:00Z")
+        repo.add_workout_session(session)
+        wset = WorkoutSet(
+            id="s1",
+            session_id=session.id,
+            exercise_id="ex1",
+            sets=3,
+            reps=10,
+            ordinal=0,
+        )
+        repo.add_workout_set(wset)
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            view = WorkoutHistoryView(root, repo, get_theme(False))
+            view.selected_session = session
+            view.sets_by_session[session.id] = [wset]
+            view._enter_edit_mode()
+            panel = view._edit_panel
+            assert panel is not None
+            panel._row_widgets[0]["vars"]["reps"].set("99")
+            panel._on_cancel_event()
+            root.update()
+            self.assertFalse(view._session_editing)
+            self.assertEqual(repo.list_workout_sets(session.id)[0].reps, 10)
+        finally:
+            view.destroy()
+            root.destroy()
+            _dispose_temp_repo(repo, path)
+
+
+class TestWorkoutHistoryAltEBinding(unittest.TestCase):
+    def test_destroy_leaves_other_alt_e_handlers(self):
+        try:
+            import tkinter as tk
+
+            from theme import get_theme
+            from workout_history_ui import WorkoutHistoryView
+        except ImportError:
+            self.skipTest("tkinter not available")
+
+        temp_db = tempfile.NamedTemporaryFile(delete=False, suffix=".db")
+        temp_db.close()
+        repo = FitnessRepository(db_path=temp_db.name)
+        repo.initialize()
+        repo.add_workout_session(WorkoutSession(date="2026-06-01"))
+        root = tk.Tk()
+        root.withdraw()
+        other_hits: list[int] = []
+
+        def other_handler(_event) -> None:
+            other_hits.append(1)
+
+        other_funcid = root.bind_all("<Alt-e>", other_handler, add="+")
+        try:
+            view = WorkoutHistoryView(root, repo, get_theme(False))
+            view._do_load_first_page()
+            root.update_idletasks()
+            view.destroy()
+            script = root.bind_class("all", "<Alt-e>") or ""
+            self.assertIn(
+                other_funcid,
+                script,
+                "Other Alt+E handler should survive history view destroy",
+            )
+        finally:
+            from more_menu_ui import unbind_all_func
+
+            unbind_all_func(root, "<Alt-e>", other_funcid)
+            root.destroy()
+            try:
+                os.unlink(temp_db.name)
+            except OSError:
+                pass
 
 
 class TestLogThenEditIntegration(unittest.TestCase):

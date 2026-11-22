@@ -17,6 +17,7 @@ from progression.workout_pr import (
     pr_badges_for_sets,
     resolve_display_bests,
 )
+from more_menu_ui import unbind_all_func
 from status_banner import StatusBanner
 from workout_history_sparkline import (
     best_set_metric_for_rows,
@@ -1137,11 +1138,8 @@ class WorkoutHistoryView:
         """Clean up and destroy the view."""
         if self._session_editing and self._edit_panel is not None:
             self._edit_panel.unload_shortcuts()
-        for top, seq, _bid in self._alt_e_bindings:
-            try:
-                top.unbind_all(seq)
-            except Exception:
-                pass
+        for top, seq, funcid in self._alt_e_bindings:
+            unbind_all_func(top, seq, funcid)
         self._alt_e_bindings.clear()
         if self.loading_after_id is not None:
             self.container.after_cancel(self.loading_after_id)

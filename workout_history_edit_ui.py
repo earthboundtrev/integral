@@ -44,7 +44,8 @@ class WorkoutSessionEditPanel(ttk.Frame):
         self._exercises: list[Exercise] = []
         self._name_to_id: dict[str, str] = {}
         self._row_widgets: list[dict[str, tk.Misc]] = []
-        self._bindings: list[tuple] = []
+        self._shortcut_funcids: list[tuple[tk.Misc, str, str]] = []
+        self._escape_funcid: str | None = None
 
         toolbar = ttk.Frame(self, style="Surface.TFrame")
         toolbar.pack(side=tk.TOP, fill=tk.X, padx=4, pady=(0, 4))
@@ -69,6 +70,7 @@ class WorkoutSessionEditPanel(ttk.Frame):
         self.duration_var = tk.StringVar()
         self.body_weight_var = tk.StringVar()
         self.notes_var = tk.StringVar()
+        self._session_field_widgets: list[tk.Misc] = []
         for label, var in (
             ("Duration (min)", self.duration_var),
             ("Body weight (kg)", self.body_weight_var),
@@ -76,13 +78,16 @@ class WorkoutSessionEditPanel(ttk.Frame):
             row = ttk.Frame(session_fields, style="Surface.TFrame")
             row.pack(fill=tk.X, pady=2)
             ttk.Label(row, text=f"{label}:", width=14).pack(side=tk.LEFT)
-            ttk.Entry(row, textvariable=var, width=12).pack(side=tk.LEFT, fill=tk.X, expand=True)
+            entry = ttk.Entry(row, textvariable=var, width=12)
+            entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+            self._session_field_widgets.append(entry)
 
         notes_row = ttk.Frame(session_fields, style="Surface.TFrame")
         notes_row.pack(fill=tk.X, pady=2)
         ttk.Label(notes_row, text="Notes:", width=14).pack(side=tk.LEFT, anchor=tk.N)
         notes_entry = ttk.Entry(notes_row, textvariable=self.notes_var)
         notes_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self._session_field_widgets.append(notes_entry)
 
         ttk.Label(
             self,
@@ -107,7 +112,9 @@ class WorkoutSessionEditPanel(ttk.Frame):
 
         btn_row = ttk.Frame(self, style="Surface.TFrame")
         btn_row.pack(side=tk.TOP, fill=tk.X, padx=4, pady=8)
-        self.save_btn = ttk.Button(btn_row, text="Save", style="Accent.TButton", command=self._on_save)
+        self.save_btn = ttk.Button(
+            btn_row, text="Save changes", style="Accent.TButton", command=self._on_save
+        )
         self.save_btn.pack(side=tk.LEFT, padx=(0, 8))
         ttk.Button(btn_row, text="Cancel", command=self._on_cancel).pack(side=tk.LEFT)
 
@@ -115,19 +122,20 @@ class WorkoutSessionEditPanel(ttk.Frame):
 
     def _register_shortcuts(self) -> None:
         top = self.winfo_toplevel()
-        self._bindings.append((top, "<Control-s>", self._ctrl_s))
-        self._bindings.append((top, "<Control-S>", self._ctrl_s))
-        self._bindings.append((self, "<Escape>", self._on_cancel_event))
-        for widget, seq, handler in self._bindings:
-            widget.bind(seq, handler, add="+")
+        for seq in ("<Control-s>", "<Control-S>"):
+            funcid = top.bind(seq, self._ctrl_s, add="+")
+            self._shortcut_funcids.append((top, seq, funcid))
+        self._escape_funcid = top.bind("<Escape>", self._on_cancel_event, add="+")
+        self._shortcut_funcids.append((top, "<Escape>", self._escape_funcid))
 
     def unload_shortcuts(self) -> None:
-        for widget, seq, _handler in self._bindings:
+        for widget, seq, funcid in self._shortcut_funcids:
             try:
-                widget.unbind(seq)
+                widget.unbind(seq, funcid)
             except tk.TclError:
                 pass
-        self._bindings.clear()
+        self._shortcut_funcids.clear()
+        self._escape_funcid = None
 
     def _ctrl_s(self, _event=None) -> str:
         self._on_save()
@@ -141,7 +149,9 @@ class WorkoutSessionEditPanel(ttk.Frame):
         self._session = session
         self._exercises = self.repo.list_exercises()
         self._name_to_id = {ex.name: ex.id for ex in self._exercises}
-        self.date_label.config(text=session.date)
+        from workout_history_ui import format_date_display
+
+        self.date_label.config(text=format_date_display(session.date))
         self.duration_var.set(str(session.duration_minutes or ""))
         self.body_weight_var.set(format_weight_display(session.body_weight_kg))
         self.notes_var.set(session.notes or "")
@@ -193,7 +203,19 @@ class WorkoutSessionEditPanel(ttk.Frame):
                 "weight": weight_var,
             }
             self._wire_row_navigation(widgets)
+            self._bind_row_escape(widgets)
             self._row_widgets.append(widgets)
+
+        for entry in self._session_field_widgets:
+            self._bind_escape_on(entry)
+
+    def _bind_escape_on(self, widget: tk.Misc) -> None:
+        funcid = widget.bind("<Escape>", self._on_cancel_event, add="+")
+        self._shortcut_funcids.append((widget, "<Escape>", funcid))
+
+    def _bind_row_escape(self, widgets: dict) -> None:
+        for key in ("exercise", "sets", "reps", "hold", "weight"):
+            self._bind_escape_on(widgets[key])
 
     def _wire_row_navigation(self, widgets: dict) -> None:
         row_index = len(self._row_widgets)

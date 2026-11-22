@@ -63,6 +63,7 @@ def parse_optional_hold_text(text: str) -> float | None:
     raw = (text or "").strip()
     if not raw:
         return None
+    _reject_thousands_comma(raw)
     normalized = raw.replace(",", ".")
     try:
         value = float(normalized)
