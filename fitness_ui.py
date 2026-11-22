@@ -15,6 +15,7 @@ from progression.sessions import (
     is_fitness_db_lock_error,
     link_session_to_body_presence,
     prefill_from_latest_session,
+    prefill_from_session,
     snapshot_body_presence_entry,
     snapshot_exercise_progress,
     snapshot_exercise_progress_for_session,
@@ -848,11 +849,71 @@ def open_log_dialog_for_exercise(
     wire_dialog_accent_keys(dialog, save_btn, cancel_btn=cancel_btn)
 
 
+def repeat_session_into_log(
+    parent,
+    repo: FitnessRepository,
+    session_id: str,
+    *,
+    tracker=None,
+    fitness_settings: dict | None = None,
+    theme=None,
+    on_session_saved=None,
+    on_after_save=None,
+    initial_date: str | None = None,
+):
+    """Queue a past session on the log form without opening a second Toplevel (#259)."""
+    import tkinter as tk
+
+    import theme as app_theme
+
+    if theme is None:
+        theme = app_theme.get_theme(False)
+
+    existing = None
+    if tracker is not None:
+        existing = getattr(tracker, "_log_exercise_dialog", None)
+    if existing is not None:
+        try:
+            if existing.winfo_exists():
+                existing.lift()
+                existing.focus_force()
+                repeat_fn = getattr(existing, "_integral_repeat_session", None)
+                if callable(repeat_fn):
+                    repeat_fn(session_id)
+                return existing
+        except tk.TclError:
+            if tracker is not None:
+                tracker._log_exercise_dialog = None
+
+    target = initial_date or datetime.now().strftime("%Y-%m-%d")
+    dialog = open_new_session_dialog(
+        parent,
+        repo,
+        initial_date=target,
+        prefill_session_id=session_id,
+        on_session_saved=on_session_saved,
+        on_after_save=on_after_save,
+        fitness_settings=fitness_settings,
+        theme=theme,
+        tracker=tracker,
+    )
+    if tracker is not None:
+        tracker._log_exercise_dialog = dialog
+
+        def clear_log_dialog_ref(_event: tk.Event | None = None) -> None:
+            if getattr(tracker, "_log_exercise_dialog", None) is dialog:
+                tracker._log_exercise_dialog = None
+
+        dialog.bind("<Destroy>", clear_log_dialog_ref, add="+")
+    return dialog
+
+
 def open_new_session_dialog(
     parent,
     repo: FitnessRepository,
     *,
     initial_date: str | None = None,
+    prefill_session_id: str | None = None,
     on_session_saved=None,
     on_after_save=None,
     fitness_settings: dict | None = None,
@@ -879,6 +940,8 @@ def open_new_session_dialog(
 
     btn_row = ttk.Frame(dialog, padding=10)
     btn_row.pack(side=tk.BOTTOM, fill=tk.X)
+    repeat_row = ttk.Frame(dialog, padding=(10, 4))
+    repeat_row.pack(side=tk.BOTTOM, fill=tk.X)
     save_session_btn = ttk.Button(btn_row, text="Save Session", style="Accent.TButton")
 
     from inline_validation import make_inline_error_label, set_field_error
@@ -1159,30 +1222,34 @@ def open_new_session_dialog(
     if weight_entry is not None:
         weight_entry.bind("<Return>", on_metric_return)
 
-    def apply_repeat_prefill(*, force: bool = False) -> None:
-        if not repeat_state["enabled"]:
-            return
-        if pending_sets and not force:
-            replace_row.pack(fill=tk.X, pady=(0, 6), before=draft_btns)
-            return
-        replace_row.pack_forget()
-        log_date = date_var.get().strip()
-        items, source_id, notes = prefill_from_latest_session(repo, exclude_date=log_date)
-        items = enrich_prefill_pending_items(repo, items)
-        if not items:
-            if notes:
-                set_field_error(form_error, "; ".join(notes))
-            else:
-                set_field_error(form_error, "No prior session to repeat.")
-            return
+    repeat_status = tk.StringVar(value="")
+    repeat_menu_family: dict = {"family": None}
+    pending_repeat: dict = {"session_id": None, "family": None}
+
+    def _apply_prefill_items(
+        items: list[dict],
+        source_session,
+        source_id: str | None,
+        notes: list[str],
+    ) -> None:
         pending_sets.clear()
         pending_sets.extend(items)
         compare_session_ref["id"] = source_id
         form_edited["value"] = False
         prefill_notes.clear()
         prefill_notes.extend(notes)
-        if prefill_notes:
-            set_field_error(form_error, "; ".join(prefill_notes))
+        combined_msg = "; ".join(notes) if notes else None
+        if source_session is not None and source_session.notes:
+            notes_var.set(source_session.notes)
+        if source_session is not None:
+            from progression.session_repeat import format_repeat_queued_note, session_type_label_for_id
+
+            type_label = session_type_label_for_id(repo, source_session.id)
+            repeat_status.set(
+                format_repeat_queued_note(len(items), source_session, type_label)
+            )
+        if combined_msg:
+            set_field_error(form_error, combined_msg)
         else:
             set_field_error(form_error, None)
         metric_prefill_suppress["active"] = True
@@ -1199,14 +1266,76 @@ def open_new_session_dialog(
         apply_metric_prefill_style(any(it.get("prefilled") for it in items))
         rebuild_preview()
         carousel["reload"]()
+        if pending_sets:
+            preview.selection_clear(0, tk.END)
+            preview.selection_set(0)
+            preview.see(0)
+            preview.focus_set()
+
+    def apply_session_prefill(
+        *,
+        session_id: str | None = None,
+        family: str | None = None,
+        force: bool = False,
+    ) -> None:
+        if session_id is None and not repeat_state["enabled"]:
+            return
+        if pending_sets and not force:
+            pending_repeat["session_id"] = session_id
+            pending_repeat["family"] = family
+            replace_row.pack(fill=tk.X, pady=(0, 6), before=draft_btns)
+            return
+        replace_row.pack_forget()
+        log_date = date_var.get().strip()
+        source_session = None
+        if session_id:
+            items, source_session, notes = prefill_from_session(repo, session_id)
+            source_id = session_id if items or source_session else None
+        else:
+            fam = family if family is not None else repeat_menu_family.get("family")
+            items, source_id, notes = prefill_from_latest_session(
+                repo, exclude_date=log_date, family=fam
+            )
+            if source_id:
+                source_session = repo.get_workout_session(source_id)
+        items = enrich_prefill_pending_items(repo, items)
+        if not items:
+            fam_key = (family or repeat_menu_family.get("family") or "").strip()
+            if fam_key:
+                from fitness_programs import format_family_label
+
+                set_field_error(
+                    form_error,
+                    f"No {format_family_label(fam_key)} session to repeat yet.",
+                )
+            elif notes:
+                set_field_error(form_error, "; ".join(notes))
+            elif session_id is None:
+                set_field_error(form_error, "No prior session to repeat.")
+            return
+        _apply_prefill_items(items, source_session, source_id, notes)
 
     def confirm_replace() -> None:
         replace_row.pack_forget()
-        apply_repeat_prefill(force=True)
+        apply_session_prefill(
+            session_id=pending_repeat.get("session_id"),
+            family=pending_repeat.get("family"),
+            force=True,
+        )
 
     def dismiss_replace() -> None:
         replace_row.pack_forget()
 
+    def _replace_key(event=None):
+        confirm_replace()
+        return "break"
+
+    def _keep_current_key(event=None):
+        dismiss_replace()
+        return "break"
+
+    replace_row.bind("<Return>", _replace_key)
+    replace_row.bind("<Escape>", _keep_current_key)
     ttk.Button(replace_row, text="Replace", command=confirm_replace).pack(side=tk.LEFT, padx=(0, 6))
     ttk.Button(replace_row, text="Keep current", command=dismiss_replace).pack(side=tk.LEFT)
 
@@ -1366,30 +1495,138 @@ def open_new_session_dialog(
 
     repeat_state = {"enabled": find_latest_session_for_repeat(repo, exclude_date=date_var.get().strip()) is not None}
 
+    from fitness_repeat_ui import (
+        RecentSessionsOverlay,
+        build_repeat_type_menu,
+        default_last_overall_session_id,
+        last_of_type_menu_entries,
+        repeatable_rows,
+    )
+    from progression.session_repeat import format_date_display
+
+    recent_overlay = RecentSessionsOverlay(
+        dialog,
+        theme,
+        on_pick=lambda sid: apply_session_prefill(session_id=sid, force=False),
+        on_close=lambda: None,
+        default_session_id=default_last_overall_session_id(
+            repo, exclude_date=date_var.get().strip()
+        ),
+    )
+
     def refresh_repeat_availability(*_args) -> None:
-        has_source = (
-            find_latest_session_for_repeat(repo, exclude_date=date_var.get().strip()) is not None
-        )
+        log_date = date_var.get().strip()
+        has_source = find_latest_session_for_repeat(repo, exclude_date=log_date) is not None
         repeat_state["enabled"] = has_source
         if has_source:
             repeat_btn.config(state=tk.NORMAL)
+            caret_btn.config(state=tk.NORMAL)
             repeat_hint.set("")
+            latest = find_latest_session_for_repeat(repo, exclude_date=log_date)
+            if latest is not None:
+                repeat_status.set(
+                    f"No type selected. Alt+R uses {format_date_display(latest.date)}."
+                )
         else:
             repeat_btn.config(state=tk.DISABLED)
+            caret_btn.config(state=tk.DISABLED)
             repeat_hint.set("Log at least one workout on another day to enable Repeat.")
+            repeat_status.set("")
+
+    def open_recent_overlay() -> None:
+        log_date = date_var.get().strip()
+        rows = repeatable_rows(repo, log_date)
+        if not rows:
+            return
+        default_id = default_last_overall_session_id(repo, exclude_date=log_date)
+        recent_overlay._default_session_id = default_id  # noqa: SLF001
+        recent_overlay.show(caret_btn, rows)
+
+    def open_history_picker(family: str | None) -> None:
+        from workout_history_ui import WorkoutHistoryView
+
+        try:
+            dialog.grab_release()
+        except tk.TclError:
+            pass
+
+        hist = tk.Toplevel(dialog)
+        hist.title("Workout History")
+        hist.geometry("1000x600")
+        hist.minsize(800, 500)
+        hist.configure(bg=theme["bg"])
+        hist.transient(dialog)
+
+        def on_repeat_from_history(session_id: str) -> None:
+            apply_session_prefill(session_id=session_id, force=False)
+
+        history_view = WorkoutHistoryView(
+            parent=hist,
+            repo=repo,
+            theme=theme,
+            on_repeat_session=on_repeat_from_history,
+            family_filter=family,
+        )
+
+        def on_close() -> None:
+            history_view.destroy()
+            hist.destroy()
+            try:
+                if dialog.winfo_exists():
+                    dialog.grab_set()
+                    dialog.lift()
+            except tk.TclError:
+                pass
+
+        hist.protocol("WM_DELETE_WINDOW", on_close)
+
+    type_menu_holder: dict = {"menu": None}
+
+    def refresh_type_menu() -> None:
+        entries = last_of_type_menu_entries(repo, exclude_date=date_var.get().strip())
+        menu = build_repeat_type_menu(
+            dialog,
+            entries,
+            on_pick_session=lambda sid: apply_session_prefill(session_id=sid, force=False),
+            on_pick_history=open_history_picker,
+            last_family_context=repeat_menu_family,
+        )
+        old = type_menu_holder.get("menu")
+        if old is not None:
+            try:
+                old.destroy()
+            except tk.TclError:
+                pass
+        type_menu_holder["menu"] = menu
+
+    def show_type_menu(event) -> None:
+        menu = type_menu_holder.get("menu")
+        if menu is not None:
+            menu.tk_popup(event.x_root, event.y_root)
 
     repeat_btn = ttk.Button(
-        btn_row,
+        repeat_row,
         text="Repeat last session",
-        command=lambda: apply_repeat_prefill(force=False),
+        command=lambda: apply_session_prefill(session_id=None, force=False),
         underline=0,
     )
+    caret_btn = ttk.Button(repeat_row, text="▾", width=3, command=open_recent_overlay)
     repeat_hint = tk.StringVar(value="")
     if not repeat_state["enabled"]:
         repeat_btn.config(state=tk.DISABLED)
+        caret_btn.config(state=tk.DISABLED)
         repeat_hint.set("Log at least one workout on another day to enable Repeat.")
-    repeat_btn.pack(side=tk.LEFT, padx=(0, 8))
-    ttk.Label(btn_row, textvariable=repeat_hint, style="Muted.TLabel").pack(side=tk.LEFT, padx=(0, 8))
+    repeat_btn.pack(side=tk.LEFT, padx=(0, 2))
+    caret_btn.pack(side=tk.LEFT, padx=(0, 8))
+    caret_btn.bind("<Button-3>", show_type_menu)
+    repeat_btn.bind("<Button-3>", show_type_menu)
+    ttk.Label(repeat_row, textvariable=repeat_hint, style="Muted.TLabel").pack(
+        side=tk.LEFT, padx=(0, 8)
+    )
+    ttk.Label(repeat_row, textvariable=repeat_status, style="Muted.TLabel").pack(
+        side=tk.LEFT, padx=(0, 8)
+    )
+    refresh_type_menu()
 
     cancel_session_btn = ttk.Button(btn_row, text="Cancel", command=request_close)
     save_session_btn.config(command=save_session)
@@ -1405,6 +1642,7 @@ def open_new_session_dialog(
     save_session_btn.pack(side=tk.LEFT, padx=8)
     cancel_session_btn.pack(side=tk.LEFT)
     date_var.trace_add("write", refresh_repeat_availability)
+    refresh_repeat_availability()
     from ui_accent import wire_dialog_accent_keys
 
     wire_dialog_accent_keys(dialog, save_session_btn, cancel_btn=cancel_session_btn)
@@ -1416,8 +1654,27 @@ def open_new_session_dialog(
     dialog.bind("<Control-s>", on_ctrl_save, add="+")
     dialog.bind("<Control-S>", on_ctrl_save, add="+")
     dialog.bind("<Control-Return>", on_ctrl_save, add="+")
-    dialog.bind("<Alt-r>", lambda _e: (apply_repeat_prefill(force=False), "break"), add="+")
-    dialog.bind("<Alt-R>", lambda _e: (apply_repeat_prefill(force=False), "break"), add="+")
+    dialog.bind(
+        "<Alt-r>",
+        lambda _e: (apply_session_prefill(session_id=None, force=False), "break"),
+        add="+",
+    )
+    dialog.bind(
+        "<Alt-R>",
+        lambda _e: (apply_session_prefill(session_id=None, force=False), "break"),
+        add="+",
+    )
+
+    dialog._integral_repeat_session = lambda session_id: apply_session_prefill(
+        session_id=session_id, force=False
+    )
+
+    def _maybe_initial_prefill() -> None:
+        if prefill_session_id:
+            apply_session_prefill(session_id=prefill_session_id, force=False)
+
+    dialog.after_idle(_maybe_initial_prefill)
+    date_var.trace_add("write", lambda *_a: refresh_type_menu())
     return dialog
 
 
@@ -1876,11 +2133,24 @@ def show_fitness_window(
             # Refresh history after dialog closes
             hist.after(100, lambda: history_view.refresh() if hist.winfo_exists() else None)
         
+        def on_repeat_session(session_id: str) -> None:
+            repeat_session_into_log(
+                win,
+                repo,
+                session_id,
+                tracker=tracker,
+                fitness_settings=settings,
+                theme=theme,
+                on_session_saved=on_session_saved,
+                on_after_save=refresh_list,
+            )
+
         history_view = WorkoutHistoryView(
             parent=hist,
             repo=repo,
             theme=theme,
             on_log_workout=on_log_workout_with_refresh,
+            on_repeat_session=on_repeat_session,
         )
         
         def on_close():

@@ -160,11 +160,13 @@ class WorkoutHistoryView:
         on_repeat_session: Callable[[str], None] | None = None,
         on_delete_session: Callable[[str], None] | None = None,
         on_log_workout: Callable[[], None] | None = None,
+        family_filter: str | None = None,
     ):
         self.parent = parent
         self.repo = repo
         self.theme = theme
         self.on_repeat_session = on_repeat_session
+        self.family_filter = (family_filter or "").strip().lower() or None
         self.on_delete_session = on_delete_session
         self.on_log_workout = on_log_workout
         
@@ -252,6 +254,18 @@ class WorkoutHistoryView:
 
         self.detail_stack = ttk.Frame(detail_frame, style="Surface.TFrame")
         self.detail_stack.pack(fill=tk.BOTH, expand=True)
+
+        self.detail_actions = ttk.Frame(detail_frame, style="Surface.TFrame")
+        self.detail_actions.pack(side=tk.BOTTOM, fill=tk.X, padx=4, pady=4)
+        self.repeat_session_btn = ttk.Button(
+            self.detail_actions,
+            text="Repeat this session",
+            command=self._invoke_repeat_session,
+            underline=0,
+        )
+        self.repeat_session_btn.pack(side=tk.LEFT)
+        if self.on_repeat_session is None:
+            self.repeat_session_btn.pack_forget()
 
         from tkinter import scrolledtext
         self.detail_text = scrolledtext.ScrolledText(
@@ -348,6 +362,9 @@ class WorkoutHistoryView:
         )
         
         self._ctrl_f_binding = self.container.bind_all("<Control-f>", lambda e: self._focus_filter())
+        top = self.container.winfo_toplevel()
+        top.bind("<Alt-r>", self._on_alt_repeat_session, add="+")
+        top.bind("<Alt-R>", self._on_alt_repeat_session, add="+")
     
     def _focus_filter(self) -> None:
         """Focus the filter entry (Ctrl+F)."""
@@ -377,6 +394,7 @@ class WorkoutHistoryView:
             sessions = self.repo.list_workout_sessions_page(
                 limit=20,
                 exercise_filter=self.filter_text or None,
+                family_filter=self.family_filter,
             )
             
             if not sessions:
@@ -425,6 +443,7 @@ class WorkoutHistoryView:
                 before_date=last_session.date,
                 before_id=last_session.id,
                 exercise_filter=self.filter_text or None,
+                family_filter=self.family_filter,
             )
             
             if not sessions:
@@ -599,6 +618,17 @@ class WorkoutHistoryView:
         if self.empty_log_btn.winfo_ismapped():
             self.empty_log_btn.pack_forget()
     
+    def _invoke_repeat_session(self) -> None:
+        if not self.on_repeat_session or not self.selected_session:
+            return
+        self.on_repeat_session(self.selected_session.id)
+
+    def _on_alt_repeat_session(self, _event=None) -> str:
+        if self.selected_session and self.on_repeat_session:
+            self.on_repeat_session(self.selected_session.id)
+            return "break"
+        return ""
+
     def _display_session_detail(self, session: WorkoutSession) -> None:
         """Display detail for selected session."""
         if self.detail_mode == "exercise":
@@ -1020,6 +1050,12 @@ class WorkoutHistoryView:
                 self.container.unbind_all("<Control-f>")
             except Exception:
                 pass
+        try:
+            top = self.container.winfo_toplevel()
+            top.unbind("<Alt-r>")
+            top.unbind("<Alt-R>")
+        except Exception:
+            pass
         if self._conn:
             try:
                 self._conn.close()
