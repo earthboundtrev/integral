@@ -21,10 +21,12 @@ import profiles
 import storage
 from backup_dialog_ui import (
     GENERIC_RESTORE_ERROR,
+    _artifact_has_pending_rollback,
     _journal_snapshot_path,
     _move_unreadable_journal_aside,
     _rollback_journal_copies,
     _rollback_journal_from_snapshot,
+    _rollback_pending_marker_path,
     _snapshot_file_if_present,
     _snapshot_journal_if_present,
     sweep_pre_restore_journal_snaps_at_startup,
@@ -82,7 +84,7 @@ def _journal_notes(data_path: str) -> str | None:
         return None
 
 
-def test_rollback_uses_replace_and_keeps_journal_on_replace_failure(temp_app, tmp_path):
+def test_rollback_uses_replace_and_keeps_journal_on_replace_failure(temp_app, tmp_path, monkeypatch):
     data_path = str(tmp_path / "data.json")
     prior = storage.empty_data()
     prior["entries"]["2000-01-01"] = {
@@ -109,8 +111,8 @@ def test_rollback_uses_replace_and_keeps_journal_on_replace_failure(temp_app, tm
             handle,
         )
 
-    with patch("backup_dialog_ui.os.replace", side_effect=PermissionError("locked")):
-        assert _rollback_journal_from_snapshot(data_path, snap) is False
+    _patch_failed_snap_to_live_replace(monkeypatch)
+    assert _rollback_journal_from_snapshot(data_path, snap) is False
 
     with open(data_path, encoding="utf-8") as handle:
         on_disk = json.load(handle)
@@ -123,7 +125,76 @@ def test_rollback_uses_replace_and_keeps_journal_on_replace_failure(temp_app, tm
     assert GENERIC_RESTORE_ERROR in msg or "Restore failed" in msg
 
 
+def _make_selective_failed_snap_replace():
+    real_replace = os.replace
+
+    def selective(src, dst, *args, **kwargs):
+        src_s, dst_s = str(src), str(dst)
+        if (
+            src_s.endswith(".pre-restore-snap")
+            and not dst_s.endswith(".tmp")
+            and _ROLLBACK_MARKER_BASENAME not in dst_s
+        ):
+            raise PermissionError("locked")
+        return real_replace(src, dst, *args, **kwargs)
+
+    return selective
+
+
+def _patch_failed_snap_to_live_replace(monkeypatch):
+    monkeypatch.setattr(backup_dialog_ui.os, "replace", _make_selective_failed_snap_replace())
+
+
+_ROLLBACK_MARKER_BASENAME = ".integral-restore-rollback-pending.json"
+
+
+def _write_sqlite_stub(path: pathlib.Path, payload: bytes = b"") -> None:
+    header = b"SQLite format 3\x00"
+    body = payload or b"stub"
+    with open(path, "wb") as handle:
+        handle.write(header + b"\x00" * 80 + body)
+
+
+def test_failed_rollback_with_valid_live_json_recovers_via_marker(tmp_path, monkeypatch):
+    data_path = tmp_path / "data.json"
+    container = str(tmp_path)
+    prior = storage.empty_data()
+    prior["entries"]["2000-01-01"] = {
+        "Emotional Wellbeing": {"rating": 1, "checklist": {}, "metrics": {}, "notes": "pre-restore"}
+    }
+    with open(data_path, "w", encoding="utf-8") as handle:
+        json.dump(prior, handle)
+    snap = _snapshot_journal_if_present(str(data_path))
+    backup_live = _minimal_v2_payload()
+    backup_live["entries"]["2099-08-01"] = {
+        "Emotional Wellbeing": {"rating": 9, "checklist": {}, "metrics": {}, "notes": "from-backup"}
+    }
+    with open(data_path, "w", encoding="utf-8") as handle:
+        json.dump(backup_live, handle)
+
+    with patch.object(backup_dialog_ui.os, "replace", _make_selective_failed_snap_replace()):
+        assert _rollback_journal_copies(str(data_path), snap, None, None) is False
+
+    assert snap and os.path.isfile(snap)
+    assert _artifact_has_pending_rollback(container, "data.json")
+    with open(data_path, encoding="utf-8") as handle:
+        assert json.load(handle)["entries"]["2099-08-01"]["Emotional Wellbeing"]["notes"] == "from-backup"
+
+    with patch(
+        "vault.iter_journal_sweep_targets",
+        return_value=[(str(data_path), container)],
+    ):
+        sweep_pre_restore_journal_snaps_at_startup()
+
+    with open(data_path, encoding="utf-8") as handle:
+        loaded = json.load(handle)
+    assert loaded["entries"]["2000-01-01"]["Emotional Wellbeing"]["notes"] == "pre-restore"
+    assert not os.path.isfile(snap)
+    assert not os.path.isfile(_rollback_pending_marker_path(container))
+
+
 def test_rollback_copies_keeps_snap_then_startup_recovers(temp_app, tmp_path, monkeypatch):
+    # absent live path still recovers once marker defers snap deletion
     data_path = str(tmp_path / "data.json")
     prior = storage.empty_data()
     prior["entries"]["2000-01-01"] = {
@@ -135,11 +206,10 @@ def test_rollback_copies_keeps_snap_then_startup_recovers(temp_app, tmp_path, mo
     with open(data_path, "w", encoding="utf-8") as handle:
         json.dump({"entries": {}}, handle)
 
-    with patch("backup_dialog_ui.os.replace", side_effect=PermissionError("locked")):
+    with patch.object(backup_dialog_ui.os, "replace", _make_selective_failed_snap_replace()):
         assert _rollback_journal_copies(data_path, snap, None, None) is False
     assert snap and os.path.isfile(snap)
 
-    os.remove(data_path)
     with patch(
         "vault.iter_journal_sweep_targets",
         return_value=[(data_path, str(tmp_path))],
@@ -397,6 +467,78 @@ def test_startup_recovers_missing_live_journal_from_snap(tmp_path, monkeypatch):
         loaded = json.load(handle)
     assert loaded["entries"]["2000-01-01"]["Emotional Wellbeing"]["notes"] == "from-snap"
     assert not snap_file.exists()
+
+
+def test_startup_recovers_missing_fitness_db_from_snap(tmp_path, monkeypatch):
+    data_file = tmp_path / "data.json"
+    fitness_file = tmp_path / "fitness.db"
+    snap_file = tmp_path / "fitness.db.pre-restore-snap"
+    _write_sqlite_stub(snap_file, b"prior-fitness-bytes")
+    assert not fitness_file.exists()
+
+    with patch(
+        "vault.iter_journal_sweep_targets",
+        return_value=[(str(data_file), str(tmp_path))],
+    ):
+        sweep_pre_restore_journal_snaps_at_startup()
+
+    assert fitness_file.is_file()
+    assert b"prior-fitness-bytes" in fitness_file.read_bytes()
+    assert not snap_file.exists()
+
+
+def test_startup_drops_stale_fitness_snap_when_db_healthy(tmp_path, monkeypatch):
+    data_file = tmp_path / "data.json"
+    fitness_file = tmp_path / "fitness.db"
+    snap_file = tmp_path / "fitness.db.pre-restore-snap"
+    _write_sqlite_stub(fitness_file, b"live-db")
+    _write_sqlite_stub(snap_file, b"stale-snap")
+
+    with patch(
+        "vault.iter_journal_sweep_targets",
+        return_value=[(str(data_file), str(tmp_path))],
+    ):
+        sweep_pre_restore_journal_snaps_at_startup()
+
+    assert fitness_file.is_file()
+    assert b"live-db" in fitness_file.read_bytes()
+    assert not snap_file.exists()
+
+
+def test_pending_marker_keeps_fitness_snap_over_healthy_live(tmp_path, monkeypatch):
+    data_file = tmp_path / "data.json"
+    fitness_file = tmp_path / "fitness.db"
+    snap_file = tmp_path / "fitness.db.pre-restore-snap"
+    _write_sqlite_stub(fitness_file, b"live-imported")
+    _write_sqlite_stub(snap_file, b"pre-restore-fitness")
+
+    marker_path = _rollback_pending_marker_path(str(tmp_path))
+    with open(marker_path, "w", encoding="utf-8") as handle:
+        json.dump({"version": 1, "artifacts": ["fitness.db"]}, handle)
+
+    with patch(
+        "vault.iter_journal_sweep_targets",
+        return_value=[(str(data_file), str(tmp_path))],
+    ):
+        sweep_pre_restore_journal_snaps_at_startup()
+
+    assert b"pre-restore-fitness" in fitness_file.read_bytes()
+    assert not snap_file.exists()
+    assert not os.path.isfile(marker_path)
+
+
+def test_failed_rollback_records_marker_for_fitness_snap(tmp_path, monkeypatch):
+    fitness_file = tmp_path / "fitness.db"
+    _write_sqlite_stub(fitness_file, b"before")
+    snap = _snapshot_file_if_present(str(fitness_file))
+    with open(fitness_file, "wb") as handle:
+        handle.write(b"after-import")
+
+    _patch_failed_snap_to_live_replace(monkeypatch)
+    ok = backup_dialog_ui._rollback_file_from_snapshot(str(fitness_file), snap)
+    assert ok is False
+    assert snap and os.path.isfile(snap)
+    assert _artifact_has_pending_rollback(str(tmp_path), "fitness.db")
 
 
 def test_startup_drops_leftover_snap_when_live_journal_complete(tmp_path, monkeypatch):

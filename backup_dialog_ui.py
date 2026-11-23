@@ -33,6 +33,7 @@ from vault import (
     CRYPTO_AVAILABLE,
     PassphraseRequiredError,
     WrongPassphraseError,
+    _save_lock,
     is_encrypted_file,
     load_data_file,
     save_data_file,
@@ -53,6 +54,9 @@ GENERIC_REENCRYPT_ERROR = (
 _STARTUP_RESTORE_SNAP_DEFERRED_WARNING = (
     "A leftover restore safety copy could not be applied automatically."
 )
+_ROLLBACK_PENDING_MARKER = ".integral-restore-rollback-pending.json"
+_ROLLBACK_MARKER_VERSION = 1
+_SQLITE_HEADER = b"SQLite format 3\x00"
 
 _PATH_LIKE = re.compile(
     r"(?:/[A-Za-z0-9._\-]+)+|(?:[A-Za-z]:\\[^\s]+)|(?:~[^\s]+)"
@@ -115,6 +119,10 @@ def _remove_snapshot(snap: str | None) -> None:
             os.remove(snap)
         except OSError:
             pass
+
+
+def _pre_restore_snap_path(artifact_path: str) -> str:
+    return f"{artifact_path}.pre-restore-snap"
 
 
 def _restore_snap_contained(snap_path: str, data_path: str, container_dir: str) -> bool:
@@ -190,58 +198,264 @@ def _log_startup_restore_snap_deferred() -> None:
     get_logger().warning(_STARTUP_RESTORE_SNAP_DEFERRED_WARNING)
 
 
+def _rollback_pending_marker_path(container_dir: str) -> str:
+    return os.path.join(container_dir, _ROLLBACK_PENDING_MARKER)
+
+
+def _read_pending_rollback_artifacts(container_dir: str) -> set[str]:
+    marker_path = _rollback_pending_marker_path(container_dir)
+    if not os.path.isfile(marker_path):
+        return set()
+    try:
+        with open(marker_path, encoding="utf-8") as handle:
+            payload = json.load(handle)
+        raw = payload.get("artifacts")
+        if not isinstance(raw, list):
+            return set()
+        return {str(name) for name in raw if isinstance(name, str) and name}
+    except (json.JSONDecodeError, OSError, TypeError):
+        return set()
+
+
+def _write_pending_rollback_artifacts(container_dir: str, basenames: set[str]) -> None:
+    marker_path = _rollback_pending_marker_path(container_dir)
+    if not basenames:
+        if os.path.lexists(marker_path):
+            try:
+                os.remove(marker_path)
+            except OSError:
+                pass
+        return
+    payload = {
+        "version": _ROLLBACK_MARKER_VERSION,
+        "artifacts": sorted(basenames),
+    }
+    with _save_lock:
+        os.makedirs(container_dir, exist_ok=True)
+        temp_path = f"{marker_path}.tmp"
+        with open(temp_path, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_path, marker_path)
+
+
+def _note_incomplete_rollback(live_path: str) -> None:
+    try:
+        container_dir = os.path.dirname(live_path) or "."
+        pending = _read_pending_rollback_artifacts(container_dir)
+        pending.add(os.path.basename(live_path))
+        _write_pending_rollback_artifacts(container_dir, pending)
+    except OSError:
+        pass
+
+
+def _artifact_has_pending_rollback(container_dir: str, basename: str) -> bool:
+    return basename in _read_pending_rollback_artifacts(container_dir)
+
+
+def _live_fitness_db_complete(fitness_path: str) -> bool | None:
+    if not os.path.isfile(fitness_path):
+        return None
+    try:
+        with open(fitness_path, "rb") as handle:
+            header = handle.read(len(_SQLITE_HEADER))
+        if header == _SQLITE_HEADER:
+            return True
+        return None
+    except OSError:
+        return None
+
+
+def _restore_fitness_snap_is_usable(snap_path: str) -> bool:
+    return _live_fitness_db_complete(snap_path) is True
+
+
+def _restore_snap_contained_for_artifact(
+    snap_path: str,
+    live_path: str,
+    container_dir: str,
+    *,
+    basename: str,
+) -> bool:
+    expected = _pre_restore_snap_path(live_path)
+    if os.path.normcase(os.path.normpath(snap_path)) != os.path.normcase(os.path.normpath(expected)):
+        return False
+    if os.path.basename(live_path) != basename:
+        return False
+    try:
+        parent = os.path.normcase(os.path.realpath(container_dir))
+        target = os.path.normcase(os.path.realpath(snap_path))
+    except OSError:
+        return False
+    if target == parent:
+        return True
+    return target.startswith(parent + os.sep)
+
+
+def _move_unreadable_artifact_aside(live_path: str) -> str | None:
+    stamp = datetime.now().strftime("%Y%m%dT%H%M%S%f")
+    aside = _unique_unreadable_aside_path(live_path, stamp)
+    try:
+        with _save_lock:
+            os.replace(live_path, aside)
+        return aside
+    except OSError:
+        return None
+
+
+def _replace_snap_onto_live(snap_path: str, live_path: str) -> bool:
+    try:
+        with _save_lock:
+            os.replace(snap_path, live_path)
+        return True
+    except OSError:
+        return False
+
+
+def _apply_pending_rollback_markers(
+    targets: list[tuple[str, str]],
+) -> None:
+    seen_containers: set[str] = set()
+    for _data_path, container_dir in targets:
+        key = os.path.normcase(os.path.normpath(container_dir))
+        if key in seen_containers:
+            continue
+        seen_containers.add(key)
+        pending = _read_pending_rollback_artifacts(container_dir)
+        if not pending:
+            continue
+        remaining = set(pending)
+        for basename in pending:
+            live_path = os.path.join(container_dir, basename)
+            snap_path = _pre_restore_snap_path(live_path)
+            if not os.path.isfile(snap_path):
+                remaining.discard(basename)
+                continue
+            if basename == "data.json" and not _restore_snap_is_readable(snap_path):
+                continue
+            if basename == "fitness.db" and not _restore_fitness_snap_is_usable(snap_path):
+                continue
+            if basename not in ("data.json", "fitness.db"):
+                remaining.discard(basename)
+                continue
+            if not _restore_snap_contained_for_artifact(
+                snap_path, live_path, container_dir, basename=basename
+            ):
+                continue
+            if _replace_snap_onto_live(snap_path, live_path):
+                remaining.discard(basename)
+            else:
+                _log_startup_restore_snap_deferred()
+        _write_pending_rollback_artifacts(container_dir, remaining)
+
+
+def _sweep_journal_pre_restore_snap(data_path: str, container_dir: str) -> None:
+    from vault import confirmed_live_journal_encrypted
+
+    snap = _journal_snapshot_path(data_path)
+    if not os.path.isfile(snap):
+        return
+    if not _restore_snap_contained(snap, data_path, container_dir):
+        return
+    if _artifact_has_pending_rollback(container_dir, "data.json"):
+        return
+    if confirmed_live_journal_encrypted(data_path) is not None:
+        _remove_snapshot(snap)
+        return
+    if _startup_live_journal_transient_failure(data_path):
+        _log_startup_restore_snap_deferred()
+        return
+    snap_usable = _restore_snap_is_readable(snap)
+    live_present = os.path.isfile(data_path)
+    if not live_present:
+        if not snap_usable:
+            _log_startup_restore_snap_deferred()
+            return
+        if not _replace_snap_onto_live(snap, data_path):
+            _log_startup_restore_snap_deferred()
+        return
+    aside = _move_unreadable_journal_aside(data_path)
+    if aside is None:
+        _log_startup_restore_snap_deferred()
+        return
+    if not snap_usable:
+        _restore_journal_from_aside(aside, data_path)
+        _log_startup_restore_snap_deferred()
+        return
+    if not _replace_snap_onto_live(snap, data_path):
+        _restore_journal_from_aside(aside, data_path)
+        _log_startup_restore_snap_deferred()
+
+
+def _sweep_fitness_pre_restore_snap(container_dir: str) -> None:
+    fitness_path = os.path.join(container_dir, "fitness.db")
+    snap = _pre_restore_snap_path(fitness_path)
+    if not os.path.isfile(snap):
+        return
+    if not _restore_snap_contained_for_artifact(
+        snap, fitness_path, container_dir, basename="fitness.db"
+    ):
+        return
+    if _artifact_has_pending_rollback(container_dir, "fitness.db"):
+        return
+    if _live_fitness_db_complete(fitness_path) is True:
+        _remove_snapshot(snap)
+        return
+    if _startup_live_journal_transient_failure(fitness_path):
+        _log_startup_restore_snap_deferred()
+        return
+    snap_usable = _restore_fitness_snap_is_usable(snap)
+    live_present = os.path.isfile(fitness_path)
+    if not live_present:
+        if not snap_usable:
+            _log_startup_restore_snap_deferred()
+            return
+        if not _replace_snap_onto_live(snap, fitness_path):
+            _log_startup_restore_snap_deferred()
+        return
+    aside = _move_unreadable_artifact_aside(fitness_path)
+    if aside is None:
+        _log_startup_restore_snap_deferred()
+        return
+    if not snap_usable:
+        try:
+            with _save_lock:
+                os.replace(aside, fitness_path)
+        except OSError:
+            pass
+        _log_startup_restore_snap_deferred()
+        return
+    if not _replace_snap_onto_live(snap, fitness_path):
+        try:
+            with _save_lock:
+                os.replace(aside, fitness_path)
+        except OSError:
+            pass
+        _log_startup_restore_snap_deferred()
+
+
 def sweep_pre_restore_journal_snaps_at_startup() -> None:
     """Recover or remove leftover restore safety copies from an interrupted apply."""
-    from vault import confirmed_live_journal_encrypted, iter_journal_sweep_targets
+    from vault import iter_journal_sweep_targets
 
-    for data_path, container_dir in iter_journal_sweep_targets():
-        snap = _journal_snapshot_path(data_path)
-        if not os.path.isfile(snap):
-            continue
-        if not _restore_snap_contained(snap, data_path, container_dir):
-            continue
-        if confirmed_live_journal_encrypted(data_path) is not None:
-            _remove_snapshot(snap)
-            continue
-        if _startup_live_journal_transient_failure(data_path):
-            _log_startup_restore_snap_deferred()
-            continue
-        snap_usable = _restore_snap_is_readable(snap)
-        live_present = os.path.isfile(data_path)
-        if not live_present:
-            if not snap_usable:
-                _log_startup_restore_snap_deferred()
-                continue
-            try:
-                os.replace(snap, data_path)
-            except OSError:
-                _log_startup_restore_snap_deferred()
-            continue
-        aside = _move_unreadable_journal_aside(data_path)
-        if aside is None:
-            _log_startup_restore_snap_deferred()
-            continue
-        if not snap_usable:
-            _restore_journal_from_aside(aside, data_path)
-            _log_startup_restore_snap_deferred()
-            continue
-        try:
-            os.replace(snap, data_path)
-        except OSError:
-            _restore_journal_from_aside(aside, data_path)
-            _log_startup_restore_snap_deferred()
-
-
-def _pre_restore_snap_path(artifact_path: str) -> str:
-    return f"{artifact_path}.pre-restore-snap"
+    targets = iter_journal_sweep_targets()
+    _apply_pending_rollback_markers(targets)
+    for data_path, container_dir in targets:
+        _sweep_journal_pre_restore_snap(data_path, container_dir)
+        _sweep_fitness_pre_restore_snap(container_dir)
 
 
 def _snapshot_file_if_present(artifact_path: str | None) -> str | None:
-    if artifact_path and os.path.isfile(artifact_path):
-        snap = _pre_restore_snap_path(artifact_path)
-        shutil.copy2(artifact_path, snap)
+    if not artifact_path or not os.path.isfile(artifact_path):
+        return None
+    snap = _pre_restore_snap_path(artifact_path)
+    try:
+        with _save_lock:
+            shutil.copy2(artifact_path, snap)
         return snap
-    return None
+    except OSError:
+        return None
 
 
 def _rollback_file_from_snapshot(artifact_path: str, snap: str | None) -> bool:
@@ -249,16 +463,22 @@ def _rollback_file_from_snapshot(artifact_path: str, snap: str | None) -> bool:
         expected = _pre_restore_snap_path(artifact_path)
         if os.path.normcase(os.path.normpath(snap)) != os.path.normcase(os.path.normpath(expected)):
             return False
-        try:
-            os.replace(snap, artifact_path)
-            return True
-        except OSError:
-            return False
+        for attempt in range(2):
+            try:
+                with _save_lock:
+                    os.replace(snap, artifact_path)
+                return True
+            except OSError:
+                if attempt == 0:
+                    continue
+                _note_incomplete_rollback(artifact_path)
+                return False
     if snap:
         return False
     try:
-        if os.path.lexists(artifact_path):
-            os.remove(artifact_path)
+        with _save_lock:
+            if os.path.lexists(artifact_path):
+                os.remove(artifact_path)
     except OSError:
         return False
     return True
