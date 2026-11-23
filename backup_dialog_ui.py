@@ -113,10 +113,48 @@ def _remove_snapshot(snap: str | None) -> None:
             pass
 
 
+def _restore_snap_contained(snap_path: str, data_path: str, container_dir: str) -> bool:
+    expected = _journal_snapshot_path(data_path)
+    if os.path.normcase(os.path.normpath(snap_path)) != os.path.normcase(os.path.normpath(expected)):
+        return False
+    if os.path.basename(data_path) != "data.json":
+        return False
+    try:
+        parent = os.path.normcase(os.path.realpath(container_dir))
+        target = os.path.normcase(os.path.realpath(snap_path))
+    except OSError:
+        return False
+    if target == parent:
+        return True
+    return target.startswith(parent + os.sep)
+
+
+def sweep_pre_restore_journal_snaps_at_startup() -> None:
+    """Recover or remove leftover restore safety copies from an interrupted apply."""
+    from vault import confirmed_live_journal_encrypted, iter_journal_sweep_targets
+
+    for data_path, container_dir in iter_journal_sweep_targets():
+        snap = _journal_snapshot_path(data_path)
+        if not os.path.isfile(snap):
+            continue
+        if not _restore_snap_contained(snap, data_path, container_dir):
+            continue
+        if confirmed_live_journal_encrypted(data_path) is not None:
+            _remove_snapshot(snap)
+            continue
+        try:
+            os.replace(snap, data_path)
+        except OSError:
+            pass
+
+
 def _rollback_journal_from_snapshot(data_path: str, snap: str | None) -> None:
     if snap and os.path.isfile(snap):
+        expected = _journal_snapshot_path(data_path)
+        if os.path.normcase(os.path.normpath(snap)) != os.path.normcase(os.path.normpath(expected)):
+            return
         try:
-            shutil.copy2(snap, data_path)
+            os.replace(snap, data_path)
         except OSError:
             pass
         return
@@ -578,6 +616,13 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         try:
             export_btn.configure(state=tk.NORMAL if export else tk.DISABLED)
             restore_btn.configure(state=tk.NORMAL if restore else tk.DISABLED)
+            close_allowed = (
+                export
+                and restore
+                and not restore_busy["active"]
+                and not export_busy["active"]
+            )
+            close_btn.configure(state=tk.NORMAL if close_allowed else tk.DISABLED)
         except tk.TclError:
             pass
 
@@ -593,6 +638,9 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         set_field_error(restore_err, None)
 
     def on_close() -> None:
+        if restore_busy["active"] or export_busy["active"]:
+            return
+        restore_state["passphrase"] = None
         clear_passphrase_widgets()
         window.destroy()
 
@@ -1085,6 +1133,8 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
     restore_btn.configure(command=restore_now)
 
     def on_escape(_event: tk.Event | None = None) -> str:
+        if restore_busy["active"] or export_busy["active"]:
+            return "break"
         if plaintext_bar_visible["visible"]:
             encrypt_instead()
             return "break"

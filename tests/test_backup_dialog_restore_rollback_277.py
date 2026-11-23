@@ -1,0 +1,328 @@
+"""Restore journal snap rollback and startup cleanup (#277)."""
+
+from __future__ import annotations
+
+import json
+import os
+import tkinter as tk
+from tkinter import ttk
+from unittest.mock import patch
+
+import pytest
+
+pytest.importorskip("cryptography")
+
+import backup
+import backup_dialog_ui
+import paths
+import personal_dev_tracker
+import profiles
+import storage
+from backup_dialog_ui import (
+    GENERIC_RESTORE_ERROR,
+    _journal_snapshot_path,
+    _rollback_journal_from_snapshot,
+    _snapshot_journal_if_present,
+    sweep_pre_restore_journal_snaps_at_startup,
+)
+from tests.conftest import pump_tk, pump_tk_until
+from tests.test_backup import temp_app  # noqa: F401
+from tests.test_backup_dialog_pr275_ui import _find_button, _walk
+from tests.test_data_payload_registry_177 import _minimal_v2_payload, _seed_data_file
+from vault import is_encrypted_file, save_data_file
+
+
+@pytest.fixture(autouse=True)
+def _sync_data_file(monkeypatch):
+    monkeypatch.setattr(personal_dev_tracker, "DATA_FILE", paths.data_file())
+
+
+@pytest.fixture
+def immediate_threads(monkeypatch):
+    class _ImmediateThread:
+        def __init__(self, target=None, daemon=None, args=(), kwargs=None):
+            self._target = target
+
+        def start(self) -> None:
+            if self._target:
+                self._target()
+
+    monkeypatch.setattr(backup_dialog_ui.threading, "Thread", _ImmediateThread)
+
+
+@pytest.fixture
+def tk_root():
+    root = tk.Tk()
+    root.withdraw()
+    yield root
+    try:
+        root.destroy()
+    except tk.TclError:
+        pass
+
+
+def _journal_notes(data_path: str) -> str | None:
+    if is_encrypted_file(data_path):
+        return "encrypted"
+    try:
+        with open(data_path, encoding="utf-8") as handle:
+            data = json.load(handle)
+        notes = (
+            data.get("entries", {})
+            .get("2000-01-01", {})
+            .get("Emotional Wellbeing", {})
+            .get("notes")
+        )
+        return notes
+    except (OSError, json.JSONDecodeError, TypeError, KeyError):
+        return None
+
+
+def test_rollback_uses_replace_and_keeps_journal_on_replace_failure(temp_app, tmp_path):
+    data_path = str(tmp_path / "data.json")
+    prior = storage.empty_data()
+    prior["entries"]["2000-01-01"] = {
+        "Emotional Wellbeing": {"rating": 1, "checklist": {}, "metrics": {}, "notes": "keep-me"}
+    }
+    with open(data_path, "w", encoding="utf-8") as handle:
+        json.dump(prior, handle)
+    snap = _snapshot_journal_if_present(data_path)
+    assert snap and os.path.isfile(snap)
+    with open(data_path, "w", encoding="utf-8") as handle:
+        json.dump(
+            {
+                "entries": {
+                    "2099-01-01": {
+                        "Emotional Wellbeing": {
+                            "rating": 9,
+                            "checklist": {},
+                            "metrics": {},
+                            "notes": "broken-apply",
+                        }
+                    }
+                }
+            },
+            handle,
+        )
+
+    with patch("backup_dialog_ui.os.replace", side_effect=PermissionError("locked")):
+        _rollback_journal_from_snapshot(data_path, snap)
+
+    with open(data_path, encoding="utf-8") as handle:
+        on_disk = json.load(handle)
+    assert (
+        on_disk["entries"]["2099-01-01"]["Emotional Wellbeing"]["notes"] == "broken-apply"
+    )
+    assert os.path.isfile(snap)
+    msg = backup_dialog_ui._safe_user_error(PermissionError("C:\\secret\\data.json"), context="restore")
+    assert "data.json" not in msg
+    assert GENERIC_RESTORE_ERROR in msg or "Restore failed" in msg
+
+
+def test_import_failure_restores_pre_restore_journal(temp_app, tmp_path, tk_root, immediate_threads):
+    enc = str(tmp_path / "fail-277.enc")
+    backup.export_backup(enc, passphrase="twelve-char-pp")
+    prior_payload = _minimal_v2_payload()
+    prior_payload["entries"]["2000-01-01"] = {
+        "Emotional Wellbeing": {"rating": 2, "checklist": {}, "metrics": {}, "notes": "pre-restore"}
+    }
+    _seed_data_file(prior_payload)
+    data_path = paths.data_file()
+
+    tracker = personal_dev_tracker.PersonalDevelopmentTracker(tk_root)
+    banner = tracker.ensure_status_banner()
+    backup_dialog_ui.show_backup_dialog(tracker)
+    pump_tk(tk_root)
+    dialog = next(w for w in tk_root.winfo_children() if isinstance(w, tk.Toplevel))
+
+    with (
+        patch("backup_dialog_ui.filedialog.askopenfilename", return_value=enc),
+        patch(
+            "backup_dialog_ui.backup.import_backup",
+            side_effect=OSError("simulated import failure"),
+        ),
+        patch("backup_dialog_ui.prepare_restore_apply", return_value=True),
+    ):
+        _find_button(dialog, "Restore from").invoke()
+        pump_tk(tk_root, 20)
+        restore_entry = None
+        for w in _walk(dialog):
+            if not isinstance(w, ttk.Entry):
+                continue
+            for sib in w.master.winfo_children():
+                if isinstance(sib, ttk.Label) and "Restore passphrase" in str(sib.cget("text")):
+                    restore_entry = w
+                    break
+        assert restore_entry is not None
+        restore_entry.delete(0, tk.END)
+        restore_entry.insert(0, "twelve-char-pp")
+        _find_button(dialog, "Continue").invoke()
+        pump_tk(tk_root, 15)
+        _find_button(dialog, "Restore", exclude="from").invoke()
+        pump_tk_until(
+            tk_root,
+            lambda: GENERIC_RESTORE_ERROR in (banner._message_var.get() or ""),
+            timeout_s=3.0,
+        )
+
+    with open(data_path, encoding="utf-8") as handle:
+        restored = json.load(handle)
+    assert (
+        restored["entries"]["2000-01-01"]["Emotional Wellbeing"]["notes"] == "pre-restore"
+    )
+    assert not os.path.isfile(_journal_snapshot_path(data_path))
+
+
+def test_close_blocked_during_restore_apply(temp_app, tmp_path, tk_root):
+    import threading
+
+    enc = str(tmp_path / "slow-277.enc")
+    backup.export_backup(enc, passphrase="twelve-char-pp")
+    _seed_data_file(_minimal_v2_payload())
+    tracker = personal_dev_tracker.PersonalDevelopmentTracker(tk_root)
+    backup_dialog_ui.show_backup_dialog(tracker)
+    pump_tk(tk_root)
+    dialog = next(w for w in tk_root.winfo_children() if isinstance(w, tk.Toplevel))
+
+    apply_started = threading.Event()
+    release_import = threading.Event()
+
+    def gated_import(*_a, **_k):
+        apply_started.set()
+        assert release_import.wait(timeout=30)
+        raise OSError("stop-after-block-test")
+
+    with (
+        patch("backup_dialog_ui.filedialog.askopenfilename", return_value=enc),
+        patch("backup_dialog_ui.backup.import_backup", side_effect=gated_import),
+        patch("backup_dialog_ui.prepare_restore_apply", return_value=True),
+    ):
+        _find_button(dialog, "Restore from").invoke()
+        pump_tk(tk_root, 20)
+        restore_entry = next(
+            w
+            for w in _walk(dialog)
+            if isinstance(w, ttk.Entry)
+            and any(
+                isinstance(s, ttk.Label) and "Restore passphrase" in str(s.cget("text"))
+                for s in w.master.winfo_children()
+            )
+        )
+        restore_entry.insert(0, "twelve-char-pp")
+        _find_button(dialog, "Continue").invoke()
+        pump_tk(tk_root, 10)
+        _find_button(dialog, "Restore", exclude="from").invoke()
+        pump_tk_until(tk_root, lambda: apply_started.is_set(), timeout_s=5.0)
+
+    snap_path = _journal_snapshot_path(paths.data_file())
+    assert os.path.isfile(snap_path)
+
+    dialog.event_generate("<Escape>")
+    pump_tk(tk_root, 5)
+    assert dialog.winfo_exists()
+
+    close_btn = _find_button(dialog, "Close")
+    assert str(close_btn.cget("state")) == tk.DISABLED
+
+    release_import.set()
+    pump_tk_until(
+        tk_root,
+        lambda: GENERIC_RESTORE_ERROR in (tracker.ensure_status_banner()._message_var.get() or ""),
+        timeout_s=5.0,
+    )
+    try:
+        dialog.destroy()
+    except tk.TclError:
+        pass
+    pump_tk(tk_root, 5)
+
+
+def test_encrypted_journal_snap_stays_encrypted(temp_app):
+    data_path = paths.data_file()
+    os.makedirs(os.path.dirname(data_path), exist_ok=True)
+    save_data_file(
+        data_path,
+        _minimal_v2_payload(),
+        encrypted=True,
+        passphrase="twelve-char-pp",
+    )
+    assert is_encrypted_file(data_path)
+    snap = _snapshot_journal_if_present(data_path)
+    assert snap and is_encrypted_file(snap)
+    if snap and os.path.isfile(snap):
+        os.remove(snap)
+
+
+def test_startup_recovers_missing_live_journal_from_snap(tmp_path, monkeypatch):
+    data_file = tmp_path / "data.json"
+    snap_file = tmp_path / "data.json.pre-restore-snap"
+    good = _minimal_v2_payload()
+    good["entries"]["2000-01-01"] = {
+        "Emotional Wellbeing": {"rating": 2, "checklist": {}, "metrics": {}, "notes": "from-snap"}
+    }
+    with open(snap_file, "w", encoding="utf-8") as handle:
+        json.dump(good, handle)
+    assert not data_file.exists()
+
+    with patch(
+        "vault.iter_journal_sweep_targets",
+        return_value=[(str(data_file), str(tmp_path))],
+    ):
+        sweep_pre_restore_journal_snaps_at_startup()
+
+    assert data_file.is_file()
+    with open(data_file, encoding="utf-8") as handle:
+        loaded = json.load(handle)
+    assert loaded["entries"]["2000-01-01"]["Emotional Wellbeing"]["notes"] == "from-snap"
+    assert not snap_file.exists()
+
+
+def test_startup_drops_leftover_snap_when_live_journal_complete(tmp_path, monkeypatch):
+    data_file = tmp_path / "data.json"
+    snap_file = tmp_path / "data.json.pre-restore-snap"
+    live = _minimal_v2_payload()
+    stale = storage.empty_data()
+    stale["entries"]["1999-01-01"] = {
+        "Emotional Wellbeing": {"rating": 1, "checklist": {}, "metrics": {}, "notes": "stale-snap"}
+    }
+    with open(data_file, "w", encoding="utf-8") as handle:
+        json.dump(live, handle)
+    with open(snap_file, "w", encoding="utf-8") as handle:
+        json.dump(stale, handle)
+
+    with patch(
+        "vault.iter_journal_sweep_targets",
+        return_value=[(str(data_file), str(tmp_path))],
+    ):
+        sweep_pre_restore_journal_snaps_at_startup()
+
+    assert data_file.is_file()
+    with open(data_file, encoding="utf-8") as handle:
+        loaded = json.load(handle)
+    assert "1999-01-01" not in loaded.get("entries", {})
+    assert not snap_file.exists()
+
+
+def test_startup_recovers_unreadable_live_journal_from_snap(tmp_path, monkeypatch):
+    pytest.importorskip("cryptography")
+    data_file = tmp_path / "data.json"
+    snap_file = tmp_path / "data.json.pre-restore-snap"
+    passphrase = "twelve-char-pp"
+    good = _minimal_v2_payload()
+    save_data_file(str(snap_file), good, encrypted=True, passphrase=passphrase)
+    # corrupt live envelope
+    save_data_file(str(data_file), good, encrypted=True, passphrase=passphrase)
+    with open(data_file, encoding="utf-8") as handle:
+        envelope = json.load(handle)
+    envelope["ciphertext"] = "AAAA"
+    with open(data_file, "w", encoding="utf-8") as handle:
+        json.dump(envelope, handle)
+
+    with patch(
+        "vault.iter_journal_sweep_targets",
+        return_value=[(str(data_file), str(tmp_path))],
+    ):
+        sweep_pre_restore_journal_snaps_at_startup()
+
+    assert is_encrypted_file(str(data_file))
+    assert not snap_file.exists()
