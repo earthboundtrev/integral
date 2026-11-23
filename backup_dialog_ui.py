@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -48,6 +49,9 @@ GENERIC_RESTORE_ERROR = "Restore failed. Try again or check the application log.
 GENERIC_REENCRYPT_ERROR = (
     "Restore completed but could not secure your journal with encryption. "
     "Your previous journal file was kept."
+)
+_STARTUP_RESTORE_SNAP_DEFERRED_WARNING = (
+    "A leftover restore safety copy could not be applied automatically."
 )
 
 _PATH_LIKE = re.compile(
@@ -129,6 +133,53 @@ def _restore_snap_contained(snap_path: str, data_path: str, container_dir: str) 
     return target.startswith(parent + os.sep)
 
 
+def _startup_live_journal_transient_failure(data_path: str) -> bool:
+    if not os.path.isfile(data_path):
+        return False
+    try:
+        with open(data_path, "rb") as handle:
+            handle.read(1)
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return False
+
+
+def _restore_snap_is_readable(snap_path: str) -> bool:
+    if is_encrypted_file(snap_path):
+        return True
+    try:
+        with open(snap_path, encoding="utf-8") as handle:
+            data = json.load(handle)
+        return isinstance(data, dict) and not data.get("integral_encrypted")
+    except (json.JSONDecodeError, OSError, TypeError):
+        return False
+
+
+def _move_unreadable_journal_aside(data_path: str) -> str | None:
+    stamp = datetime.now().strftime("%Y%m%dT%H%M%S")
+    aside = f"{data_path}.unreadable-{stamp}"
+    try:
+        os.replace(data_path, aside)
+        return aside
+    except OSError:
+        return None
+
+
+def _restore_journal_from_aside(aside_path: str, data_path: str) -> None:
+    try:
+        os.replace(aside_path, data_path)
+    except OSError:
+        pass
+
+
+def _log_startup_restore_snap_deferred() -> None:
+    from integral_logging import get_logger
+
+    get_logger().warning(_STARTUP_RESTORE_SNAP_DEFERRED_WARNING)
+
+
 def sweep_pre_restore_journal_snaps_at_startup() -> None:
     """Recover or remove leftover restore safety copies from an interrupted apply."""
     from vault import confirmed_live_journal_encrypted, iter_journal_sweep_targets
@@ -142,10 +193,33 @@ def sweep_pre_restore_journal_snaps_at_startup() -> None:
         if confirmed_live_journal_encrypted(data_path) is not None:
             _remove_snapshot(snap)
             continue
+        if _startup_live_journal_transient_failure(data_path):
+            _log_startup_restore_snap_deferred()
+            continue
+        snap_usable = _restore_snap_is_readable(snap)
+        live_present = os.path.isfile(data_path)
+        if not live_present:
+            if not snap_usable:
+                _log_startup_restore_snap_deferred()
+                continue
+            try:
+                os.replace(snap, data_path)
+            except OSError:
+                _log_startup_restore_snap_deferred()
+            continue
+        aside = _move_unreadable_journal_aside(data_path)
+        if aside is None:
+            _log_startup_restore_snap_deferred()
+            continue
+        if not snap_usable:
+            _restore_journal_from_aside(aside, data_path)
+            _log_startup_restore_snap_deferred()
+            continue
         try:
             os.replace(snap, data_path)
         except OSError:
-            pass
+            _restore_journal_from_aside(aside, data_path)
+            _log_startup_restore_snap_deferred()
 
 
 def _rollback_journal_from_snapshot(data_path: str, snap: str | None) -> None:

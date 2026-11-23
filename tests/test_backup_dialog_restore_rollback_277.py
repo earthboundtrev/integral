@@ -303,20 +303,39 @@ def test_startup_drops_leftover_snap_when_live_journal_complete(tmp_path, monkey
     assert not snap_file.exists()
 
 
-def test_startup_recovers_unreadable_live_journal_from_snap(tmp_path, monkeypatch):
-    pytest.importorskip("cryptography")
+def test_startup_absent_live_corrupt_snap_keeps_snap(tmp_path, monkeypatch, caplog):
+    import logging
+
     data_file = tmp_path / "data.json"
     snap_file = tmp_path / "data.json.pre-restore-snap"
-    passphrase = "twelve-char-pp"
+    snap_file.write_text("not-json", encoding="utf-8")
+    assert not data_file.exists()
+
+    with (
+        patch(
+            "vault.iter_journal_sweep_targets",
+            return_value=[(str(data_file), str(tmp_path))],
+        ),
+        caplog.at_level(logging.WARNING, logger="integral"),
+    ):
+        sweep_pre_restore_journal_snaps_at_startup()
+
+    assert not data_file.exists()
+    assert snap_file.is_file()
+    assert "data.json" not in caplog.text
+    assert str(tmp_path) not in caplog.text
+
+
+def test_startup_moves_unreadable_live_aside_then_restores_from_snap(tmp_path, monkeypatch):
+    data_file = tmp_path / "data.json"
+    snap_file = tmp_path / "data.json.pre-restore-snap"
     good = _minimal_v2_payload()
-    save_data_file(str(snap_file), good, encrypted=True, passphrase=passphrase)
-    # corrupt live envelope
-    save_data_file(str(data_file), good, encrypted=True, passphrase=passphrase)
-    with open(data_file, encoding="utf-8") as handle:
-        envelope = json.load(handle)
-    envelope["ciphertext"] = "AAAA"
-    with open(data_file, "w", encoding="utf-8") as handle:
-        json.dump(envelope, handle)
+    good["entries"]["2000-01-01"] = {
+        "Emotional Wellbeing": {"rating": 2, "checklist": {}, "metrics": {}, "notes": "from-snap"}
+    }
+    data_file.write_text("{not-a-journal", encoding="utf-8")
+    with open(snap_file, "w", encoding="utf-8") as handle:
+        json.dump(good, handle)
 
     with patch(
         "vault.iter_journal_sweep_targets",
@@ -324,5 +343,65 @@ def test_startup_recovers_unreadable_live_journal_from_snap(tmp_path, monkeypatc
     ):
         sweep_pre_restore_journal_snaps_at_startup()
 
-    assert is_encrypted_file(str(data_file))
+    assert data_file.is_file()
+    aside_files = list(tmp_path.glob("data.json.unreadable-*"))
+    assert len(aside_files) == 1
+    assert aside_files[0].read_text(encoding="utf-8") == "{not-a-journal"
+    with open(data_file, encoding="utf-8") as handle:
+        loaded = json.load(handle)
+    assert loaded["entries"]["2000-01-01"]["Emotional Wellbeing"]["notes"] == "from-snap"
     assert not snap_file.exists()
+
+
+def test_startup_unreadable_live_bad_snap_restores_original_keeps_snap(tmp_path, monkeypatch, caplog):
+    import logging
+
+    data_file = tmp_path / "data.json"
+    snap_file = tmp_path / "data.json.pre-restore-snap"
+    corrupt_live = "{broken-live"
+    data_file.write_text(corrupt_live, encoding="utf-8")
+    snap_file.write_text("also-broken", encoding="utf-8")
+
+    with (
+        patch(
+            "vault.iter_journal_sweep_targets",
+            return_value=[(str(data_file), str(tmp_path))],
+        ),
+        caplog.at_level(logging.WARNING, logger="integral"),
+    ):
+        sweep_pre_restore_journal_snaps_at_startup()
+
+    assert data_file.read_text(encoding="utf-8") == corrupt_live
+    assert snap_file.is_file()
+    assert list(tmp_path.glob("data.json.unreadable-*")) == []
+
+
+def test_startup_transient_live_read_skips_snap_apply(tmp_path, monkeypatch, caplog):
+    import logging
+
+    data_file = tmp_path / "data.json"
+    snap_file = tmp_path / "data.json.pre-restore-snap"
+    live = _minimal_v2_payload()
+    with open(data_file, "w", encoding="utf-8") as handle:
+        json.dump(live, handle)
+    stale = storage.empty_data()
+    with open(snap_file, "w", encoding="utf-8") as handle:
+        json.dump(stale, handle)
+
+    with (
+        patch(
+            "vault.iter_journal_sweep_targets",
+            return_value=[(str(data_file), str(tmp_path))],
+        ),
+        patch("vault.confirmed_live_journal_encrypted", return_value=None),
+        patch(
+            "backup_dialog_ui._startup_live_journal_transient_failure",
+            return_value=True,
+        ),
+        caplog.at_level(logging.WARNING, logger="integral"),
+    ):
+        sweep_pre_restore_journal_snaps_at_startup()
+
+    with open(data_file, encoding="utf-8") as handle:
+        assert json.load(handle) == live
+    assert snap_file.is_file()
