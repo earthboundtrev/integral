@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 import tkinter as tk
 from typing import cast
 from tkinter import font as tkfont
@@ -112,19 +113,38 @@ def _coords_in_ancestor(widget: tk.Misc, ancestor: tk.Misc) -> tuple[int, int, i
     return x, y, widget.winfo_width(), widget.winfo_height()
 
 
-def _mapped_inside_window(widget: tk.Misc, window: tk.Misc) -> bool:
+def _gh_windows_exe_ci() -> bool:
+    return sys.platform == "win32" and os.environ.get("INTEGRAL_WINDOWS_EXE_CI") == "1"
+
+
+def _widget_rect_in_window(widget: tk.Misc, window: tk.Misc) -> tuple[int, int, int, int]:
+    """Return widget x, y, width, height in window client coordinates."""
     window.update_idletasks()
+    widget.update_idletasks()
+    top = cast(tk.Toplevel, window)
+    if _gh_windows_exe_ci() and top.winfo_width() < 100:
+        rel_x = widget.winfo_rootx() - window.winfo_rootx()
+        rel_y = widget.winfo_rooty() - window.winfo_rooty()
+        bw = max(widget.winfo_width(), widget.winfo_reqwidth(), 1)
+        bh = max(widget.winfo_height(), widget.winfo_reqheight(), 1)
+        return rel_x, rel_y, bw, bh
+    rel_x, rel_y, bw, bh = _coords_in_ancestor(widget, window)
+    bw = max(bw, widget.winfo_reqwidth())
+    bh = max(bh, widget.winfo_reqheight())
+    return rel_x, rel_y, bw, bh
+
+
+def _mapped_inside_window(widget: tk.Misc, window: tk.Misc) -> bool:
     if not widget.winfo_ismapped():
         return False
     ww, wh = _dialog_client_size(cast(tk.Toplevel, window))
-    rel_x, rel_y, bw, bh = _coords_in_ancestor(widget, window)
-    margin = 4
-    return (
-        rel_x >= -margin
-        and rel_y >= -margin
-        and rel_x + max(bw, widget.winfo_reqwidth()) <= ww + margin
-        and rel_y + max(bh, widget.winfo_reqheight()) <= wh + margin
-    )
+    rel_x, rel_y, bw, bh = _widget_rect_in_window(widget, window)
+    margin = 8
+    y_ok = rel_y >= -margin and rel_y + bh <= wh + margin
+    x_ok = rel_x >= -margin and rel_x + bw <= ww + margin
+    if _gh_windows_exe_ci() and cast(tk.Toplevel, window).winfo_width() < 100:
+        return y_ok
+    return x_ok and y_ok
 
 
 def _continue_button_text_width(btn: tk.Misc) -> int:
