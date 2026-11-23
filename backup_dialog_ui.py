@@ -312,9 +312,9 @@ def _note_incomplete_rollback(live_path: str) -> None:
         container_dir = os.path.dirname(live_path) or "."
         status, pending = _pending_rollback_marker_state(container_dir)
         if status == "unreadable":
-            pending = set()
-        else:
-            pending = set(pending)
+            _log_startup_restore_snap_deferred()
+            return
+        pending = set(pending)
         pending.add(os.path.basename(live_path))
         _write_pending_rollback_artifacts(container_dir, pending)
     except OSError:
@@ -1265,6 +1265,9 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         set_field_error(restore_err, None)
 
     def on_close() -> None:
+        if restore_busy["active"] or export_busy["active"]:
+            return
+        restore_state["passphrase"] = None
         clear_passphrase_widgets()
         window.destroy()
 
@@ -1857,6 +1860,8 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
     restore_btn.configure(command=restore_now)
 
     def on_escape(_event: tk.Event | None = None) -> str:
+        if restore_busy["active"] or export_busy["active"]:
+            return "break"
         if plaintext_bar_visible["visible"]:
             encrypt_instead()
             return "break"

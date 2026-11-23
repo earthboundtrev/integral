@@ -6,6 +6,7 @@ import json
 import os
 import pathlib
 import tkinter as tk
+from contextlib import ExitStack
 from tkinter import ttk
 from unittest.mock import patch
 
@@ -35,7 +36,7 @@ from backup_dialog_ui import (
 )
 from tests.conftest import pump_tk, pump_tk_until
 from tests.test_backup import temp_app  # noqa: F401
-from tests.test_backup_dialog_pr275_ui import _find_button, _walk
+from tests.test_backup_dialog_pr275_ui import _find_button, _label_texts, _walk
 from tests.test_data_payload_registry_177 import _minimal_v2_payload, _seed_data_file
 from vault import is_encrypted_file, save_data_file
 
@@ -472,17 +473,29 @@ def capture_restore_threads(monkeypatch):
     return started
 
 
-def test_close_blocked_during_restore_apply(temp_app, tmp_path, tk_root, capture_restore_threads):
+def _restore_passphrase_entry(dialog):
+    for w in _walk(dialog):
+        if not isinstance(w, ttk.Entry):
+            continue
+        for sib in w.master.winfo_children():
+            if isinstance(sib, ttk.Label) and "Restore passphrase" in str(sib.cget("text")):
+                return w
+    raise AssertionError("restore passphrase entry not found")
+
+
+def _trigger_wm_delete_window(dialog: tk.Toplevel) -> None:
+    name = dialog.tk.call("wm", "protocol", dialog, "WM_DELETE_WINDOW")
+    if name:
+        dialog.tk.call(name)
+
+
+def _start_busy_encrypted_restore(
+    dialog, tk_root, tmp_path, capture_restore_threads, *, mock_snapshots: bool = True
+):
     import threading
 
     enc = str(tmp_path / "slow-277.enc")
     backup.export_backup(enc, passphrase="twelve-char-pp")
-    _seed_data_file(_minimal_v2_payload())
-    tracker = personal_dev_tracker.PersonalDevelopmentTracker(tk_root)
-    backup_dialog_ui.show_backup_dialog(tracker)
-    pump_tk(tk_root)
-    dialog = next(w for w in tk_root.winfo_children() if isinstance(w, tk.Toplevel))
-
     apply_started = threading.Event()
     release_import = threading.Event()
 
@@ -491,27 +504,60 @@ def test_close_blocked_during_restore_apply(temp_app, tmp_path, tk_root, capture
         assert release_import.wait(timeout=30)
         raise OSError("stop-after-block-test")
 
-    with (
+    patches = [
         patch("backup_dialog_ui.filedialog.askopenfilename", return_value=enc),
         patch("backup_dialog_ui.backup.import_backup", side_effect=gated_import),
         patch("backup_dialog_ui.prepare_restore_apply", return_value=True),
-    ):
-        _find_button(dialog, "Restore from").invoke()
-        pump_tk(tk_root, 20)
-        restore_entry = next(
-            w
-            for w in _walk(dialog)
-            if isinstance(w, ttk.Entry)
-            and any(
-                isinstance(s, ttk.Label) and "Restore passphrase" in str(s.cget("text"))
-                for s in w.master.winfo_children()
+    ]
+    if mock_snapshots:
+        patches.append(
+            patch(
+                "backup_dialog_ui._restore_snapshots_for_vault",
+                return_value=backup_dialog_ui.RestoreSnapshotBundle(
+                    journal_snap=None,
+                    journal_existed=False,
+                    profile_snap=None,
+                    profile_existed=False,
+                    profile_path=None,
+                    fitness_rollbacks=[],
+                ),
             )
         )
+    with ExitStack() as stack:
+        for p in patches:
+            stack.enter_context(p)
+        _find_button(dialog, "Restore from").invoke()
+        pump_tk(tk_root, 20)
+        restore_entry = _restore_passphrase_entry(dialog)
         restore_entry.insert(0, "twelve-char-pp")
         _find_button(dialog, "Continue").invoke()
         pump_tk(tk_root, 10)
+        pump_tk_until(
+            tk_root,
+            lambda: "backup from" in " ".join(_label_texts(dialog)).lower(),
+            timeout_s=3.0,
+        )
         _find_button(dialog, "Restore", exclude="from").invoke()
         pump_tk_until(tk_root, lambda: apply_started.is_set(), timeout_s=5.0)
+    return release_import
+
+
+def test_close_blocked_during_restore_apply(temp_app, tmp_path, tk_root, capture_restore_threads):
+    import threading
+
+    _seed_data_file(_minimal_v2_payload())
+    tracker = personal_dev_tracker.PersonalDevelopmentTracker(tk_root)
+    backup_dialog_ui.show_backup_dialog(tracker)
+    pump_tk(tk_root)
+    dialog = next(w for w in tk_root.winfo_children() if isinstance(w, tk.Toplevel))
+
+    release_import = _start_busy_encrypted_restore(
+        dialog,
+        tk_root,
+        tmp_path,
+        capture_restore_threads,
+        mock_snapshots=False,
+    )
 
     snap_path = _journal_snapshot_path(paths.data_file())
     assert os.path.isfile(snap_path)
@@ -536,6 +582,123 @@ def test_close_blocked_during_restore_apply(temp_app, tmp_path, tk_root, capture
     except tk.TclError:
         pass
     pump_tk(tk_root, 5)
+
+
+def test_wm_delete_blocked_during_busy_restore(temp_app, tmp_path, tk_root, capture_restore_threads):
+    _seed_data_file(_minimal_v2_payload())
+    tracker = personal_dev_tracker.PersonalDevelopmentTracker(tk_root)
+    backup_dialog_ui.show_backup_dialog(tracker)
+    pump_tk(tk_root)
+    dialog = next(w for w in tk_root.winfo_children() if isinstance(w, tk.Toplevel))
+    release_import = _start_busy_encrypted_restore(
+        dialog, tk_root, tmp_path, capture_restore_threads
+    )
+    _trigger_wm_delete_window(dialog)
+    pump_tk(tk_root, 5)
+    assert dialog.winfo_exists()
+    release_import.set()
+    pump_tk_until(
+        tk_root,
+        lambda: GENERIC_RESTORE_ERROR in (tracker.ensure_status_banner()._message_var.get() or ""),
+        timeout_s=5.0,
+    )
+    for thread in capture_restore_threads:
+        thread.join(timeout=10.0)
+    try:
+        dialog.destroy()
+    except tk.TclError:
+        pass
+    pump_tk(tk_root, 5)
+
+
+def test_close_when_idle_clears_passphrase_widgets(temp_app, tmp_path, tk_root):
+    enc = str(tmp_path / "idle-close-277.enc")
+    backup.export_backup(enc, passphrase="twelve-char-pp")
+    _seed_data_file(_minimal_v2_payload())
+    tracker = personal_dev_tracker.PersonalDevelopmentTracker(tk_root)
+    backup_dialog_ui.show_backup_dialog(tracker)
+    pump_tk(tk_root)
+    dialog = next(w for w in tk_root.winfo_children() if isinstance(w, tk.Toplevel))
+    with patch("backup_dialog_ui.filedialog.askopenfilename", return_value=enc):
+        _find_button(dialog, "Restore from").invoke()
+        pump_tk(tk_root, 20)
+    restore_entry = _restore_passphrase_entry(dialog)
+    restore_entry.insert(0, "temporary-secret-value")
+    assert restore_entry.get() == "temporary-secret-value"
+    _find_button(dialog, "Close").invoke()
+    pump_tk(tk_root, 5)
+    assert not dialog.winfo_exists()
+
+    backup_dialog_ui.show_backup_dialog(tracker)
+    pump_tk(tk_root)
+    dialog2 = next(w for w in tk_root.winfo_children() if isinstance(w, tk.Toplevel))
+    with patch("backup_dialog_ui.filedialog.askopenfilename", return_value=enc):
+        _find_button(dialog2, "Restore from").invoke()
+        pump_tk(tk_root, 20)
+    restore_entry2 = _restore_passphrase_entry(dialog2)
+    assert restore_entry2.get() == ""
+    try:
+        dialog2.destroy()
+    except tk.TclError:
+        pass
+
+
+def test_note_incomplete_rollback_preserves_unreadable_marker(tmp_path, caplog):
+    import logging
+
+    container = str(tmp_path)
+    marker_path = pathlib.Path(_rollback_pending_marker_path(container))
+    corrupt = "{unreadable-marker-bytes"
+    marker_path.write_text(corrupt, encoding="utf-8")
+    data_path = tmp_path / "data.json"
+    data_path.write_text("{}", encoding="utf-8")
+
+    with caplog.at_level(logging.WARNING, logger="integral"):
+        backup_dialog_ui._note_incomplete_rollback(str(data_path))
+
+    assert marker_path.read_text(encoding="utf-8") == corrupt
+    assert any(
+        backup_dialog_ui._STARTUP_RESTORE_SNAP_DEFERRED_WARNING in record.message
+        for record in caplog.records
+    )
+
+
+def test_unreadable_marker_snaps_retained_after_failed_rollback_note(tmp_path, monkeypatch):
+    container = str(tmp_path)
+    data_path = tmp_path / "data.json"
+    live = _minimal_v2_payload()
+    with open(data_path, "w", encoding="utf-8") as handle:
+        json.dump(live, handle)
+    live_bytes = data_path.read_bytes()
+    snap_path = tmp_path / "data.json.pre-restore-snap"
+    stale = storage.empty_data()
+    stale["entries"]["1999-01-01"] = {
+        "Emotional Wellbeing": {"rating": 1, "checklist": {}, "metrics": {}, "notes": "stale-snap"}
+    }
+    with open(snap_path, "w", encoding="utf-8") as handle:
+        json.dump(stale, handle)
+    pathlib.Path(_rollback_pending_marker_path(container)).write_text(
+        "{was-listing-data.json", encoding="utf-8"
+    )
+
+    prior = storage.empty_data()
+    with open(data_path, "w", encoding="utf-8") as handle:
+        json.dump(prior, handle)
+    snap = _snapshot_journal_if_present(str(data_path))
+    with open(data_path, "w", encoding="utf-8") as handle:
+        json.dump(live, handle)
+
+    _patch_failed_snap_to_live_replace(monkeypatch)
+    backup_dialog_ui._rollback_file_from_snapshot(str(data_path), snap, existed_before=True)
+
+    with patch(
+        "vault.iter_journal_sweep_targets",
+        return_value=[(str(data_path), container)],
+    ):
+        sweep_pre_restore_journal_snaps_at_startup()
+
+    assert data_path.read_bytes() == live_bytes
+    assert snap_path.is_file()
 
 
 def test_encrypted_journal_snap_stays_encrypted(temp_app):
