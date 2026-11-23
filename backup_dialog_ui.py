@@ -14,7 +14,7 @@ import unicodedata
 import zipfile
 from datetime import datetime
 from tkinter import filedialog, messagebox, ttk
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Callable, NamedTuple
 
 import backup
 import integral_io
@@ -47,10 +47,16 @@ TYPED_PASSPHRASE_MIN_LEN = 12
 MARKER_LOG_SCAN = "marker-backup-pass-267268"
 GENERIC_BACKUP_ERROR = "Backup failed. Try again or check the application log."
 GENERIC_RESTORE_ERROR = "Restore failed. Try again or check the application log."
+GENERIC_RESTORE_SNAPSHOT_FAILED_MSG = (
+    "Restore could not be prepared safely. Try again, or restart the application."
+)
 GENERIC_REENCRYPT_ERROR = (
     "Restore completed but could not secure your journal with encryption. "
     "Your previous journal file was kept."
 )
+VAULT_WRONG_PASSPHRASE_MSG = "That passphrase didn't work for your vault."
+VAULT_PASSPHRASE_MISMATCH_MSG = "Passphrases don't match."
+VAULT_UNLOCK_ENTRY_WIDTH = 24
 _STARTUP_RESTORE_SNAP_DEFERRED_WARNING = (
     "A leftover restore safety copy could not be applied automatically."
 )
@@ -106,7 +112,7 @@ def _generic_error(exc: BaseException | None, *, context: str) -> str:
 
 
 def _journal_snapshot_path(data_path: str) -> str:
-    return _pre_restore_snap_path(data_path)
+    return f"{data_path}.pre-restore-snap"
 
 
 def _snapshot_journal_if_present(data_path: str) -> str | None:
@@ -196,11 +202,33 @@ def _restore_live_from_rolled_back_aside(aside_path: str, live_path: str) -> Non
         pass
 
 
+def _pending_rollback_marker_state(container_dir: str) -> tuple[str, set[str]]:
+    """Return (status, artifact names). status: absent, valid, or unreadable."""
+    marker_path = _rollback_pending_marker_path(container_dir)
+    if not os.path.isfile(marker_path):
+        return "absent", set()
+    try:
+        with open(marker_path, encoding="utf-8") as handle:
+            payload = json.load(handle)
+        raw = payload.get("artifacts")
+        if not isinstance(raw, list):
+            return "unreadable", set()
+        names = {str(name) for name in raw if isinstance(name, str) and name}
+        return "valid", names
+    except (json.JSONDecodeError, OSError, TypeError):
+        return "unreadable", set()
+
+
+def _container_rollback_marker_blocks_activity(container_dir: str) -> bool:
+    status, artifacts = _pending_rollback_marker_state(container_dir)
+    return status == "unreadable" or bool(artifacts)
+
+
 def restore_blocked_by_pending_rollback() -> bool:
     from vault import iter_journal_sweep_targets
 
     for _data_path, container_dir in iter_journal_sweep_targets():
-        if _read_pending_rollback_artifacts(container_dir):
+        if _container_rollback_marker_blocks_activity(container_dir):
             return True
     return False
 
@@ -250,18 +278,10 @@ def _rollback_pending_marker_path(container_dir: str) -> str:
 
 
 def _read_pending_rollback_artifacts(container_dir: str) -> set[str]:
-    marker_path = _rollback_pending_marker_path(container_dir)
-    if not os.path.isfile(marker_path):
+    status, artifacts = _pending_rollback_marker_state(container_dir)
+    if status != "valid":
         return set()
-    try:
-        with open(marker_path, encoding="utf-8") as handle:
-            payload = json.load(handle)
-        raw = payload.get("artifacts")
-        if not isinstance(raw, list):
-            return set()
-        return {str(name) for name in raw if isinstance(name, str) and name}
-    except (json.JSONDecodeError, OSError, TypeError):
-        return set()
+    return artifacts
 
 
 def _write_pending_rollback_artifacts(container_dir: str, basenames: set[str]) -> None:
@@ -290,7 +310,11 @@ def _write_pending_rollback_artifacts(container_dir: str, basenames: set[str]) -
 def _note_incomplete_rollback(live_path: str) -> None:
     try:
         container_dir = os.path.dirname(live_path) or "."
-        pending = _read_pending_rollback_artifacts(container_dir)
+        status, pending = _pending_rollback_marker_state(container_dir)
+        if status == "unreadable":
+            pending = set()
+        else:
+            pending = set(pending)
         pending.add(os.path.basename(live_path))
         _write_pending_rollback_artifacts(container_dir, pending)
     except OSError:
@@ -298,7 +322,10 @@ def _note_incomplete_rollback(live_path: str) -> None:
 
 
 def _artifact_has_pending_rollback(container_dir: str, basename: str) -> bool:
-    return basename in _read_pending_rollback_artifacts(container_dir)
+    status, artifacts = _pending_rollback_marker_state(container_dir)
+    if status == "unreadable":
+        return True
+    return basename in artifacts
 
 
 def _live_fitness_db_complete(fitness_path: str) -> bool | None:
@@ -369,7 +396,10 @@ def _apply_pending_rollback_markers(
         if key in seen_containers:
             continue
         seen_containers.add(key)
-        pending = _read_pending_rollback_artifacts(container_dir)
+        status, pending = _pending_rollback_marker_state(container_dir)
+        if status == "unreadable":
+            _log_startup_restore_snap_deferred()
+            continue
         if not pending:
             continue
         remaining = set(pending)
@@ -517,7 +547,14 @@ def _snapshot_file_if_present(artifact_path: str | None) -> str | None:
         return None
 
 
-def _rollback_file_from_snapshot(artifact_path: str, snap: str | None) -> bool:
+def _rollback_file_from_snapshot(
+    artifact_path: str,
+    snap: str | None,
+    *,
+    existed_before: bool | None = None,
+) -> bool:
+    if existed_before is None:
+        existed_before = bool(snap)
     if snap and os.path.isfile(snap):
         expected = _pre_restore_snap_path(artifact_path)
         if os.path.normcase(os.path.normpath(snap)) != os.path.normcase(os.path.normpath(expected)):
@@ -534,6 +571,8 @@ def _rollback_file_from_snapshot(artifact_path: str, snap: str | None) -> bool:
                 return False
     if snap:
         return False
+    if existed_before:
+        return False
     try:
         with _save_lock:
             if os.path.lexists(artifact_path):
@@ -543,15 +582,23 @@ def _rollback_file_from_snapshot(artifact_path: str, snap: str | None) -> bool:
     return True
 
 
-def _rollback_journal_from_snapshot(data_path: str, snap: str | None) -> bool:
-    return _rollback_file_from_snapshot(data_path, snap)
+def _rollback_journal_from_snapshot(
+    data_path: str,
+    snap: str | None,
+    *,
+    existed_before: bool = False,
+) -> bool:
+    return _rollback_file_from_snapshot(data_path, snap, existed_before=existed_before)
+
+
+FitnessRollbackEntry = tuple[str, str | None, bool]
 
 
 def _snapshot_fitness_rollbacks_for_restore(
     tracker: PersonalDevelopmentTracker,
     profile_journal_path: str | None,
-) -> list[tuple[str, str | None]]:
-    rollbacks: list[tuple[str, str | None]] = []
+) -> list[FitnessRollbackEntry]:
+    rollbacks: list[FitnessRollbackEntry] = []
     seen: set[str] = set()
 
     def _append(path: str | None) -> None:
@@ -561,12 +608,33 @@ def _snapshot_fitness_rollbacks_for_restore(
         if key in seen:
             return
         seen.add(key)
-        rollbacks.append((path, _snapshot_file_if_present(path)))
+        existed = os.path.isfile(path)
+        snap = _snapshot_file_if_present(path) if existed else None
+        rollbacks.append((path, snap, existed))
 
     _append(_active_fitness_db_path(tracker, require_exists=False))
     if profile_journal_path:
         _append(os.path.join(os.path.dirname(profile_journal_path), "fitness.db"))
     return rollbacks
+
+
+class RestoreSnapshotBundle(NamedTuple):
+    journal_snap: str | None
+    journal_existed: bool
+    profile_snap: str | None
+    profile_existed: bool
+    profile_path: str | None
+    fitness_rollbacks: list[FitnessRollbackEntry]
+
+    def live_snapshot_incomplete(self) -> bool:
+        if self.journal_existed and not self.journal_snap:
+            return True
+        if self.profile_existed and not self.profile_snap:
+            return True
+        for _path, snap, existed in self.fitness_rollbacks:
+            if existed and not snap:
+                return True
+        return False
 
 
 def _rollback_journal_copies(
@@ -575,24 +643,38 @@ def _rollback_journal_copies(
     profile_snap: str | None,
     profile_path: str | None,
     *,
-    fitness_rollbacks: list[tuple[str, str | None]] | None = None,
+    fitness_rollbacks: list[FitnessRollbackEntry] | None = None,
+    journal_existed: bool = False,
+    profile_existed: bool = False,
 ) -> bool:
-    ok = _rollback_file_from_snapshot(tracker_path, journal_snap)
+    ok = _rollback_file_from_snapshot(
+        tracker_path, journal_snap, existed_before=journal_existed
+    )
     if profile_path:
-        ok = _rollback_file_from_snapshot(profile_path, profile_snap) and ok
-    for fitness_path, fitness_snap in fitness_rollbacks or []:
-        ok = _rollback_file_from_snapshot(fitness_path, fitness_snap) and ok
+        ok = (
+            _rollback_file_from_snapshot(
+                profile_path, profile_snap, existed_before=profile_existed
+            )
+            and ok
+        )
+    for fitness_path, fitness_snap, existed in fitness_rollbacks or []:
+        ok = (
+            _rollback_file_from_snapshot(
+                fitness_path, fitness_snap, existed_before=existed
+            )
+            and ok
+        )
     return ok
 
 
 def _remove_restore_snapshots(
     journal_snap: str | None,
     profile_snap: str | None,
-    fitness_rollbacks: list[tuple[str, str | None]] | None,
+    fitness_rollbacks: list[FitnessRollbackEntry] | None,
 ) -> None:
     _remove_snapshot(journal_snap)
     _remove_snapshot(profile_snap)
-    for _path, fitness_snap in fitness_rollbacks or []:
+    for _path, fitness_snap, _existed in fitness_rollbacks or []:
         _remove_snapshot(fitness_snap)
 
 
@@ -611,17 +693,45 @@ def prepare_restore_apply(tracker: PersonalDevelopmentTracker) -> bool:
 
 def _restore_snapshots_for_vault(
     tracker: PersonalDevelopmentTracker,
-) -> tuple[str | None, str | None, str | None]:
+) -> RestoreSnapshotBundle:
     profile_journal_sync.validate_layout_before_restore()
-    journal_snap = _snapshot_journal_if_present(tracker.data_path)
+    journal_existed = os.path.isfile(tracker.data_path)
+    journal_snap = (
+        _snapshot_journal_if_present(tracker.data_path) if journal_existed else None
+    )
     profile_path = profile_journal_sync.validated_active_profile_journal_path()
     if profile_path and _same_journal_path(tracker.data_path, profile_path):
         profile_path = None
+    profile_existed = bool(profile_path and os.path.isfile(profile_path))
     profile_snap = (
-        _snapshot_journal_if_present(profile_path) if profile_path else None
+        _snapshot_journal_if_present(profile_path)
+        if profile_path and profile_existed
+        else None
     )
     fitness_rollbacks = _snapshot_fitness_rollbacks_for_restore(tracker, profile_path)
-    return journal_snap, profile_snap, profile_path, fitness_rollbacks
+    return RestoreSnapshotBundle(
+        journal_snap=journal_snap,
+        journal_existed=journal_existed,
+        profile_snap=profile_snap,
+        profile_existed=profile_existed,
+        profile_path=profile_path,
+        fitness_rollbacks=fitness_rollbacks,
+    )
+
+
+def _rollback_restore_snapshots(
+    tracker: PersonalDevelopmentTracker,
+    snapshots: RestoreSnapshotBundle,
+) -> bool:
+    return _rollback_journal_copies(
+        tracker.data_path,
+        snapshots.journal_snap,
+        snapshots.profile_snap,
+        _profile_journal_path_for_rollback(snapshots.profile_path),
+        fitness_rollbacks=snapshots.fitness_rollbacks,
+        journal_existed=snapshots.journal_existed,
+        profile_existed=snapshots.profile_existed,
+    )
 
 
 def _profile_journal_path_for_rollback(profile_journal_path: str | None) -> str | None:
@@ -645,9 +755,50 @@ def _same_journal_path(path_a: str, path_b: str) -> bool:
     return os.path.normcase(os.path.abspath(path_a)) == os.path.normcase(os.path.abspath(path_b))
 
 
+def vault_restore_needs_passphrase_confirmation(tracker: PersonalDevelopmentTracker) -> bool:
+    """True when no on-disk journal copy can verify the vault passphrase via decryption."""
+    for path in _journal_paths_after_restore(tracker):
+        for candidate in (path, f"{path}.bak"):
+            if os.path.isfile(candidate) and is_encrypted_file(candidate):
+                return False
+    return True
+
+
+def verify_vault_passphrase_for_restore(
+    tracker: PersonalDevelopmentTracker,
+    passphrase: str,
+    *,
+    confirm_passphrase: str | None = None,
+) -> tuple[bool, str | None]:
+    """Check vault passphrase against encrypted journal copies, or paired entry when all plaintext."""
+    if not passphrase.strip():
+        return False, "Passphrase is required."
+    for path in _journal_paths_after_restore(tracker):
+        for candidate in (path, f"{path}.bak"):
+            if not os.path.isfile(candidate) or not is_encrypted_file(candidate):
+                continue
+            try:
+                load_data_file(candidate, passphrase)
+                return True, None
+            except WrongPassphraseError:
+                return False, VAULT_WRONG_PASSPHRASE_MSG
+            except Exception:
+                return False, GENERIC_RESTORE_ERROR
+    if confirm_passphrase is None or not confirm_passphrase.strip():
+        return False, "Confirm your passphrase."
+    if passphrase != confirm_passphrase:
+        return False, VAULT_PASSPHRASE_MISMATCH_MSG
+    return True, None
+
+
 def reencrypt_restored_journal_from_disk(tracker: PersonalDevelopmentTracker) -> tuple[bool, str | None]:
     """Re-encrypt on-disk plaintext journal copies (tracker + active profile). Returns (ok, user_message)."""
-    if not _vault_active(tracker) or not tracker.vault_passphrase:
+    if not _vault_active(tracker):
+        return True, None
+    if not tracker.vault_passphrase:
+        for path in _journal_paths_after_restore(tracker):
+            if os.path.isfile(path) and not is_encrypted_file(path):
+                return False, GENERIC_REENCRYPT_ERROR
         return True, None
     passphrase = tracker.vault_passphrase
     targets: list[str] = []
@@ -912,7 +1063,6 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         window.after_idle(refresh_dialog_scroll)
 
     restore_panel = ttk.Frame(footer)
-    restore_panel.pack(fill=tk.X, padx=15, pady=(4, 0))
     restore_pass_row = ttk.Frame(restore_panel)
     ttk.Label(restore_pass_row, text="Restore passphrase").pack(side=tk.LEFT)
     restore_pass_entry = ttk.Entry(restore_pass_row, show="*", width=24)
@@ -938,6 +1088,54 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         wraplength=500,
         foreground=tracker.theme.get("muted", "#6B7280"),
     )
+    vault_unlock_row = ttk.Frame(restore_panel)
+    ttk.Label(vault_unlock_row, text="Vault passphrase").pack(side=tk.LEFT)
+    vault_unlock_entry = ttk.Entry(vault_unlock_row, show="*", width=VAULT_UNLOCK_ENTRY_WIDTH)
+    vault_unlock_show = tk.BooleanVar(value=False)
+
+    def toggle_vault_unlock_visibility() -> None:
+        show = "" if vault_unlock_show.get() else "*"
+        vault_unlock_entry.configure(show=show)
+        vault_confirm_entry.configure(show=show)
+
+    vault_unlock_show_btn = ttk.Checkbutton(
+        vault_unlock_row,
+        text="Show",
+        variable=vault_unlock_show,
+        command=toggle_vault_unlock_visibility,
+    )
+    vault_unlock_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(8, 8))
+    vault_unlock_show_btn.pack(side=tk.RIGHT, padx=(8, 0))
+    vault_confirm_row = ttk.Frame(restore_panel)
+    ttk.Label(vault_confirm_row, text="Confirm vault passphrase").pack(side=tk.LEFT)
+    vault_confirm_entry = ttk.Entry(vault_confirm_row, show="*", width=VAULT_UNLOCK_ENTRY_WIDTH)
+    vault_confirm_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(8, 8))
+    vault_unlock_actions = ttk.Frame(restore_panel)
+    vault_unlock_cancel_btn = ttk.Button(vault_unlock_actions, text="Back")
+    vault_unlock_cancel_btn.pack(side=tk.LEFT, padx=(0, 8))
+    vault_unlock_btn = ttk.Button(vault_unlock_actions, text="Continue")
+    vault_unlock_btn.pack(side=tk.LEFT)
+    vault_unlock_note = ttk.Label(
+        restore_panel,
+        text="Enter your vault passphrase before the restore can be applied.",
+        wraplength=500,
+        foreground=tracker.theme.get("muted", "#6B7280"),
+    )
+
+    def _layout_vault_unlock_show_toggle() -> None:
+        vault_unlock_show_btn.pack_forget()
+        vault_unlock_entry.pack_forget()
+        vault_unlock_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(8, 8))
+        vault_unlock_row.update_idletasks()
+        row_width = vault_unlock_row.winfo_width()
+        entry_req = vault_unlock_entry.winfo_reqwidth()
+        label_req = vault_unlock_row.winfo_children()[0].winfo_reqwidth()
+        show_req = vault_unlock_show_btn.winfo_reqwidth()
+        if row_width >= label_req + entry_req + show_req + 24:
+            vault_unlock_show_btn.pack(side=tk.RIGHT, padx=(8, 0))
+            vault_unlock_row.update_idletasks()
+            if vault_unlock_entry.winfo_width() < entry_req:
+                vault_unlock_show_btn.pack_forget()
 
     confirm_bar = ttk.Frame(footer)
     confirm_label = ttk.Label(confirm_bar, text="", wraplength=500)
@@ -1057,16 +1255,16 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         "encrypted": False,
         "manifest": None,
         "passphrase": None,
+        "pending_apply": None,
     }
 
     def clear_passphrase_widgets() -> None:
-        _clear_entries(pass_entry, confirm_entry, restore_pass_entry)
+        _clear_entries(
+            pass_entry, confirm_entry, restore_pass_entry, vault_unlock_entry, vault_confirm_entry
+        )
         set_field_error(restore_err, None)
 
     def on_close() -> None:
-        if restore_busy["active"] or export_busy["active"]:
-            return
-        restore_state["passphrase"] = None
         clear_passphrase_widgets()
         window.destroy()
 
@@ -1207,9 +1405,98 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         confirm_bar.pack_forget()
         window.after_idle(refresh_dialog_scroll)
 
+    def show_vault_unlock_ui() -> None:
+        hide_restore_ui()
+        restore_panel.pack(side=tk.BOTTOM, fill=tk.X, padx=15, pady=(4, 0), before=buttons)
+        restore_pass_row.pack_forget()
+        restore_vault_note.pack_forget()
+        vault_unlock_note.pack(anchor="w", pady=(0, 4))
+        vault_unlock_row.pack(fill=tk.X)
+        if vault_restore_needs_passphrase_confirmation(tracker):
+            vault_confirm_row.pack(fill=tk.X, pady=(6, 0))
+            vault_unlock_note.config(
+                text=(
+                    "Enter your vault passphrase twice before the restore can be applied "
+                    "(no encrypted journal on disk to verify against)."
+                )
+            )
+        else:
+            vault_confirm_row.pack_forget()
+            vault_unlock_note.config(
+                text="Enter your vault passphrase before the restore can be applied."
+            )
+        vault_unlock_actions.pack(anchor=tk.W, pady=(8, 0))
+        _layout_vault_unlock_show_toggle()
+        restore_caps.pack(anchor="w")
+        restore_err.pack(anchor="w", fill=tk.X, pady=(2, 0))
+        set_field_error(restore_err, None)
+        _clear_entries(vault_unlock_entry, vault_confirm_entry)
+        vault_unlock_entry.focus_set()
+        window.after_idle(refresh_dialog_scroll)
+
+    def _vault_ready_for_restore() -> bool:
+        return not _vault_active(tracker) or _vault_unlocked(tracker)
+
+    def _run_after_vault_unlock(apply_fn: Callable[[], None]) -> None:
+        if _vault_ready_for_restore():
+            apply_fn()
+            return
+        restore_state["pending_apply"] = apply_fn
+        show_vault_unlock_ui()
+
+    def submit_vault_unlock_for_restore() -> None:
+        if restore_busy["active"]:
+            return
+        pw = vault_unlock_entry.get()
+        confirm = (
+            vault_confirm_entry.get()
+            if vault_restore_needs_passphrase_confirmation(tracker)
+            else None
+        )
+        if not pw.strip():
+            set_field_error(restore_err, "Passphrase is required.")
+            return
+        ok, msg = verify_vault_passphrase_for_restore(
+            tracker, pw, confirm_passphrase=confirm
+        )
+        if not ok:
+            set_field_error(restore_err, msg)
+            try:
+                vault_unlock_entry.select_range(0, tk.END)
+                vault_unlock_entry.focus_set()
+            except tk.TclError:
+                pass
+            return
+        tracker.vault_passphrase = pw
+        _clear_entries(vault_unlock_entry, vault_confirm_entry)
+        set_field_error(restore_err, None)
+        pending = restore_state.get("pending_apply")
+        restore_state["pending_apply"] = None
+        hide_restore_ui()
+        if use_vault_chk.instate(["!disabled"]):
+            use_vault_var.set(True)
+        if pending:
+            pending()
+
+    def _vault_unlock_return(_event: tk.Event | None = None) -> str:
+        submit_vault_unlock_for_restore()
+        return "break"
+
+    vault_unlock_btn.configure(command=submit_vault_unlock_for_restore)
+    vault_unlock_entry.bind("<Return>", _vault_unlock_return, add="+")
+    vault_unlock_entry.bind("<KeyPress-Return>", _vault_unlock_return, add="+")
+    vault_unlock_entry.bind("<KeyRelease>", lambda _e: update_caps_hints(), add="+")
+    vault_confirm_entry.bind("<Return>", _vault_unlock_return, add="+")
+    vault_confirm_entry.bind("<KeyPress-Return>", _vault_unlock_return, add="+")
+    vault_confirm_entry.bind("<KeyRelease>", lambda _e: update_caps_hints(), add="+")
+
     def show_restore_passphrase_ui() -> None:
         hide_restore_ui()
         restore_panel.pack(side=tk.BOTTOM, fill=tk.X, padx=15, pady=(4, 0), before=buttons)
+        vault_unlock_note.pack_forget()
+        vault_unlock_row.pack_forget()
+        vault_confirm_row.pack_forget()
+        vault_unlock_actions.pack_forget()
         restore_vault_note.pack(anchor="w", pady=(4, 0))
         restore_pass_row.pack(fill=tk.X)
         restore_pass_entry.focus_set()
@@ -1239,25 +1526,21 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         set_buttons_enabled(True, True)
 
     cancel_confirm_btn.configure(command=cancel_restore_flow)
+    vault_unlock_cancel_btn.configure(command=cancel_restore_flow)
 
     def _complete_restore_after_import(
         *,
-        journal_snap: str | None,
-        profile_snap: str | None = None,
-        profile_journal_path: str | None = None,
-        fitness_rollbacks: list[tuple[str, str | None]] | None = None,
+        snapshots: RestoreSnapshotBundle,
+        sync_from_profile: bool = True,
     ) -> bool:
         tracker.cancel_pending_save()
         try:
-            profile_journal_sync.sync_active_profile_journal_to_tracker(tracker.data_path)
+            if sync_from_profile:
+                profile_journal_sync.sync_active_profile_journal_to_tracker(tracker.data_path)
+            else:
+                profile_journal_sync.sync_tracker_journal_to_active_profile(tracker.data_path)
         except profile_journal_sync.ProfileJournalSyncError:
-            _rollback_journal_copies(
-                tracker.data_path,
-                journal_snap,
-                profile_snap,
-                _profile_journal_path_for_rollback(profile_journal_path),
-                fitness_rollbacks=fitness_rollbacks,
-            )
+            _rollback_restore_snapshots(tracker, snapshots)
             tracker.cancel_pending_save()
             try:
                 tracker.load_data()
@@ -1268,13 +1551,7 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
             return False
         ok, msg = reencrypt_restored_journal_from_disk(tracker)
         if not ok:
-            _rollback_journal_copies(
-                tracker.data_path,
-                journal_snap,
-                profile_snap,
-                _profile_journal_path_for_rollback(profile_journal_path),
-                fitness_rollbacks=fitness_rollbacks,
-            )
+            _rollback_restore_snapshots(tracker, snapshots)
             tracker.cancel_pending_save()
             try:
                 tracker.load_data()
@@ -1283,7 +1560,21 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
             tracker.ensure_status_banner().show_error(msg or GENERIC_REENCRYPT_ERROR)
             cancel_restore_flow()
             return False
-        _remove_restore_snapshots(journal_snap, profile_snap, fitness_rollbacks)
+        if _vault_active(tracker) and not is_encrypted_file(tracker.data_path):
+            _rollback_restore_snapshots(tracker, snapshots)
+            tracker.cancel_pending_save()
+            try:
+                tracker.load_data()
+            except Exception:
+                pass
+            tracker.ensure_status_banner().show_error(GENERIC_REENCRYPT_ERROR)
+            cancel_restore_flow()
+            return False
+        _remove_restore_snapshots(
+            snapshots.journal_snap,
+            snapshots.profile_snap,
+            snapshots.fitness_rollbacks,
+        )
         tracker.cancel_pending_save()
         tracker.load_data()
         tracker.create_dashboard()
@@ -1293,16 +1584,13 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         return True
 
     def finish_restore_success(
-        journal_snap: str | None = None,
-        profile_snap: str | None = None,
-        profile_journal_path: str | None = None,
-        fitness_rollbacks: list[tuple[str, str | None]] | None = None,
+        *,
+        snapshots: RestoreSnapshotBundle,
+        sync_from_profile: bool = True,
     ) -> None:
         _complete_restore_after_import(
-            journal_snap=journal_snap,
-            profile_snap=profile_snap,
-            profile_journal_path=profile_journal_path,
-            fitness_rollbacks=fitness_rollbacks,
+            snapshots=snapshots,
+            sync_from_profile=sync_from_profile,
         )
 
     def apply_encrypted_restore() -> None:
@@ -1312,78 +1600,67 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
             return
         if not _guard_restore_against_pending_rollback(tracker):
             return
-        if not prepare_restore_apply(tracker):
-            tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
-            return
-        try:
-            journal_snap, profile_snap, profile_path, fitness_rollbacks = _restore_snapshots_for_vault(
-                tracker
-            )
-        except profile_journal_sync.ProfileJournalSyncError:
-            tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
-            cancel_restore_flow()
-            return
-        restore_state["journal_snap"] = journal_snap
-        restore_state["profile_snap"] = profile_snap
-        restore_state["profile_journal_path"] = profile_path
-        restore_state["fitness_rollbacks"] = fitness_rollbacks
-        restore_busy["active"] = True
-        set_buttons_enabled(False, False)
-        indicator.start()
 
-        def worker() -> None:
-            try:
-                backup.import_backup(
-                    path,
-                    merge_profiles=True,
-                    creative_root=creative_projects_dir(),
-                    passphrase=passphrase,
-                )
-                _schedule_ui_callback(tracker.root, lambda: on_import_done(None))
-            except BaseException as exc:  # noqa: BLE001
-                _schedule_ui_callback(tracker.root, lambda e=exc: on_import_done(e))
-
-        def on_import_done(exc: BaseException | None) -> None:
-            restore_busy["active"] = False
-            indicator.stop()
-            set_buttons_enabled(True, True)
-            snap = restore_state.get("journal_snap")
-            profile_snap = restore_state.get("profile_snap")
-            profile_path = restore_state.get("profile_journal_path")
-            fitness_rollbacks = restore_state.get("fitness_rollbacks")
-            if exc is not None:
-                _rollback_journal_copies(
-                    tracker.data_path,
-                    snap,
-                    profile_snap,
-                    _profile_journal_path_for_rollback(profile_path),
-                    fitness_rollbacks=fitness_rollbacks,
-                )
-                restore_state["journal_snap"] = None
-                restore_state["profile_snap"] = None
-                restore_state["fitness_rollbacks"] = None
-                msg = _safe_user_error(exc, context="restore")
-                if isinstance(exc, WrongPassphraseError):
-                    set_field_error(restore_err, msg)
-                    try:
-                        restore_pass_entry.select_range(0, tk.END)
-                        restore_pass_entry.focus_set()
-                    except tk.TclError:
-                        pass
-                    show_restore_passphrase_ui()
-                    confirm_bar.pack_forget()
-                else:
-                    tracker.ensure_status_banner().show_error(msg)
-                    cancel_restore_flow()
+        def do_apply() -> None:
+            if not prepare_restore_apply(tracker):
+                tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
                 return
-            _complete_restore_after_import(
-                journal_snap=snap,
-                profile_snap=profile_snap,
-                profile_journal_path=profile_path,
-                fitness_rollbacks=fitness_rollbacks,
-            )
+            try:
+                snapshots = _restore_snapshots_for_vault(tracker)
+            except profile_journal_sync.ProfileJournalSyncError:
+                tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
+                cancel_restore_flow()
+                return
+            if snapshots.live_snapshot_incomplete():
+                tracker.ensure_status_banner().show_error(GENERIC_RESTORE_SNAPSHOT_FAILED_MSG)
+                cancel_restore_flow()
+                return
+            restore_state["snapshots"] = snapshots
+            restore_busy["active"] = True
+            set_buttons_enabled(False, False)
+            indicator.start()
 
-        threading.Thread(target=worker, daemon=True).start()
+            def worker() -> None:
+                try:
+                    backup.import_backup(
+                        path,
+                        merge_profiles=True,
+                        creative_root=creative_projects_dir(),
+                        passphrase=passphrase,
+                    )
+                    _schedule_ui_callback(tracker.root, lambda: on_import_done(None))
+                except BaseException as exc:  # noqa: BLE001
+                    _schedule_ui_callback(tracker.root, lambda e=exc: on_import_done(e))
+
+            def on_import_done(exc: BaseException | None) -> None:
+                restore_busy["active"] = False
+                indicator.stop()
+                set_buttons_enabled(True, True)
+                snapshots = restore_state.get("snapshots")
+                if exc is not None:
+                    if snapshots is not None:
+                        _rollback_restore_snapshots(tracker, snapshots)
+                    restore_state["snapshots"] = None
+                    msg = _safe_user_error(exc, context="restore")
+                    if isinstance(exc, WrongPassphraseError):
+                        set_field_error(restore_err, msg)
+                        try:
+                            restore_pass_entry.select_range(0, tk.END)
+                            restore_pass_entry.focus_set()
+                        except tk.TclError:
+                            pass
+                        show_restore_passphrase_ui()
+                        confirm_bar.pack_forget()
+                    else:
+                        tracker.ensure_status_banner().show_error(msg)
+                        cancel_restore_flow()
+                    return
+                if snapshots is not None:
+                    _complete_restore_after_import(snapshots=snapshots)
+
+            threading.Thread(target=worker, daemon=True).start()
+
+        _run_after_vault_unlock(do_apply)
 
     confirm_restore_btn.configure(command=apply_encrypted_restore)
 
@@ -1460,44 +1737,41 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
             parent=window,
         ):
             return
-        if not prepare_restore_apply(tracker):
-            tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
-            return
-        try:
-            journal_snap, profile_snap, profile_path, fitness_rollbacks = _restore_snapshots_for_vault(
-                tracker
-            )
-        except profile_journal_sync.ProfileJournalSyncError:
-            tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
-            return
-        try:
-            result = integral_io.restore_backup_file(
-                path,
-                tracker.data_path,
-                creative_root=creative_projects_dir(),
-                fitness_db_path=_active_fitness_db_path(tracker, require_exists=False),
-                make_copy=True,
-            )
-            if not _complete_restore_after_import(
-                journal_snap=journal_snap,
-                profile_snap=profile_snap,
-                profile_journal_path=profile_path,
-                fitness_rollbacks=fitness_rollbacks,
-            ):
+
+        def do_apply() -> None:
+            if not prepare_restore_apply(tracker):
+                tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
                 return
-            warning = result.get("warning")
-            if warning:
-                tracker.ensure_status_banner().show_info(warning)
-            clear_passphrase_widgets()
-        except (OSError, ValueError):
-            _rollback_journal_copies(
-                tracker.data_path,
-                journal_snap,
-                profile_snap,
-                profile_path,
-                fitness_rollbacks=fitness_rollbacks,
-            )
-            tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
+            try:
+                snapshots = _restore_snapshots_for_vault(tracker)
+            except profile_journal_sync.ProfileJournalSyncError:
+                tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
+                return
+            if snapshots.live_snapshot_incomplete():
+                tracker.ensure_status_banner().show_error(GENERIC_RESTORE_SNAPSHOT_FAILED_MSG)
+                return
+            try:
+                result = integral_io.restore_backup_file(
+                    path,
+                    tracker.data_path,
+                    creative_root=creative_projects_dir(),
+                    fitness_db_path=_active_fitness_db_path(tracker, require_exists=False),
+                    make_copy=True,
+                )
+                if not _complete_restore_after_import(
+                    snapshots=snapshots,
+                    sync_from_profile=False,
+                ):
+                    return
+                warning = result.get("warning")
+                if warning:
+                    tracker.ensure_status_banner().show_info(warning)
+                clear_passphrase_widgets()
+            except (OSError, ValueError):
+                _rollback_restore_snapshots(tracker, snapshots)
+                tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
+
+        _run_after_vault_unlock(do_apply)
 
     def profile_zip_restore(path: str) -> None:
         if not _guard_restore_against_pending_rollback(tracker):
@@ -1515,33 +1789,27 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
             parent=window,
         ):
             return
-        if not prepare_restore_apply(tracker):
-            tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
-            return
-        try:
-            journal_snap, profile_snap, profile_path, fitness_rollbacks = _restore_snapshots_for_vault(
-                tracker
-            )
-        except profile_journal_sync.ProfileJournalSyncError:
-            tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
-            return
-        try:
-            backup.import_backup(path, merge_profiles=True, creative_root=creative_projects_dir())
-            finish_restore_success(
-                journal_snap=journal_snap,
-                profile_snap=profile_snap,
-                profile_journal_path=profile_path,
-                fitness_rollbacks=fitness_rollbacks,
-            )
-        except (OSError, ValueError):
-            _rollback_journal_copies(
-                tracker.data_path,
-                journal_snap,
-                profile_snap,
-                profile_path,
-                fitness_rollbacks=fitness_rollbacks,
-            )
-            tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
+
+        def do_apply() -> None:
+            if not prepare_restore_apply(tracker):
+                tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
+                return
+            try:
+                snapshots = _restore_snapshots_for_vault(tracker)
+            except profile_journal_sync.ProfileJournalSyncError:
+                tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
+                return
+            if snapshots.live_snapshot_incomplete():
+                tracker.ensure_status_banner().show_error(GENERIC_RESTORE_SNAPSHOT_FAILED_MSG)
+                return
+            try:
+                backup.import_backup(path, merge_profiles=True, creative_root=creative_projects_dir())
+                finish_restore_success(snapshots=snapshots)
+            except (OSError, ValueError):
+                _rollback_restore_snapshots(tracker, snapshots)
+                tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
+
+        _run_after_vault_unlock(do_apply)
 
     def restore_now() -> None:
         if restore_busy["active"]:
@@ -1589,8 +1857,6 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
     restore_btn.configure(command=restore_now)
 
     def on_escape(_event: tk.Event | None = None) -> str:
-        if restore_busy["active"] or export_busy["active"]:
-            return "break"
         if plaintext_bar_visible["visible"]:
             encrypt_instead()
             return "break"

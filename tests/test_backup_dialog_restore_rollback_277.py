@@ -175,7 +175,12 @@ def test_failed_rollback_with_valid_live_json_recovers_via_marker(tmp_path, monk
         json.dump(backup_live, handle)
 
     with patch.object(backup_dialog_ui.os, "replace", _make_selective_failed_snap_replace()):
-        assert _rollback_journal_copies(str(data_path), snap, None, None) is False
+        assert (
+            _rollback_journal_copies(
+                str(data_path), snap, None, None, journal_existed=True
+            )
+            is False
+        )
 
     assert snap and os.path.isfile(snap)
     assert _artifact_has_pending_rollback(container, "data.json")
@@ -307,7 +312,10 @@ def test_rollback_copies_keeps_snap_then_startup_recovers(temp_app, tmp_path, mo
         json.dump({"entries": {}}, handle)
 
     with patch.object(backup_dialog_ui.os, "replace", _make_selective_failed_snap_replace()):
-        assert _rollback_journal_copies(data_path, snap, None, None) is False
+        assert (
+            _rollback_journal_copies(data_path, snap, None, None, journal_existed=True)
+            is False
+        )
     assert snap and os.path.isfile(snap)
 
     with patch(
@@ -365,7 +373,7 @@ def test_reencrypt_failure_restores_data_json_and_fitness_db_bytes(temp_app, tmp
 
     journal_snap = _snapshot_journal_if_present(data_path)
     fitness_snap = _snapshot_file_if_present(db_path)
-    fitness_rollbacks = [(db_path, fitness_snap)]
+    fitness_rollbacks = [(db_path, fitness_snap, True)]
 
     restored = storage.empty_data()
     restored["entries"]["2099-01-01"] = {
@@ -386,6 +394,7 @@ def test_reencrypt_failure_restores_data_json_and_fitness_db_bytes(temp_app, tmp
             None,
             None,
             fitness_rollbacks=fitness_rollbacks,
+            journal_existed=True,
         )
 
     assert pathlib.Path(data_path).read_bytes() == prior_json
@@ -635,7 +644,9 @@ def test_failed_rollback_records_marker_for_fitness_snap(tmp_path, monkeypatch):
         handle.write(b"after-import")
 
     _patch_failed_snap_to_live_replace(monkeypatch)
-    ok = backup_dialog_ui._rollback_file_from_snapshot(str(fitness_file), snap)
+    ok = backup_dialog_ui._rollback_file_from_snapshot(
+        str(fitness_file), snap, existed_before=True
+    )
     assert ok is False
     assert snap and os.path.isfile(snap)
     assert _artifact_has_pending_rollback(str(tmp_path), "fitness.db")
@@ -769,3 +780,70 @@ def test_startup_transient_live_read_skips_snap_apply(tmp_path, monkeypatch, cap
     with open(data_file, encoding="utf-8") as handle:
         assert json.load(handle) == live
     assert snap_file.is_file()
+
+
+def test_failed_fitness_snapshot_then_rollback_keeps_live_db(tmp_path, monkeypatch):
+    import shutil as shutil_mod
+
+    db_path = tmp_path / "fitness.db"
+    _write_sqlite_stub(db_path, b"LIVE-FITNESS-BYTES")
+    live_bytes = db_path.read_bytes()
+
+    real_copy2 = shutil_mod.copy2
+
+    def fail_snap_copy(src, dst, *args, **kwargs):
+        if str(dst).endswith(".pre-restore-snap"):
+            raise OSError("snapshot denied")
+        return real_copy2(src, dst, *args, **kwargs)
+
+    monkeypatch.setattr(backup_dialog_ui.shutil, "copy2", fail_snap_copy)
+    assert _snapshot_file_if_present(str(db_path)) is None
+    assert db_path.read_bytes() == live_bytes
+
+    _rollback_journal_copies(
+        str(tmp_path / "data.json"),
+        None,
+        None,
+        None,
+        fitness_rollbacks=[(str(db_path), None, True)],
+    )
+    assert db_path.read_bytes() == live_bytes
+    assert backup_dialog_ui.RestoreSnapshotBundle(
+        journal_snap=None,
+        journal_existed=False,
+        profile_snap=None,
+        profile_existed=False,
+        profile_path=None,
+        fitness_rollbacks=[(str(db_path), None, True)],
+    ).live_snapshot_incomplete()
+
+
+def test_corrupt_rollback_marker_keeps_snap_live_data_and_blocks_restore(tmp_path):
+    data_path = tmp_path / "data.json"
+    container = str(tmp_path)
+    live = _minimal_v2_payload()
+    live["entries"]["2020-01-01"] = {
+        "Emotional Wellbeing": {"rating": 3, "checklist": {}, "metrics": {}, "notes": "live-keep"}
+    }
+    with open(data_path, "w", encoding="utf-8") as handle:
+        json.dump(live, handle)
+    live_bytes = data_path.read_bytes()
+    snap_path = tmp_path / "data.json.pre-restore-snap"
+    stale = storage.empty_data()
+    with open(snap_path, "w", encoding="utf-8") as handle:
+        json.dump(stale, handle)
+
+    pathlib.Path(_rollback_pending_marker_path(container)).write_text(
+        "{corrupt", encoding="utf-8"
+    )
+
+    with patch(
+        "vault.iter_journal_sweep_targets",
+        return_value=[(str(data_path), container)],
+    ):
+        sweep_pre_restore_journal_snaps_at_startup()
+        assert restore_blocked_by_pending_rollback()
+        assert _artifact_has_pending_rollback(container, "data.json")
+
+    assert data_path.read_bytes() == live_bytes
+    assert snap_path.is_file()
