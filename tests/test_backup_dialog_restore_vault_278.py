@@ -22,8 +22,10 @@ import profiles
 import storage
 from backup_dialog_ui import (
     GENERIC_REENCRYPT_ERROR,
+    GENERIC_RESTORE_ERROR,
     VAULT_WRONG_PASSPHRASE_MSG,
     reencrypt_restored_journal_from_disk,
+    vault_restore_needs_passphrase_confirmation,
     verify_vault_passphrase_for_restore,
 )
 from tests.conftest import create_tk_root, pump_tk, pump_tk_until
@@ -60,6 +62,23 @@ def tk_root():
         root.destroy()
     except tk.TclError:
         pass
+
+
+def _vault_unlock_entries(dialog):
+    vault_entry = vault_confirm = None
+    for w in _walk(dialog):
+        if not isinstance(w, ttk.Entry):
+            continue
+        labels = [
+            str(c.cget("text"))
+            for c in w.master.winfo_children()
+            if isinstance(c, (tk.Label, ttk.Label))
+        ]
+        if any("Vault passphrase" in text for text in labels):
+            vault_entry = w
+        if any(text == "Confirm vault passphrase" for text in labels):
+            vault_confirm = w
+    return vault_entry, vault_confirm
 
 
 def _vault_on_locked_tracker(tk_root, *, passphrase: str = "vault-secret-12"):
@@ -111,16 +130,128 @@ def test_verify_vault_passphrase_wrong_against_encrypted_bak(temp_app):
     assert passphrase not in (msg or "")
 
 
-def test_verify_vault_passphrase_accepts_when_all_plaintext(temp_app):
+def test_vault_restore_needs_confirmation_when_all_plaintext(temp_app):
+    profiles.set_active_profile("default")
+    _seed_data_file(_minimal_v2_payload())
+    tracker = type("T", (), {})()
+    tracker.settings = {"encryption_enabled": True}
+    tracker.data_path = paths.data_file()
+    assert vault_restore_needs_passphrase_confirmation(tracker) is True  # type: ignore[arg-type]
+
+
+def test_verify_vault_passphrase_all_plaintext_requires_matching_confirm(temp_app):
     profiles.set_active_profile("default")
     data_path = paths.data_file()
     _seed_data_file(_minimal_v2_payload())
     tracker = type("T", (), {})()
     tracker.settings = {"encryption_enabled": True}
     tracker.data_path = data_path
-    ok, msg = verify_vault_passphrase_for_restore(tracker, "vault-secret-12")  # type: ignore[arg-type]
+
+    ok, msg = verify_vault_passphrase_for_restore(  # type: ignore[arg-type]
+        tracker, "vault-secret-12", confirm_passphrase="vault-secret-12"
+    )
     assert ok is True
     assert msg is None
+
+    ok, msg = verify_vault_passphrase_for_restore(  # type: ignore[arg-type]
+        tracker, "vault-secret-12", confirm_passphrase="vault-secret-13"
+    )
+    assert ok is False
+    assert msg == GENERIC_RESTORE_ERROR
+    assert "vault-secret" not in (msg or "")
+
+    ok, msg = verify_vault_passphrase_for_restore(tracker, "vault-secret-12")  # type: ignore[arg-type]
+    assert ok is False
+    assert msg is not None
+
+
+def test_plaintext_vault_unlock_mismatch_never_reencrypts_or_sets_session(
+    tk_root, temp_app, tmp_path,
+):
+    plain_zip = str(tmp_path / "plain.zip")
+    backup.export_backup(plain_zip, profile_id="default")
+    _seed_data_file(_minimal_v2_payload(), encrypted=False, passphrase=None)
+    data_path = paths.data_file()
+
+    with patch("personal_dev_tracker.prompt_vault_unlock", return_value=True):
+        tracker = personal_dev_tracker.PersonalDevelopmentTracker(tk_root)
+    tracker.settings["encryption_enabled"] = True
+    tracker.vault_passphrase = None
+
+    backup_dialog_ui.show_backup_dialog(tracker)
+    pump_tk(tk_root)
+    dialog = next(w for w in tk_root.winfo_children() if isinstance(w, tk.Toplevel))
+
+    with (
+        patch("backup_dialog_ui.filedialog.askopenfilename", return_value=plain_zip),
+        patch("tkinter.messagebox.askyesno", return_value=True),
+        patch("backup_dialog_ui.save_data_file") as mock_save,
+    ):
+        _find_button(dialog, "Restore from").invoke()
+        pump_tk(tk_root, 15)
+
+    assert vault_restore_needs_passphrase_confirmation(tracker)
+    vault_entry, vault_confirm = _vault_unlock_entries(dialog)
+    assert vault_entry is not None
+    assert vault_confirm is not None
+
+    vault_continue = next(
+        w
+        for w in vault_entry.master.winfo_children()
+        if w.winfo_class() == "TButton" and str(w.cget("text")) == "Continue"
+    )
+    vault_entry.insert(0, "vault-secret-12")
+    vault_confirm.insert(0, "vault-secret-13")
+    vault_continue.invoke()
+    pump_tk(tk_root, 10)
+
+    assert tracker.vault_passphrase is None
+    mock_save.assert_not_called()
+    assert not is_encrypted_file(data_path)
+    errors = [t for t in _label_texts(dialog) if GENERIC_RESTORE_ERROR in t]
+    assert errors, _label_texts(dialog)
+
+
+def test_plaintext_vault_unlock_matching_confirm_restores_and_encrypts(
+    tk_root, temp_app, tmp_path,
+):
+    plain_zip = str(tmp_path / "plain.zip")
+    backup.export_backup(plain_zip, profile_id="default")
+    _seed_data_file(_minimal_v2_payload(), encrypted=False, passphrase=None)
+    data_path = paths.data_file()
+    passphrase = "vault-secret-12"
+
+    with patch("personal_dev_tracker.prompt_vault_unlock", return_value=True):
+        tracker = personal_dev_tracker.PersonalDevelopmentTracker(tk_root)
+    tracker.settings["encryption_enabled"] = True
+    tracker.vault_passphrase = None
+    banner = tracker.ensure_status_banner()
+
+    backup_dialog_ui.show_backup_dialog(tracker)
+    pump_tk(tk_root)
+    dialog = next(w for w in tk_root.winfo_children() if isinstance(w, tk.Toplevel))
+
+    with patch("backup_dialog_ui.filedialog.askopenfilename", return_value=plain_zip):
+        with patch("tkinter.messagebox.askyesno", return_value=True):
+            _find_button(dialog, "Restore from").invoke()
+            pump_tk(tk_root, 15)
+
+    vault_entry, vault_confirm = _vault_unlock_entries(dialog)
+    assert vault_confirm is not None
+    vault_continue = next(
+        w
+        for w in vault_entry.master.winfo_children()
+        if w.winfo_class() == "TButton" and str(w.cget("text")) == "Continue"
+    )
+    vault_entry.insert(0, passphrase)
+    vault_confirm.insert(0, passphrase)
+    vault_continue.invoke()
+    pump_tk(tk_root, 30)
+
+    pump_tk_until(tk_root, lambda: is_encrypted_file(data_path), timeout_s=5.0)
+    assert is_encrypted_file(data_path)
+    pump_tk_until(tk_root, lambda: banner._kind == "success", timeout_s=5.0)
+    assert passphrase not in (banner._message_var.get() or "")
 
 
 def test_plaintext_legacy_restore_prompts_vault_before_apply(
@@ -160,15 +291,9 @@ def test_plaintext_legacy_restore_prompts_vault_before_apply(
     joined = " ".join(_label_texts(dialog))
     assert "Vault passphrase" in joined
 
-    vault_entry = None
-    for w in _walk(dialog):
-        if not isinstance(w, ttk.Entry):
-            continue
-        for sib in w.master.winfo_children():
-            if isinstance(sib, ttk.Label) and "Vault passphrase" in str(sib.cget("text")):
-                vault_entry = w
-                break
+    vault_entry, vault_confirm = _vault_unlock_entries(dialog)
     assert vault_entry is not None
+    assert vault_confirm is None or not vault_confirm.winfo_ismapped()
     assert prior_marker in prior_text
     assert prior_marker in open(data_path, encoding="utf-8").read()
 
@@ -186,6 +311,7 @@ def test_plaintext_legacy_restore_prompts_vault_before_apply(
 
     vault_entry.delete(0, tk.END)
     vault_entry.insert(0, "vault-secret-12")
+    assert vault_restore_needs_passphrase_confirmation(tracker) is False
     vault_continue.invoke()
     pump_tk(tk_root, 30)
 

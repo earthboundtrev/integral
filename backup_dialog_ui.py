@@ -182,19 +182,28 @@ def _same_journal_path(path_a: str, path_b: str) -> bool:
     return os.path.normcase(os.path.abspath(path_a)) == os.path.normcase(os.path.abspath(path_b))
 
 
+def vault_restore_needs_passphrase_confirmation(tracker: PersonalDevelopmentTracker) -> bool:
+    """True when no on-disk journal copy can verify the vault passphrase via decryption."""
+    for path in _journal_paths_after_restore(tracker):
+        for candidate in (path, f"{path}.bak"):
+            if os.path.isfile(candidate) and is_encrypted_file(candidate):
+                return False
+    return True
+
+
 def verify_vault_passphrase_for_restore(
     tracker: PersonalDevelopmentTracker,
     passphrase: str,
+    *,
+    confirm_passphrase: str | None = None,
 ) -> tuple[bool, str | None]:
-    """Check vault passphrase against encrypted journal copies on disk (or non-empty when all plaintext)."""
+    """Check vault passphrase against encrypted journal copies, or paired entry when all plaintext."""
     if not passphrase.strip():
         return False, "Passphrase is required."
-    saw_encrypted = False
     for path in _journal_paths_after_restore(tracker):
         for candidate in (path, f"{path}.bak"):
             if not os.path.isfile(candidate) or not is_encrypted_file(candidate):
                 continue
-            saw_encrypted = True
             try:
                 load_data_file(candidate, passphrase)
                 return True, None
@@ -202,8 +211,10 @@ def verify_vault_passphrase_for_restore(
                 return False, VAULT_WRONG_PASSPHRASE_MSG
             except Exception:
                 return False, GENERIC_RESTORE_ERROR
-    if saw_encrypted:
-        return True, None
+    if confirm_passphrase is None or not confirm_passphrase.strip():
+        return False, "Confirm your passphrase."
+    if passphrase != confirm_passphrase:
+        return False, GENERIC_RESTORE_ERROR
     return True, None
 
 
@@ -479,7 +490,6 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         window.after_idle(refresh_dialog_scroll)
 
     restore_panel = ttk.Frame(footer)
-    restore_panel.pack(fill=tk.X, padx=15, pady=(4, 0))
     restore_pass_row = ttk.Frame(restore_panel)
     ttk.Label(restore_pass_row, text="Restore passphrase").pack(side=tk.LEFT)
     restore_pass_entry = ttk.Entry(restore_pass_row, show="*", width=24)
@@ -511,7 +521,9 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
     vault_unlock_show = tk.BooleanVar(value=False)
 
     def toggle_vault_unlock_visibility() -> None:
-        vault_unlock_entry.configure(show="" if vault_unlock_show.get() else "*")
+        show = "" if vault_unlock_show.get() else "*"
+        vault_unlock_entry.configure(show=show)
+        vault_confirm_entry.configure(show=show)
 
     vault_unlock_cancel_btn = ttk.Button(vault_unlock_row, text="Back")
     vault_unlock_cancel_btn.pack(side=tk.RIGHT)
@@ -524,6 +536,10 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         command=toggle_vault_unlock_visibility,
     ).pack(side=tk.RIGHT, padx=(8, 0))
     vault_unlock_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(8, 8))
+    vault_confirm_row = ttk.Frame(restore_panel)
+    ttk.Label(vault_confirm_row, text="Confirm vault passphrase").pack(side=tk.LEFT)
+    vault_confirm_entry = ttk.Entry(vault_confirm_row, show="*", width=24)
+    vault_confirm_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(8, 8))
     vault_unlock_note = ttk.Label(
         restore_panel,
         text="Enter your vault passphrase before the restore can be applied.",
@@ -646,7 +662,9 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
     }
 
     def clear_passphrase_widgets() -> None:
-        _clear_entries(pass_entry, confirm_entry, restore_pass_entry, vault_unlock_entry)
+        _clear_entries(
+            pass_entry, confirm_entry, restore_pass_entry, vault_unlock_entry, vault_confirm_entry
+        )
         set_field_error(restore_err, None)
 
     def on_close() -> None:
@@ -797,10 +815,23 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         restore_vault_note.pack_forget()
         vault_unlock_note.pack(anchor="w", pady=(0, 4))
         vault_unlock_row.pack(fill=tk.X)
+        if vault_restore_needs_passphrase_confirmation(tracker):
+            vault_confirm_row.pack(fill=tk.X, pady=(6, 0))
+            vault_unlock_note.config(
+                text=(
+                    "Enter your vault passphrase twice before the restore can be applied "
+                    "(no encrypted journal on disk to verify against)."
+                )
+            )
+        else:
+            vault_confirm_row.pack_forget()
+            vault_unlock_note.config(
+                text="Enter your vault passphrase before the restore can be applied."
+            )
         restore_caps.pack(anchor="w")
         restore_err.pack(anchor="w", fill=tk.X, pady=(2, 0))
         set_field_error(restore_err, None)
-        _clear_entries(vault_unlock_entry)
+        _clear_entries(vault_unlock_entry, vault_confirm_entry)
         vault_unlock_entry.focus_set()
         window.after_idle(refresh_dialog_scroll)
 
@@ -818,10 +849,17 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         if restore_busy["active"]:
             return
         pw = vault_unlock_entry.get()
+        confirm = (
+            vault_confirm_entry.get()
+            if vault_restore_needs_passphrase_confirmation(tracker)
+            else None
+        )
         if not pw.strip():
             set_field_error(restore_err, "Passphrase is required.")
             return
-        ok, msg = verify_vault_passphrase_for_restore(tracker, pw)
+        ok, msg = verify_vault_passphrase_for_restore(
+            tracker, pw, confirm_passphrase=confirm
+        )
         if not ok:
             set_field_error(restore_err, msg)
             try:
@@ -831,7 +869,7 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
                 pass
             return
         tracker.vault_passphrase = pw
-        _clear_entries(vault_unlock_entry)
+        _clear_entries(vault_unlock_entry, vault_confirm_entry)
         set_field_error(restore_err, None)
         pending = restore_state.get("pending_apply")
         restore_state["pending_apply"] = None
@@ -849,12 +887,16 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
     vault_unlock_entry.bind("<Return>", _vault_unlock_return, add="+")
     vault_unlock_entry.bind("<KeyPress-Return>", _vault_unlock_return, add="+")
     vault_unlock_entry.bind("<KeyRelease>", lambda _e: update_caps_hints(), add="+")
+    vault_confirm_entry.bind("<Return>", _vault_unlock_return, add="+")
+    vault_confirm_entry.bind("<KeyPress-Return>", _vault_unlock_return, add="+")
+    vault_confirm_entry.bind("<KeyRelease>", lambda _e: update_caps_hints(), add="+")
 
     def show_restore_passphrase_ui() -> None:
         hide_restore_ui()
         restore_panel.pack(side=tk.BOTTOM, fill=tk.X, padx=15, pady=(4, 0), before=buttons)
         vault_unlock_note.pack_forget()
         vault_unlock_row.pack_forget()
+        vault_confirm_row.pack_forget()
         restore_vault_note.pack(anchor="w", pady=(4, 0))
         restore_pass_row.pack(fill=tk.X)
         restore_pass_entry.focus_set()
