@@ -50,6 +50,8 @@ GENERIC_REENCRYPT_ERROR = (
     "Your previous journal file was kept."
 )
 VAULT_WRONG_PASSPHRASE_MSG = "That passphrase didn't work for your vault."
+VAULT_PASSPHRASE_MISMATCH_MSG = "Passphrases don't match."
+VAULT_UNLOCK_ENTRY_WIDTH = 24
 
 _PATH_LIKE = re.compile(
     r"(?:/[A-Za-z0-9._\-]+)+|(?:[A-Za-z]:\\[^\s]+)|(?:~[^\s]+)"
@@ -214,7 +216,7 @@ def verify_vault_passphrase_for_restore(
     if confirm_passphrase is None or not confirm_passphrase.strip():
         return False, "Confirm your passphrase."
     if passphrase != confirm_passphrase:
-        return False, GENERIC_RESTORE_ERROR
+        return False, VAULT_PASSPHRASE_MISMATCH_MSG
     return True, None
 
 
@@ -517,7 +519,7 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
     )
     vault_unlock_row = ttk.Frame(restore_panel)
     ttk.Label(vault_unlock_row, text="Vault passphrase").pack(side=tk.LEFT)
-    vault_unlock_entry = ttk.Entry(vault_unlock_row, show="*", width=24)
+    vault_unlock_entry = ttk.Entry(vault_unlock_row, show="*", width=VAULT_UNLOCK_ENTRY_WIDTH)
     vault_unlock_show = tk.BooleanVar(value=False)
 
     def toggle_vault_unlock_visibility() -> None:
@@ -525,27 +527,44 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         vault_unlock_entry.configure(show=show)
         vault_confirm_entry.configure(show=show)
 
-    vault_unlock_cancel_btn = ttk.Button(vault_unlock_row, text="Back")
-    vault_unlock_cancel_btn.pack(side=tk.RIGHT)
-    vault_unlock_btn = ttk.Button(vault_unlock_row, text="Continue")
-    vault_unlock_btn.pack(side=tk.RIGHT, padx=(0, 8))
-    ttk.Checkbutton(
+    vault_unlock_show_btn = ttk.Checkbutton(
         vault_unlock_row,
         text="Show",
         variable=vault_unlock_show,
         command=toggle_vault_unlock_visibility,
-    ).pack(side=tk.RIGHT, padx=(8, 0))
+    )
     vault_unlock_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(8, 8))
+    vault_unlock_show_btn.pack(side=tk.RIGHT, padx=(8, 0))
     vault_confirm_row = ttk.Frame(restore_panel)
     ttk.Label(vault_confirm_row, text="Confirm vault passphrase").pack(side=tk.LEFT)
-    vault_confirm_entry = ttk.Entry(vault_confirm_row, show="*", width=24)
+    vault_confirm_entry = ttk.Entry(vault_confirm_row, show="*", width=VAULT_UNLOCK_ENTRY_WIDTH)
     vault_confirm_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(8, 8))
+    vault_unlock_actions = ttk.Frame(restore_panel)
+    vault_unlock_cancel_btn = ttk.Button(vault_unlock_actions, text="Back")
+    vault_unlock_cancel_btn.pack(side=tk.LEFT, padx=(0, 8))
+    vault_unlock_btn = ttk.Button(vault_unlock_actions, text="Continue")
+    vault_unlock_btn.pack(side=tk.LEFT)
     vault_unlock_note = ttk.Label(
         restore_panel,
         text="Enter your vault passphrase before the restore can be applied.",
         wraplength=500,
         foreground=tracker.theme.get("muted", "#6B7280"),
     )
+
+    def _layout_vault_unlock_show_toggle() -> None:
+        vault_unlock_show_btn.pack_forget()
+        vault_unlock_entry.pack_forget()
+        vault_unlock_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(8, 8))
+        vault_unlock_row.update_idletasks()
+        row_width = vault_unlock_row.winfo_width()
+        entry_req = vault_unlock_entry.winfo_reqwidth()
+        label_req = vault_unlock_row.winfo_children()[0].winfo_reqwidth()
+        show_req = vault_unlock_show_btn.winfo_reqwidth()
+        if row_width >= label_req + entry_req + show_req + 24:
+            vault_unlock_show_btn.pack(side=tk.RIGHT, padx=(8, 0))
+            vault_unlock_row.update_idletasks()
+            if vault_unlock_entry.winfo_width() < entry_req:
+                vault_unlock_show_btn.pack_forget()
 
     confirm_bar = ttk.Frame(footer)
     confirm_label = ttk.Label(confirm_bar, text="", wraplength=500)
@@ -828,6 +847,8 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
             vault_unlock_note.config(
                 text="Enter your vault passphrase before the restore can be applied."
             )
+        vault_unlock_actions.pack(anchor=tk.W, pady=(8, 0))
+        _layout_vault_unlock_show_toggle()
         restore_caps.pack(anchor="w")
         restore_err.pack(anchor="w", fill=tk.X, pady=(2, 0))
         set_field_error(restore_err, None)
@@ -897,6 +918,7 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         vault_unlock_note.pack_forget()
         vault_unlock_row.pack_forget()
         vault_confirm_row.pack_forget()
+        vault_unlock_actions.pack_forget()
         restore_vault_note.pack(anchor="w", pady=(4, 0))
         restore_pass_row.pack(fill=tk.X)
         restore_pass_entry.focus_set()
@@ -935,10 +957,14 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         journal_snap: str | None,
         profile_snap: str | None = None,
         profile_journal_path: str | None = None,
+        sync_from_profile: bool = True,
     ) -> bool:
         tracker.cancel_pending_save()
         try:
-            profile_journal_sync.sync_active_profile_journal_to_tracker(tracker.data_path)
+            if sync_from_profile:
+                profile_journal_sync.sync_active_profile_journal_to_tracker(tracker.data_path)
+            else:
+                profile_journal_sync.sync_tracker_journal_to_active_profile(tracker.data_path)
         except profile_journal_sync.ProfileJournalSyncError:
             _rollback_journal_copies(
                 tracker.data_path,
@@ -1000,11 +1026,14 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         journal_snap: str | None = None,
         profile_snap: str | None = None,
         profile_journal_path: str | None = None,
+        *,
+        sync_from_profile: bool = True,
     ) -> None:
         _complete_restore_after_import(
             journal_snap=journal_snap,
             profile_snap=profile_snap,
             profile_journal_path=profile_journal_path,
+            sync_from_profile=sync_from_profile,
         )
 
     def apply_encrypted_restore() -> None:
@@ -1177,6 +1206,7 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
                     journal_snap=journal_snap,
                     profile_snap=profile_snap,
                     profile_journal_path=profile_path,
+                    sync_from_profile=False,
                 ):
                     return
                 warning = result.get("warning")

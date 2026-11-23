@@ -22,12 +22,13 @@ import profiles
 import storage
 from backup_dialog_ui import (
     GENERIC_REENCRYPT_ERROR,
-    GENERIC_RESTORE_ERROR,
+    VAULT_PASSPHRASE_MISMATCH_MSG,
     VAULT_WRONG_PASSPHRASE_MSG,
     reencrypt_restored_journal_from_disk,
     vault_restore_needs_passphrase_confirmation,
     verify_vault_passphrase_for_restore,
 )
+from vault import load_data_file
 from tests.conftest import create_tk_root, pump_tk, pump_tk_until
 from vault import encrypt_payload
 from tests.test_backup import temp_app  # noqa: F401
@@ -39,6 +40,11 @@ from vault import is_encrypted_file, save_data_file
 @pytest.fixture(autouse=True)
 def _sync_data_file(monkeypatch):
     monkeypatch.setattr(personal_dev_tracker, "DATA_FILE", paths.data_file())
+
+
+@pytest.fixture(autouse=True)
+def _restore_apply_ready(monkeypatch):
+    monkeypatch.setattr(backup_dialog_ui, "prepare_restore_apply", lambda _tracker: True)
 
 
 @pytest.fixture
@@ -62,6 +68,44 @@ def tk_root():
         root.destroy()
     except tk.TclError:
         pass
+
+
+def _day_notes(payload: dict, day: str = "2099-01-01") -> str:
+    return payload["entries"][day]["Emotional Wellbeing"]["notes"]
+
+
+def _payload_with_marker(marker: str, *, day: str = "2099-01-01") -> dict:
+    payload = _minimal_v2_payload()
+    payload["entries"][day] = {
+        "Emotional Wellbeing": {"rating": 1, "checklist": {}, "metrics": {}, "notes": marker}
+    }
+    return payload
+
+
+def _vault_continue_button(dialog: tk.Toplevel) -> tk.Misc:
+    back_btn = None
+    for w in _walk(dialog):
+        if w.winfo_class() != "TButton":
+            continue
+        if str(w.cget("text")).replace("&", "") != "Back":
+            continue
+        vault_entry, _ = _vault_unlock_entries(dialog)
+        if vault_entry is None:
+            continue
+        if w.master is vault_entry.master:
+            continue
+        if w.master.master is not vault_entry.master.master:
+            continue
+        back_btn = w
+        break
+    if back_btn is None:
+        raise AssertionError("vault unlock Back button not found")
+    for sib in back_btn.master.winfo_children():
+        if sib.winfo_class() != "TButton":
+            continue
+        if "Continue" in str(sib.cget("text")).replace("&", ""):
+            return sib
+    raise AssertionError("vault unlock Continue button not found")
 
 
 def _vault_unlock_entries(dialog):
@@ -157,7 +201,7 @@ def test_verify_vault_passphrase_all_plaintext_requires_matching_confirm(temp_ap
         tracker, "vault-secret-12", confirm_passphrase="vault-secret-13"
     )
     assert ok is False
-    assert msg == GENERIC_RESTORE_ERROR
+    assert msg == VAULT_PASSPHRASE_MISMATCH_MSG
     assert "vault-secret" not in (msg or "")
 
     ok, msg = verify_vault_passphrase_for_restore(tracker, "vault-secret-12")  # type: ignore[arg-type]
@@ -184,7 +228,7 @@ def test_plaintext_vault_unlock_mismatch_never_reencrypts_or_sets_session(
 
     with (
         patch("backup_dialog_ui.filedialog.askopenfilename", return_value=plain_zip),
-        patch("tkinter.messagebox.askyesno", return_value=True),
+        patch("backup_dialog_ui.messagebox.askyesno", return_value=True),
         patch("backup_dialog_ui.save_data_file") as mock_save,
     ):
         _find_button(dialog, "Restore from").invoke()
@@ -195,11 +239,7 @@ def test_plaintext_vault_unlock_mismatch_never_reencrypts_or_sets_session(
     assert vault_entry is not None
     assert vault_confirm is not None
 
-    vault_continue = next(
-        w
-        for w in vault_entry.master.winfo_children()
-        if w.winfo_class() == "TButton" and str(w.cget("text")) == "Continue"
-    )
+    vault_continue = _vault_continue_button(dialog)
     vault_entry.insert(0, "vault-secret-12")
     vault_confirm.insert(0, "vault-secret-13")
     vault_continue.invoke()
@@ -208,7 +248,7 @@ def test_plaintext_vault_unlock_mismatch_never_reencrypts_or_sets_session(
     assert tracker.vault_passphrase is None
     mock_save.assert_not_called()
     assert not is_encrypted_file(data_path)
-    errors = [t for t in _label_texts(dialog) if GENERIC_RESTORE_ERROR in t]
+    errors = [t for t in _label_texts(dialog) if VAULT_PASSPHRASE_MISMATCH_MSG in t]
     assert errors, _label_texts(dialog)
 
 
@@ -232,17 +272,13 @@ def test_plaintext_vault_unlock_matching_confirm_restores_and_encrypts(
     dialog = next(w for w in tk_root.winfo_children() if isinstance(w, tk.Toplevel))
 
     with patch("backup_dialog_ui.filedialog.askopenfilename", return_value=plain_zip):
-        with patch("tkinter.messagebox.askyesno", return_value=True):
+        with patch("backup_dialog_ui.messagebox.askyesno", return_value=True):
             _find_button(dialog, "Restore from").invoke()
             pump_tk(tk_root, 15)
 
     vault_entry, vault_confirm = _vault_unlock_entries(dialog)
     assert vault_confirm is not None
-    vault_continue = next(
-        w
-        for w in vault_entry.master.winfo_children()
-        if w.winfo_class() == "TButton" and str(w.cget("text")) == "Continue"
-    )
+    vault_continue = _vault_continue_button(dialog)
     vault_entry.insert(0, passphrase)
     vault_confirm.insert(0, passphrase)
     vault_continue.invoke()
@@ -284,7 +320,7 @@ def test_plaintext_legacy_restore_prompts_vault_before_apply(
     dialog = next(w for w in tk_root.winfo_children() if isinstance(w, tk.Toplevel))
 
     with patch("backup_dialog_ui.filedialog.askopenfilename", return_value=plain_zip):
-        with patch("tkinter.messagebox.askyesno", return_value=True):
+        with patch("backup_dialog_ui.messagebox.askyesno", return_value=True):
             _find_button(dialog, "Restore from").invoke()
             pump_tk(tk_root, 15)
 
@@ -297,11 +333,7 @@ def test_plaintext_legacy_restore_prompts_vault_before_apply(
     assert prior_marker in prior_text
     assert prior_marker in open(data_path, encoding="utf-8").read()
 
-    vault_continue = next(
-        w
-        for w in vault_entry.master.winfo_children()
-        if w.winfo_class() == "TButton" and str(w.cget("text")) == "Continue"
-    )
+    vault_continue = _vault_continue_button(dialog)
     vault_entry.insert(0, "wrong-pass-xx")
     vault_continue.invoke()
     pump_tk(tk_root, 10)
@@ -337,7 +369,7 @@ def test_plaintext_restore_no_success_leaves_journal_plain_when_vault_unlock_can
     dialog = next(w for w in tk_root.winfo_children() if isinstance(w, tk.Toplevel))
 
     with patch("backup_dialog_ui.filedialog.askopenfilename", return_value=str(plain_json)):
-        with patch("tkinter.messagebox.askyesno", return_value=True):
+        with patch("backup_dialog_ui.messagebox.askyesno", return_value=True):
             _find_button(dialog, "Restore from").invoke()
             pump_tk(tk_root, 15)
 
@@ -346,6 +378,134 @@ def test_plaintext_restore_no_success_leaves_journal_plain_when_vault_unlock_can
 
     assert not is_encrypted_file(data_path)
     assert banner._kind != "success"
+
+
+def _seed_tracker_and_profile(payload: dict) -> str:
+    data_path = _seed_data_file(payload)
+    profile_path = profile_journal_sync.resolved_active_profile_data_path()
+    os.makedirs(os.path.dirname(profile_path), exist_ok=True)
+    with open(profile_path, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle)
+    return data_path
+
+
+def _write_stale_journals(stale_marker: str) -> str:
+    profiles.set_active_profile("default")
+    stale = _minimal_v2_payload()
+    stale["entries"]["2000-01-01"] = {
+        "Emotional Wellbeing": {"rating": 1, "checklist": {}, "metrics": {}, "notes": stale_marker}
+    }
+    profile_path = profile_journal_sync.resolved_active_profile_data_path()
+    os.makedirs(os.path.dirname(profile_path), exist_ok=True)
+    data_path = paths.data_file()
+    os.makedirs(os.path.dirname(data_path), exist_ok=True)
+    for path in (profile_path, data_path):
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(stale, handle)
+    return data_path
+
+
+def test_legacy_json_restore_keeps_backup_notes_with_stale_profile(temp_app, tmp_path):
+    backup_marker = "legacy-json-backup-notes"
+    stale_marker = "stale-profile-before-restore"
+    vault_pw = "vault-secret-12"
+    legacy = tmp_path / "legacy.json"
+    integral_io.write_backup(_payload_with_marker(backup_marker), str(legacy))
+    data_path = _write_stale_journals(stale_marker)
+
+    integral_io.restore_backup_file(
+        str(legacy),
+        data_path,
+        creative_root=None,
+        fitness_db_path=None,
+        make_copy=True,
+    )
+    profile_journal_sync.sync_tracker_journal_to_active_profile(data_path)
+
+    tracker = type("T", (), {})()
+    tracker.settings = {"encryption_enabled": True}
+    tracker.vault_passphrase = vault_pw
+    tracker.data_path = data_path
+
+    ok, msg = reencrypt_restored_journal_from_disk(tracker)  # type: ignore[arg-type]
+    assert ok is True
+    assert msg is None
+    restored = load_data_file(data_path, vault_pw)
+    assert _day_notes(restored) == backup_marker
+    assert stale_marker not in json.dumps(restored)
+
+
+def test_legacy_json_wrong_sync_direction_restores_stale_notes(temp_app, tmp_path):
+    backup_marker = "legacy-json-backup-notes"
+    stale_marker = "stale-profile-before-restore"
+    legacy = tmp_path / "legacy.json"
+    integral_io.write_backup(_payload_with_marker(backup_marker), str(legacy))
+    data_path = _write_stale_journals(stale_marker)
+
+    integral_io.restore_backup_file(
+        str(legacy),
+        data_path,
+        creative_root=None,
+        fitness_db_path=None,
+        make_copy=True,
+    )
+    profile_journal_sync.sync_active_profile_journal_to_tracker(data_path)
+
+    with open(data_path, encoding="utf-8") as handle:
+        on_disk = json.load(handle)
+    assert _day_notes(on_disk, day="2000-01-01") == stale_marker
+    assert backup_marker not in json.dumps(on_disk)
+
+
+def test_profile_zip_restore_keeps_backup_notes_with_stale_profile(temp_app, tmp_path):
+    backup_marker = "zip-backup-notes"
+    stale_marker = "stale-profile-before-restore"
+    vault_pw = "vault-secret-12"
+    _seed_tracker_and_profile(_payload_with_marker(backup_marker))
+    plain_zip = str(tmp_path / "plain.zip")
+    backup.export_backup(plain_zip, profile_id="default")
+    data_path = _write_stale_journals(stale_marker)
+
+    backup.import_backup(plain_zip, merge_profiles=True)
+    profile_journal_sync.sync_active_profile_journal_to_tracker(data_path)
+
+    tracker = type("T", (), {})()
+    tracker.settings = {"encryption_enabled": True}
+    tracker.vault_passphrase = vault_pw
+    tracker.data_path = data_path
+
+    ok, msg = reencrypt_restored_journal_from_disk(tracker)  # type: ignore[arg-type]
+    assert ok is True
+    assert msg is None
+    restored = load_data_file(data_path, vault_pw)
+    assert _day_notes(restored) == backup_marker
+    assert stale_marker not in json.dumps(restored)
+
+
+def test_encrypted_backup_restore_keeps_backup_notes_with_stale_profile(temp_app, tmp_path):
+    backup_marker = "encrypted-backup-notes"
+    stale_marker = "stale-profile-before-restore"
+    vault_pw = "vault-secret-12"
+    container_pw = "twelve-char-pp"
+    _seed_tracker_and_profile(_payload_with_marker(backup_marker))
+    enc = str(tmp_path / "vault.enc")
+    backup.export_backup(enc, profile_id="default", passphrase=container_pw)
+    data_path = _write_stale_journals(stale_marker)
+
+    backup.import_backup(enc, merge_profiles=True, passphrase=container_pw)
+    profile_journal_sync.sync_active_profile_journal_to_tracker(data_path)
+
+    tracker = type("T", (), {})()
+    tracker.settings = {"encryption_enabled": True}
+    tracker.vault_passphrase = vault_pw
+    tracker.data_path = data_path
+
+    ok, msg = reencrypt_restored_journal_from_disk(tracker)  # type: ignore[arg-type]
+    assert ok is True
+    assert msg is None
+    restored = load_data_file(data_path, vault_pw)
+    assert _day_notes(restored) == backup_marker
+    assert stale_marker not in json.dumps(restored)
 
 
 def test_vault_unlocked_plaintext_restore_still_reencrypts(temp_app, tmp_path):
