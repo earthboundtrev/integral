@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import pathlib
 import tkinter as tk
 from tkinter import ttk
 from unittest.mock import patch
@@ -21,7 +22,10 @@ import storage
 from backup_dialog_ui import (
     GENERIC_RESTORE_ERROR,
     _journal_snapshot_path,
+    _move_unreadable_journal_aside,
+    _rollback_journal_copies,
     _rollback_journal_from_snapshot,
+    _snapshot_file_if_present,
     _snapshot_journal_if_present,
     sweep_pre_restore_journal_snaps_at_startup,
 )
@@ -106,7 +110,7 @@ def test_rollback_uses_replace_and_keeps_journal_on_replace_failure(temp_app, tm
         )
 
     with patch("backup_dialog_ui.os.replace", side_effect=PermissionError("locked")):
-        _rollback_journal_from_snapshot(data_path, snap)
+        assert _rollback_journal_from_snapshot(data_path, snap) is False
 
     with open(data_path, encoding="utf-8") as handle:
         on_disk = json.load(handle)
@@ -117,6 +121,107 @@ def test_rollback_uses_replace_and_keeps_journal_on_replace_failure(temp_app, tm
     msg = backup_dialog_ui._safe_user_error(PermissionError("C:\\secret\\data.json"), context="restore")
     assert "data.json" not in msg
     assert GENERIC_RESTORE_ERROR in msg or "Restore failed" in msg
+
+
+def test_rollback_copies_keeps_snap_then_startup_recovers(temp_app, tmp_path, monkeypatch):
+    data_path = str(tmp_path / "data.json")
+    prior = storage.empty_data()
+    prior["entries"]["2000-01-01"] = {
+        "Emotional Wellbeing": {"rating": 1, "checklist": {}, "metrics": {}, "notes": "from-snap"}
+    }
+    with open(data_path, "w", encoding="utf-8") as handle:
+        json.dump(prior, handle)
+    snap = _snapshot_journal_if_present(data_path)
+    with open(data_path, "w", encoding="utf-8") as handle:
+        json.dump({"entries": {}}, handle)
+
+    with patch("backup_dialog_ui.os.replace", side_effect=PermissionError("locked")):
+        assert _rollback_journal_copies(data_path, snap, None, None) is False
+    assert snap and os.path.isfile(snap)
+
+    os.remove(data_path)
+    with patch(
+        "vault.iter_journal_sweep_targets",
+        return_value=[(data_path, str(tmp_path))],
+    ):
+        sweep_pre_restore_journal_snaps_at_startup()
+
+    with open(data_path, encoding="utf-8") as handle:
+        loaded = json.load(handle)
+    assert loaded["entries"]["2000-01-01"]["Emotional Wellbeing"]["notes"] == "from-snap"
+
+
+def test_move_unreadable_aside_unique_within_same_second(tmp_path, monkeypatch):
+    from datetime import datetime as real_datetime
+
+    data_path = tmp_path / "data.json"
+    fixed = real_datetime(2026, 1, 1, 12, 0, 0, 123456)
+
+    class _FixedDatetime(real_datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed
+
+    monkeypatch.setattr(backup_dialog_ui, "datetime", _FixedDatetime)
+
+    data_path.write_text("first", encoding="utf-8")
+    aside1 = _move_unreadable_journal_aside(str(data_path))
+    assert aside1
+    data_path.write_text("second", encoding="utf-8")
+    aside2 = _move_unreadable_journal_aside(str(data_path))
+    assert aside2
+    assert aside1 != aside2
+    assert (tmp_path / os.path.basename(aside1)).read_text(encoding="utf-8") == "first"
+    assert (tmp_path / os.path.basename(aside2)).read_text(encoding="utf-8") == "second"
+
+
+def test_reencrypt_failure_restores_data_json_and_fitness_db_bytes(temp_app, tmp_path):
+    import profiles
+
+    profiles.set_active_profile("default")
+    data_path = paths.data_file()
+    prior_payload = _minimal_v2_payload()
+    prior_payload["entries"]["2000-01-01"] = {
+        "Emotional Wellbeing": {"rating": 4, "checklist": {}, "metrics": {}, "notes": "keep-json"}
+    }
+    _seed_data_file(prior_payload)
+    prior_json = pathlib.Path(data_path).read_bytes()
+
+    db_path = os.path.join(profiles.get_profile_dir("default"), "fitness.db")
+    os.makedirs(os.path.dirname(db_path), exist_ok=True)
+    prior_db = b"PRIOR-FITNESS-DB-277"
+    with open(db_path, "wb") as handle:
+        handle.write(prior_db)
+
+    journal_snap = _snapshot_journal_if_present(data_path)
+    fitness_snap = _snapshot_file_if_present(db_path)
+    fitness_rollbacks = [(db_path, fitness_snap)]
+
+    restored = storage.empty_data()
+    restored["entries"]["2099-01-01"] = {
+        "Emotional Wellbeing": {"rating": 9, "checklist": {}, "metrics": {}, "notes": "new"}
+    }
+    with open(data_path, "w", encoding="utf-8") as handle:
+        json.dump(restored, handle)
+    with open(db_path, "wb") as handle:
+        handle.write(b"NEW-FITNESS-DB-CONTENT")
+
+    with patch(
+        "backup_dialog_ui.reencrypt_restored_journal_from_disk",
+        return_value=(False, backup_dialog_ui.GENERIC_REENCRYPT_ERROR),
+    ):
+        backup_dialog_ui._rollback_journal_copies(
+            data_path,
+            journal_snap,
+            None,
+            None,
+            fitness_rollbacks=fitness_rollbacks,
+        )
+
+    assert pathlib.Path(data_path).read_bytes() == prior_json
+    assert pathlib.Path(db_path).read_bytes() == prior_db
+    if fitness_snap and os.path.isfile(fitness_snap):
+        os.remove(fitness_snap)
 
 
 def test_import_failure_restores_pre_restore_journal(temp_app, tmp_path, tk_root, immediate_threads):
@@ -173,7 +278,22 @@ def test_import_failure_restores_pre_restore_journal(temp_app, tmp_path, tk_root
     assert not os.path.isfile(_journal_snapshot_path(data_path))
 
 
-def test_close_blocked_during_restore_apply(temp_app, tmp_path, tk_root):
+@pytest.fixture
+def capture_restore_threads(monkeypatch):
+    import threading
+
+    started: list[threading.Thread] = []
+
+    class _CapturingThread(threading.Thread):
+        def start(self) -> None:
+            started.append(self)
+            super().start()
+
+    monkeypatch.setattr(backup_dialog_ui.threading, "Thread", _CapturingThread)
+    return started
+
+
+def test_close_blocked_during_restore_apply(temp_app, tmp_path, tk_root, capture_restore_threads):
     import threading
 
     enc = str(tmp_path / "slow-277.enc")
@@ -230,6 +350,8 @@ def test_close_blocked_during_restore_apply(temp_app, tmp_path, tk_root):
         lambda: GENERIC_RESTORE_ERROR in (tracker.ensure_status_banner()._message_var.get() or ""),
         timeout_s=5.0,
     )
+    for thread in capture_restore_threads:
+        thread.join(timeout=10.0)
     try:
         dialog.destroy()
     except tk.TclError:
