@@ -451,14 +451,24 @@ def test_show_backup_export_uses_banner_not_messagebox():
                         show_backup_dialog(tracker)
                         root.update()
                         backup_btn = None
+
+                        def _walk_buttons(parent):
+                            for child in parent.winfo_children():
+                                yield child
+                                yield from _walk_buttons(child)
+
                         for win in root.winfo_children():
-                            if isinstance(win, tk.Toplevel):
-                                for child in win.winfo_children():
-                                    if isinstance(child, ttk.Frame):
-                                        for btn in child.winfo_children():
-                                            if isinstance(btn, ttk.Button) and "Export" in btn.cget("text") and "Backup" in btn.cget("text"):
-                                                backup_btn = btn
-                                                break
+                            if not isinstance(win, tk.Toplevel):
+                                continue
+                            for node in _walk_buttons(win):
+                                if not isinstance(node, ttk.Button):
+                                    continue
+                                text = str(node.cget("text"))
+                                if "Export" in text and "Backup" in text:
+                                    backup_btn = node
+                                    break
+                            if backup_btn is not None:
+                                break
                         assert backup_btn is not None
                         with patch("tkinter.messagebox.showinfo") as show_info:
                             with patch("tkinter.messagebox.showerror") as show_error:

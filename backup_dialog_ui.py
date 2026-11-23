@@ -304,12 +304,21 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
     window.configure(bg=tracker.theme["bg"])
     window.transient(tracker.root)
 
+    footer = ttk.Frame(window)
+    footer.pack(side=tk.BOTTOM, fill=tk.X)
+
+    buttons = ttk.Frame(footer)
+    buttons.pack(side=tk.BOTTOM, fill=tk.X, padx=15, pady=12)
+
+    content = ttk.Frame(window)
+    content.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
     export_busy = {"active": False}
     restore_busy = {"active": False}
     plaintext_bar_visible = {"visible": False}
 
     desc = ttk.Label(
-        window,
+        content,
         text=(
             "Full backup zip from Export includes life data, creative/ manuscripts, and fitness.db "
             "when present. Encrypted backups use a separate .integral-backup.enc container.\n\n"
@@ -320,7 +329,7 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
     desc.pack(anchor="w", padx=15, pady=(12, 8))
 
     crypto_note = ttk.Label(
-        window,
+        content,
         text="",
         wraplength=520,
         foreground=tracker.theme.get("muted", "#6B7280"),
@@ -338,7 +347,7 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
             )
         )
 
-    options = ttk.Frame(window)
+    options = ttk.Frame(content)
     options.pack(fill=tk.X, padx=15, pady=(8, 4))
 
     encrypt_var = tk.BooleanVar(value=_vault_active(tracker) and CRYPTO_AVAILABLE)
@@ -355,7 +364,7 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
     if not _vault_unlocked(tracker):
         use_vault_chk.state(["disabled"])
 
-    pass_frame = ttk.Frame(window)
+    pass_frame = ttk.Frame(content)
     pass_row = ttk.Frame(pass_frame)
     pass_row.pack(fill=tk.X, pady=(0, 6))
     ttk.Label(pass_row, text="Passphrase").pack(side=tk.LEFT)
@@ -403,7 +412,7 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         foreground=tracker.theme.get("muted", "#6B7280"),
     )
 
-    plaintext_bar = ttk.Frame(window)
+    plaintext_bar = ttk.Frame(content)
     plaintext_msg = ttk.Label(
         plaintext_bar,
         text="This backup won't be encrypted. Anyone with the file can read your journal.",
@@ -422,20 +431,22 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         plaintext_bar.pack(fill=tk.X, padx=15, pady=(0, 8), after=options)
         plaintext_bar_visible["visible"] = True
 
-    restore_panel = ttk.Frame(window)
+    restore_panel = ttk.Frame(footer)
     restore_panel.pack(fill=tk.X, padx=15, pady=(4, 0))
     restore_pass_row = ttk.Frame(restore_panel)
     ttk.Label(restore_pass_row, text="Restore passphrase").pack(side=tk.LEFT)
-    restore_pass_entry = ttk.Entry(restore_pass_row, show="*", width=32)
-    restore_pass_entry.pack(side=tk.LEFT, padx=(8, 0))
+    restore_pass_entry = ttk.Entry(restore_pass_row, show="*", width=24)
+    restore_continue_btn = ttk.Button(restore_pass_row, text="Continue")
     restore_show = tk.BooleanVar(value=False)
 
     def toggle_restore_visibility() -> None:
         restore_pass_entry.configure(show="" if restore_show.get() else "*")
 
+    restore_continue_btn.pack(side=tk.RIGHT)
     ttk.Checkbutton(restore_pass_row, text="Show", variable=restore_show, command=toggle_restore_visibility).pack(
-        side=tk.LEFT, padx=(8, 0)
+        side=tk.RIGHT, padx=(8, 0)
     )
+    restore_pass_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(8, 8))
     restore_caps = make_inline_error_label(restore_panel, tracker.theme)
     restore_caps.configure(fg=tracker.theme.get("muted", "#6B7280"))
     restore_err = make_inline_error_label(restore_panel, tracker.theme)
@@ -448,7 +459,7 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         foreground=tracker.theme.get("muted", "#6B7280"),
     )
 
-    confirm_bar = ttk.Frame(window)
+    confirm_bar = ttk.Frame(footer)
     confirm_label = ttk.Label(confirm_bar, text="", wraplength=500)
     confirm_label.pack(anchor="w", pady=(0, 8))
     confirm_buttons = ttk.Frame(confirm_bar)
@@ -535,8 +546,6 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         confirm_err,
     )
 
-    buttons = ttk.Frame(window)
-    buttons.pack(fill=tk.X, padx=15, pady=12)
     export_btn = ttk.Button(buttons, text="Export &Backup…")
     export_btn.pack(side=tk.LEFT, padx=(0, 4))
     restore_btn = ttk.Button(buttons, text="&Restore from Backup…")
@@ -708,7 +717,7 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
 
     def show_restore_passphrase_ui() -> None:
         hide_restore_ui()
-        restore_panel.pack(fill=tk.X, padx=15, pady=(4, 0), before=buttons)
+        restore_panel.pack(side=tk.BOTTOM, fill=tk.X, padx=15, pady=(4, 0), before=buttons)
         restore_vault_note.pack(anchor="w", pady=(4, 0))
         restore_pass_row.pack(fill=tk.X)
         restore_pass_entry.focus_set()
@@ -720,7 +729,7 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         confirm_label.config(
             text=f"Replace your current data with the backup from {date_txt} ({profile_count} profiles)?"
         )
-        confirm_bar.pack(fill=tk.X, padx=15, pady=(8, 0), before=buttons)
+        confirm_bar.pack(side=tk.BOTTOM, fill=tk.X, padx=15, pady=(8, 0), before=buttons)
         confirm_buttons.pack(anchor="w")
         cancel_confirm_btn.focus_set()
 
@@ -934,9 +943,7 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
 
     restore_pass_entry.bind("<Return>", _restore_pass_return, add="+")
     restore_pass_entry.bind("<KeyPress-Return>", _restore_pass_return, add="+")
-    ttk.Button(restore_pass_row, text="Continue", command=submit_restore_passphrase).pack(
-        side=tk.LEFT, padx=(8, 0)
-    )
+    restore_continue_btn.configure(command=submit_restore_passphrase)
 
     def legacy_restore(path: str) -> None:
         if not messagebox.askyesno(
