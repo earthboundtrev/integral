@@ -21,6 +21,7 @@ import profiles
 import storage
 from backup_dialog_ui import (
     GENERIC_RESTORE_ERROR,
+    GENERIC_RESTORE_PENDING_ROLLBACK_MSG,
     _artifact_has_pending_rollback,
     _journal_snapshot_path,
     _move_unreadable_journal_aside,
@@ -29,6 +30,7 @@ from backup_dialog_ui import (
     _rollback_pending_marker_path,
     _snapshot_file_if_present,
     _snapshot_journal_if_present,
+    restore_blocked_by_pending_rollback,
     sweep_pre_restore_journal_snaps_at_startup,
 )
 from tests.conftest import pump_tk, pump_tk_until
@@ -189,8 +191,106 @@ def test_failed_rollback_with_valid_live_json_recovers_via_marker(tmp_path, monk
     with open(data_path, encoding="utf-8") as handle:
         loaded = json.load(handle)
     assert loaded["entries"]["2000-01-01"]["Emotional Wellbeing"]["notes"] == "pre-restore"
+    aside_files = list(pathlib.Path(container).glob("data.json.rolled-back-*"))
+    assert len(aside_files) == 1
+    with open(aside_files[0], encoding="utf-8") as handle:
+        aside = json.load(handle)
+    assert aside["entries"]["2099-08-01"]["Emotional Wellbeing"]["notes"] == "from-backup"
     assert not os.path.isfile(snap)
     assert not os.path.isfile(_rollback_pending_marker_path(container))
+
+
+def test_marker_apply_preserves_newer_live_in_rolled_back_aside(tmp_path, monkeypatch):
+    data_path = tmp_path / "data.json"
+    container = str(tmp_path)
+    prior = storage.empty_data()
+    prior["entries"]["2000-01-01"] = {
+        "Emotional Wellbeing": {"rating": 1, "checklist": {}, "metrics": {}, "notes": "snap-prior"}
+    }
+    with open(data_path, "w", encoding="utf-8") as handle:
+        json.dump(prior, handle)
+    snap_path = _snapshot_journal_if_present(str(data_path))
+    newer = _minimal_v2_payload()
+    newer["entries"]["2099-12-01"] = {
+        "Emotional Wellbeing": {"rating": 5, "checklist": {}, "metrics": {}, "notes": "newer-after-save"}
+    }
+    with open(data_path, "w", encoding="utf-8") as handle:
+        json.dump(newer, handle)
+
+    marker_path = _rollback_pending_marker_path(container)
+    with open(marker_path, "w", encoding="utf-8") as handle:
+        json.dump({"version": 1, "artifacts": ["data.json"]}, handle)
+
+    with patch(
+        "vault.iter_journal_sweep_targets",
+        return_value=[(str(data_path), container)],
+    ):
+        sweep_pre_restore_journal_snaps_at_startup()
+
+    with open(data_path, encoding="utf-8") as handle:
+        live = json.load(handle)
+    assert live["entries"]["2000-01-01"]["Emotional Wellbeing"]["notes"] == "snap-prior"
+    aside_files = list(tmp_path.glob("data.json.rolled-back-*"))
+    assert len(aside_files) == 1
+    with open(aside_files[0], encoding="utf-8") as handle:
+        aside = json.load(handle)
+    assert aside["entries"]["2099-12-01"]["Emotional Wellbeing"]["notes"] == "newer-after-save"
+    assert not pathlib.Path(snap_path).exists()
+
+
+def test_pending_marker_blocks_restore_and_preserves_snap_bytes(tmp_path, monkeypatch):
+    data_path = tmp_path / "data.json"
+    container = str(tmp_path)
+    prior = storage.empty_data()
+    prior["entries"]["2000-01-01"] = {
+        "Emotional Wellbeing": {"rating": 1, "checklist": {}, "metrics": {}, "notes": "marker-snap"}
+    }
+    with open(data_path, "w", encoding="utf-8") as handle:
+        json.dump(prior, handle)
+    snap_path = _snapshot_journal_if_present(str(data_path))
+    snap_bytes = pathlib.Path(snap_path).read_bytes()
+
+    with open(data_path, "w", encoding="utf-8") as handle:
+        json.dump(_minimal_v2_payload(), handle)
+
+    marker_path = _rollback_pending_marker_path(container)
+    with open(marker_path, "w", encoding="utf-8") as handle:
+        json.dump({"version": 1, "artifacts": ["data.json"]}, handle)
+
+    with patch(
+        "vault.iter_journal_sweep_targets",
+        return_value=[(str(data_path), container)],
+    ):
+        assert restore_blocked_by_pending_rollback()
+
+    reused = _snapshot_journal_if_present(str(data_path))
+    assert reused == snap_path
+    assert pathlib.Path(snap_path).read_bytes() == snap_bytes
+
+
+def test_guard_restore_shows_plain_message(temp_app, tk_root):
+    data_path = paths.data_file()
+    container = os.path.dirname(data_path)
+    marker_path = _rollback_pending_marker_path(container)
+    os.makedirs(container, exist_ok=True)
+
+    _seed_data_file(_minimal_v2_payload())
+    tracker = personal_dev_tracker.PersonalDevelopmentTracker(tk_root)
+    banner = tracker.ensure_status_banner()
+    with open(marker_path, "w", encoding="utf-8") as handle:
+        json.dump({"version": 1, "artifacts": ["data.json"]}, handle)
+
+    with patch(
+        "vault.iter_journal_sweep_targets",
+        return_value=[(data_path, container)],
+    ):
+        assert backup_dialog_ui._guard_restore_against_pending_rollback(tracker) is False
+
+    assert GENERIC_RESTORE_PENDING_ROLLBACK_MSG in (banner._message_var.get() or "")
+    try:
+        os.remove(marker_path)
+    except OSError:
+        pass
 
 
 def test_rollback_copies_keeps_snap_then_startup_recovers(temp_app, tmp_path, monkeypatch):

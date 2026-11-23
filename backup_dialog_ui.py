@@ -54,6 +54,10 @@ GENERIC_REENCRYPT_ERROR = (
 _STARTUP_RESTORE_SNAP_DEFERRED_WARNING = (
     "A leftover restore safety copy could not be applied automatically."
 )
+GENERIC_RESTORE_PENDING_ROLLBACK_MSG = (
+    "A previous restore recovery is still pending. Restart the app to finish recovery, "
+    "then try restore again."
+)
 _ROLLBACK_PENDING_MARKER = ".integral-restore-rollback-pending.json"
 _ROLLBACK_MARKER_VERSION = 1
 _SQLITE_HEADER = b"SQLite format 3\x00"
@@ -106,11 +110,7 @@ def _journal_snapshot_path(data_path: str) -> str:
 
 
 def _snapshot_journal_if_present(data_path: str) -> str | None:
-    if os.path.isfile(data_path):
-        snap = _journal_snapshot_path(data_path)
-        shutil.copy2(data_path, snap)
-        return snap
-    return None
+    return _snapshot_file_if_present(data_path)
 
 
 def _remove_snapshot(snap: str | None) -> None:
@@ -163,6 +163,53 @@ def _restore_snap_is_readable(snap_path: str) -> bool:
         return isinstance(data, dict) and not data.get("integral_encrypted")
     except (json.JSONDecodeError, OSError, TypeError):
         return False
+
+
+def _unique_rolled_back_aside_path(live_path: str, stamp: str) -> str:
+    base = f"{live_path}.rolled-back-{stamp}"
+    aside = base
+    n = 0
+    while os.path.lexists(aside):
+        n += 1
+        aside = f"{base}-{n}"
+    return aside
+
+
+def _move_live_aside_for_marker_apply(live_path: str) -> str | None:
+    if not os.path.isfile(live_path):
+        return None
+    stamp = datetime.now().strftime("%Y%m%dT%H%M%S%f")
+    aside = _unique_rolled_back_aside_path(live_path, stamp)
+    try:
+        with _save_lock:
+            os.replace(live_path, aside)
+        return aside
+    except OSError:
+        return None
+
+
+def _restore_live_from_rolled_back_aside(aside_path: str, live_path: str) -> None:
+    try:
+        with _save_lock:
+            os.replace(aside_path, live_path)
+    except OSError:
+        pass
+
+
+def restore_blocked_by_pending_rollback() -> bool:
+    from vault import iter_journal_sweep_targets
+
+    for _data_path, container_dir in iter_journal_sweep_targets():
+        if _read_pending_rollback_artifacts(container_dir):
+            return True
+    return False
+
+
+def _guard_restore_against_pending_rollback(tracker: PersonalDevelopmentTracker) -> bool:
+    if restore_blocked_by_pending_rollback():
+        tracker.ensure_status_banner().show_error(GENERIC_RESTORE_PENDING_ROLLBACK_MSG)
+        return False
+    return True
 
 
 def _unique_unreadable_aside_path(data_path: str, stamp: str) -> str:
@@ -343,9 +390,15 @@ def _apply_pending_rollback_markers(
                 snap_path, live_path, container_dir, basename=basename
             ):
                 continue
+            aside = _move_live_aside_for_marker_apply(live_path)
+            if aside is None and os.path.isfile(live_path):
+                _log_startup_restore_snap_deferred()
+                continue
             if _replace_snap_onto_live(snap_path, live_path):
                 remaining.discard(basename)
             else:
+                if aside:
+                    _restore_live_from_rolled_back_aside(aside, live_path)
                 _log_startup_restore_snap_deferred()
         _write_pending_rollback_artifacts(container_dir, remaining)
 
@@ -447,9 +500,15 @@ def sweep_pre_restore_journal_snaps_at_startup() -> None:
 
 
 def _snapshot_file_if_present(artifact_path: str | None) -> str | None:
-    if not artifact_path or not os.path.isfile(artifact_path):
+    if not artifact_path:
         return None
+    container_dir = os.path.dirname(artifact_path) or "."
+    basename = os.path.basename(artifact_path)
     snap = _pre_restore_snap_path(artifact_path)
+    if _artifact_has_pending_rollback(container_dir, basename) and os.path.isfile(snap):
+        return snap
+    if not os.path.isfile(artifact_path):
+        return None
     try:
         with _save_lock:
             shutil.copy2(artifact_path, snap)
@@ -1251,6 +1310,8 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         passphrase = restore_state.get("passphrase")
         if not path or not passphrase:
             return
+        if not _guard_restore_against_pending_rollback(tracker):
+            return
         if not prepare_restore_apply(tracker):
             tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
             return
@@ -1391,6 +1452,8 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
     restore_continue_btn.configure(command=submit_restore_passphrase)
 
     def legacy_restore(path: str) -> None:
+        if not _guard_restore_against_pending_rollback(tracker):
+            return
         if not messagebox.askyesno(
             "Confirm restore",
             "This replaces your current journal and Writing Project documents with the backup. Continue?",
@@ -1437,6 +1500,8 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
             tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
 
     def profile_zip_restore(path: str) -> None:
+        if not _guard_restore_against_pending_rollback(tracker):
+            return
         try:
             manifest = backup.validate_backup(path)
         except (OSError, ValueError):
