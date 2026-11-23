@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gc
 import os
 import tempfile
 import unittest
@@ -17,6 +18,16 @@ def _temp_repo() -> tuple[FitnessRepository, str]:
     repo = FitnessRepository(db_path=handle.name)
     repo.initialize()
     return repo, handle.name
+
+
+def _dispose_temp_repo(repo: FitnessRepository | None, path: str) -> None:
+    if repo is not None:
+        del repo
+    gc.collect()
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
 
 
 def _session_with_set(repo: FitnessRepository) -> WorkoutSession:
@@ -89,7 +100,7 @@ class TestWorkoutHistorySingleFooter290(unittest.TestCase):
         finally:
             view.destroy()
             root.destroy()
-            os.unlink(path)
+            _dispose_temp_repo(repo, path)
 
     def test_repeat_not_packed_when_hook_missing(self):
         try:
@@ -117,7 +128,7 @@ class TestWorkoutHistorySingleFooter290(unittest.TestCase):
         finally:
             view.destroy()
             root.destroy()
-            os.unlink(path)
+            _dispose_temp_repo(repo, path)
 
 
 class TestWorkoutHistoryRepeatWhileEditing289(unittest.TestCase):
@@ -136,6 +147,7 @@ class TestWorkoutHistoryRepeatWhileEditing289(unittest.TestCase):
 
     def _open_view(self, repeat_hook: MagicMock):
         repo, self._path = _temp_repo()
+        self._repo = repo
         session = _session_with_set(repo)
         root = self.tk.Tk()
         root.withdraw()
@@ -153,10 +165,9 @@ class TestWorkoutHistoryRepeatWhileEditing289(unittest.TestCase):
     def tearDown(self):
         path = getattr(self, "_path", None)
         if path:
-            try:
-                os.unlink(path)
-            except OSError:
-                pass
+            _dispose_temp_repo(getattr(self, "_repo", None), path)
+            self._path = None
+            self._repo = None
 
     def test_repeat_hook_blocked_while_editing_button_and_alt_r(self):
         repeat_hook = MagicMock()
