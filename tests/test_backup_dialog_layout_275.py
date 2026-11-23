@@ -25,6 +25,7 @@ from tests.test_backup_dialog_pr275_ui import _find_button, _label_texts, _walk
 from tests.test_data_payload_registry_177 import _minimal_v2_payload, _seed_data_file
 
 _DIALOG_GEOMETRIES = ("580x520", "560x420")
+_DIALOG_SCALINGS = (1.0, 1.5)
 
 
 @pytest.fixture(autouse=True)
@@ -89,6 +90,12 @@ def _dialog_client_size(dialog: tk.Toplevel) -> tuple[int, int]:
     except (ValueError, tk.TclError):
         pass
     return ww, wh
+
+
+def _set_tk_scaling(tk_root: tk.Misc, scaling: float) -> None:
+    tk_root.tk.call("tk", "scaling", scaling)
+    tk_root.update_idletasks()
+    pump_tk(tk_root, 8)
 
 
 def _apply_geometry(tk_root, dialog: tk.Toplevel, geometry: str) -> None:
@@ -170,6 +177,92 @@ def _mapped_inside_window(widget: tk.Misc, window: tk.Misc) -> bool:
     if _gh_windows_exe_ci() and cast(tk.Toplevel, window).winfo_width() < 100:
         return y_ok
     return x_ok and y_ok
+
+
+def _set_encrypt_passphrase_visible(dialog: tk.Toplevel, *, vault_on: bool) -> None:
+    if vault_on:
+        return
+    for w in _walk(dialog):
+        if w.winfo_class() != "TCheckbutton":
+            continue
+        text = str(w.cget("text")).replace("&", "")
+        if "Encrypt with passphrase" not in text:
+            continue
+        if w.instate(["selected"]):
+            return
+        w.invoke()
+        return
+    pytest.fail("Encrypt with passphrase checkbox not found")
+
+
+def _main_footer_buttons(dialog: tk.Toplevel) -> list[tk.Misc]:
+    return [
+        _find_button(dialog, "Export"),
+        _find_button(dialog, "Restore from"),
+        _find_button(dialog, "Close"),
+    ]
+
+
+def _assert_button_width_at_least_reqwidth(btn: tk.Misc) -> None:
+    btn.update_idletasks()
+    req = btn.winfo_reqwidth()
+    width = btn.winfo_width()
+    if _gh_windows_exe_ci() and width < 10:
+        assert _widget_placed_in_layout(btn)
+        assert req > 0
+        return
+    assert width >= req, (
+        f"{str(btn.cget('text')).replace('&', '')!r}: width {width} < reqwidth {req}"
+    )
+
+
+def _passphrase_export_entries(dialog: tk.Toplevel) -> list[ttk.Entry]:
+    found: list[ttk.Entry] = []
+    for w in _walk(dialog):
+        if not isinstance(w, ttk.Entry):
+            continue
+        for sib in w.master.winfo_children():
+            if not isinstance(sib, ttk.Label):
+                continue
+            label = str(sib.cget("text"))
+            if label in ("Passphrase", "Confirm passphrase"):
+                found.append(w)
+                break
+    return found
+
+
+def _footer_top_y_in_dialog(dialog: tk.Toplevel) -> int:
+    close_btn = _find_button(dialog, "Close")
+    footer: tk.Misc = close_btn
+    for _ in range(6):
+        if isinstance(footer.master, tk.Toplevel):
+            break
+        footer = footer.master
+    dialog.update_idletasks()
+    return _coords_in_ancestor(footer, dialog)[1]
+
+
+def _entry_bottom_y_in_dialog(entry: ttk.Entry, dialog: tk.Toplevel) -> int:
+    dialog.update_idletasks()
+    entry.update_idletasks()
+    rel_y, _, _, eh = _coords_in_ancestor(entry, dialog)
+    return rel_y + max(eh, entry.winfo_reqheight())
+
+
+def _assert_no_footer_overlap_passphrase_fields(dialog: tk.Toplevel) -> None:
+    entries = _passphrase_export_entries(dialog)
+    assert entries, "expected export passphrase entries to be visible"
+    footer_top = _footer_top_y_in_dialog(dialog)
+    if _gh_windows_exe_ci() and cast(tk.Toplevel, dialog).winfo_width() < 100:
+        for entry in entries:
+            assert _widget_placed_in_layout(entry)
+        return
+    margin = 4
+    for entry in entries:
+        bottom = _entry_bottom_y_in_dialog(entry, dialog)
+        assert bottom <= footer_top + margin, (
+            f"passphrase field overlaps footer (bottom={bottom}, footer_top={footer_top})"
+        )
 
 
 def _continue_button_text_width(btn: tk.Misc) -> int:
@@ -270,3 +363,57 @@ def test_restore_cancel_visible_with_vault_at_dialog_sizes(
     pump_tk(tk_root, 8)
     _assert_widget_visible_in_dialog(restore_btn, dialog)
     _assert_widget_visible_in_dialog(cancel_btn, dialog)
+
+
+@pytest.mark.parametrize("geometry", _DIALOG_GEOMETRIES)
+@pytest.mark.parametrize("scaling", _DIALOG_SCALINGS)
+@pytest.mark.parametrize("vault_on", (False, True))
+def test_footer_buttons_width_at_least_reqwidth(tk_root, temp_app, geometry, scaling, vault_on):
+    _seed_data_file(_minimal_v2_payload())
+    with patch("personal_dev_tracker.prompt_vault_unlock") as unlock:
+
+        def _unlock(tr):
+            tr.vault_passphrase = "twelve-char-pp"
+            return True
+
+        unlock.side_effect = _unlock
+        tracker = personal_dev_tracker.PersonalDevelopmentTracker(tk_root)
+    if vault_on:
+        tracker.settings["encryption_enabled"] = True
+        tracker.vault_passphrase = "twelve-char-pp"
+    _set_tk_scaling(tk_root, scaling)
+    dialog = _dialog(tk_root, tracker)
+    _apply_geometry(tk_root, dialog, geometry)
+    _set_encrypt_passphrase_visible(dialog, vault_on=vault_on)
+    pump_tk(tk_root, 15)
+    export_btn = _find_button(dialog, "Export")
+    close_btn = _find_button(dialog, "Close")
+    assert close_btn.master is not export_btn.master, "Close must not share a row with Export"
+    for btn in _main_footer_buttons(dialog):
+        _assert_button_width_at_least_reqwidth(btn)
+
+
+@pytest.mark.parametrize("geometry", _DIALOG_GEOMETRIES)
+@pytest.mark.parametrize("scaling", _DIALOG_SCALINGS)
+@pytest.mark.parametrize("vault_on", (False, True))
+def test_footer_does_not_overlap_export_passphrase_fields(
+    tk_root, temp_app, geometry, scaling, vault_on,
+):
+    _seed_data_file(_minimal_v2_payload())
+    with patch("personal_dev_tracker.prompt_vault_unlock") as unlock:
+
+        def _unlock(tr):
+            tr.vault_passphrase = "twelve-char-pp"
+            return True
+
+        unlock.side_effect = _unlock
+        tracker = personal_dev_tracker.PersonalDevelopmentTracker(tk_root)
+    if vault_on:
+        tracker.settings["encryption_enabled"] = True
+        tracker.vault_passphrase = "twelve-char-pp"
+    _set_tk_scaling(tk_root, scaling)
+    dialog = _dialog(tk_root, tracker)
+    _apply_geometry(tk_root, dialog, geometry)
+    _set_encrypt_passphrase_visible(dialog, vault_on=vault_on)
+    pump_tk(tk_root, 15)
+    _assert_no_footer_overlap_passphrase_fields(dialog)

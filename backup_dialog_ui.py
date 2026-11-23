@@ -26,6 +26,8 @@ from inline_validation import (
     wire_focusout_validation,
 )
 from paths import APP_VERSION, creative_projects_dir
+import ui_scroll
+from ui_scroll import refresh_scroll_region
 from vault import (
     CRYPTO_AVAILABLE,
     PassphraseRequiredError,
@@ -309,9 +311,21 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
 
     buttons = ttk.Frame(footer)
     buttons.pack(side=tk.BOTTOM, fill=tk.X, padx=15, pady=12)
+    action_row = ttk.Frame(buttons)
+    action_row.pack(fill=tk.X)
+    close_row = ttk.Frame(buttons)
+    close_row.pack(fill=tk.X, pady=(6, 0))
 
-    content = ttk.Frame(window)
-    content.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+    scroll_outer, content, scroll_canvas = ui_scroll.make_scrollable_frame(
+        window, theme=tracker.theme, chrome_bg=tracker.theme["bg"]
+    )
+    scroll_outer.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
+    def refresh_dialog_scroll() -> None:
+        try:
+            refresh_scroll_region(scroll_canvas, content)
+        except tk.TclError:
+            pass
 
     export_busy = {"active": False}
     restore_busy = {"active": False}
@@ -425,11 +439,13 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
     def hide_plaintext_bar() -> None:
         plaintext_bar.pack_forget()
         plaintext_bar_visible["visible"] = False
+        window.after_idle(refresh_dialog_scroll)
 
     def show_plaintext_bar() -> None:
         hide_plaintext_bar()
         plaintext_bar.pack(fill=tk.X, padx=15, pady=(0, 8), after=options)
         plaintext_bar_visible["visible"] = True
+        window.after_idle(refresh_dialog_scroll)
 
     restore_panel = ttk.Frame(footer)
     restore_panel.pack(fill=tk.X, padx=15, pady=(4, 0))
@@ -480,6 +496,7 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         else:
             pass_frame.pack_forget()
             vault_export_note.pack_forget()
+        window.after_idle(refresh_dialog_scroll)
 
     def on_encrypt_toggle(*_args: object) -> None:
         if not encrypt_var.get():
@@ -546,12 +563,12 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         confirm_err,
     )
 
-    export_btn = ttk.Button(buttons, text="Export &Backup…")
+    export_btn = ttk.Button(action_row, text="Export &Backup…")
     export_btn.pack(side=tk.LEFT, padx=(0, 4))
-    restore_btn = ttk.Button(buttons, text="&Restore from Backup…")
+    restore_btn = ttk.Button(action_row, text="&Restore from Backup…")
     restore_btn.pack(side=tk.LEFT, padx=4)
-    close_btn = ttk.Button(buttons, text="&Close")
-    close_btn.pack(side=tk.RIGHT)
+    close_btn = ttk.Button(close_row, text="&Close")
+    close_btn.pack(anchor=tk.E)
 
     busy_host = ttk.Frame(window)
     busy_host.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
@@ -714,6 +731,7 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
     def hide_restore_ui() -> None:
         restore_panel.pack_forget()
         confirm_bar.pack_forget()
+        window.after_idle(refresh_dialog_scroll)
 
     def show_restore_passphrase_ui() -> None:
         hide_restore_ui()
@@ -721,6 +739,7 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         restore_vault_note.pack(anchor="w", pady=(4, 0))
         restore_pass_row.pack(fill=tk.X)
         restore_pass_entry.focus_set()
+        window.after_idle(refresh_dialog_scroll)
 
     def show_confirm_bar(manifest: dict) -> None:
         restore_panel.pack_forget()
@@ -732,6 +751,7 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         confirm_bar.pack(side=tk.BOTTOM, fill=tk.X, padx=15, pady=(8, 0), before=buttons)
         confirm_buttons.pack(anchor="w")
         cancel_confirm_btn.focus_set()
+        window.after_idle(refresh_dialog_scroll)
 
     confirm_restore_btn = ttk.Button(confirm_buttons, text="Restore")
     cancel_confirm_btn = ttk.Button(confirm_buttons, text="Cancel")
