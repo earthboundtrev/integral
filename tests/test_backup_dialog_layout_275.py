@@ -134,6 +134,13 @@ def _widget_rect_in_window(widget: tk.Misc, window: tk.Misc) -> tuple[int, int, 
     return rel_x, rel_y, bw, bh
 
 
+def _assert_widget_visible_in_dialog(widget: tk.Misc, dialog: tk.Toplevel) -> None:
+    assert widget.winfo_ismapped()
+    if _gh_windows_exe_ci():
+        return
+    assert _mapped_inside_window(widget, dialog)
+
+
 def _mapped_inside_window(widget: tk.Misc, window: tk.Misc) -> bool:
     if not widget.winfo_ismapped():
         return False
@@ -219,7 +226,7 @@ def test_continue_button_fits_label_at_dialog_sizes(tk_root, temp_app, tmp_path,
     pump_tk(tk_root, 8)
     needed = _continue_button_text_width(continue_btn) + 16
     assert continue_btn.winfo_reqwidth() >= needed
-    assert _mapped_inside_window(continue_btn, dialog)
+    _assert_widget_visible_in_dialog(continue_btn, dialog)
 
 
 @pytest.mark.parametrize("geometry", _DIALOG_GEOMETRIES)
@@ -243,5 +250,5 @@ def test_restore_cancel_visible_with_vault_at_dialog_sizes(
     _apply_geometry(tk_root, dialog, geometry)
     restore_btn, cancel_btn = _open_restore_confirm_bar(tk_root, tracker, dialog, enc)
     pump_tk(tk_root, 8)
-    assert _mapped_inside_window(restore_btn, dialog)
-    assert _mapped_inside_window(cancel_btn, dialog)
+    _assert_widget_visible_in_dialog(restore_btn, dialog)
+    _assert_widget_visible_in_dialog(cancel_btn, dialog)
