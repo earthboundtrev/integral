@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import tempfile
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from progression.db import FitnessRepository
 from progression.models import Exercise, WorkoutSession, WorkoutSet
@@ -196,9 +196,12 @@ class TestWorkoutHistoryRepeatWhileEditing289(unittest.TestCase):
             root.update_idletasks()
             repeat_hook.reset_mock()
 
-            result = view._on_alt_repeat_session()
-            self.assertEqual(result, "break")
-            repeat_hook.assert_not_called()
+            with patch.object(view._status_banner, "show_info") as show_info:
+                result = view._on_alt_repeat_session()
+                self.assertEqual(result, "break")
+                repeat_hook.assert_not_called()
+                show_info.assert_called_once()
+                self.assertIn("Finish or cancel", show_info.call_args[0][0])
         finally:
             view.destroy()
             root.destroy()

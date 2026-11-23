@@ -28,6 +28,8 @@ from workout_history_sparkline import (
 )
 
 _DETAIL_FOOTER_HINT_MIN_WIDTH = 560
+_REPEAT_EDIT_GUARD_MSG = "Finish or cancel editing first."
+_REPEAT_BLOCKED_INFO_MS = 4000
 
 
 def format_date_display(iso_date: str) -> str:
@@ -198,6 +200,7 @@ class WorkoutHistoryView:
         self._detail_frame: ttk.Frame | None = None
         self._alt_r_hint: ttk.Label | None = None
         self._alt_e_hint: ttk.Label | None = None
+        self._repeat_edit_guard_label: ttk.Label | None = None
         self.repeat_session_btn: ttk.Button | None = None
         
         self._build_ui()
@@ -284,9 +287,21 @@ class WorkoutHistoryView:
                 font=("Helvetica", 9),
             )
             self._alt_r_hint.pack(side=tk.LEFT, padx=(6, 0))
+            self._repeat_edit_guard_label = ttk.Label(
+                repeat_group,
+                text=_REPEAT_EDIT_GUARD_MSG,
+                style="OnSurfaceMuted.TLabel",
+                font=("Helvetica", 9),
+            )
 
         edit_group = ttk.Frame(self.detail_actions, style="Surface.TFrame")
         edit_group.pack(side=tk.RIGHT)
+        self.edit_btn = ttk.Button(
+            edit_group,
+            text="Edit",
+            command=self._enter_edit_mode,
+        )
+        self.edit_btn.pack(side=tk.RIGHT)
         self._alt_e_hint = ttk.Label(
             edit_group,
             text="Alt+E",
@@ -294,12 +309,6 @@ class WorkoutHistoryView:
             font=("Helvetica", 9),
         )
         self._alt_e_hint.pack(side=tk.RIGHT, padx=(0, 6))
-        self.edit_btn = ttk.Button(
-            edit_group,
-            text="Edit",
-            command=self._enter_edit_mode,
-        )
-        self.edit_btn.pack(side=tk.RIGHT)
 
         self.detail_stack = ttk.Frame(detail_frame, style="Surface.TFrame")
         self.detail_stack.pack(fill=tk.BOTH, expand=True)
@@ -686,10 +695,29 @@ class WorkoutHistoryView:
             if hint is None:
                 continue
             if show_hints:
-                if not hint.winfo_ismapped():
-                    hint.pack(side=side, padx=padx)
-            elif hint.winfo_ismapped():
+                if hint.winfo_manager() != "pack":
+                    kwargs: dict = {"side": side, "padx": padx}
+                    if hint is self._alt_e_hint:
+                        kwargs["before"] = self.edit_btn
+                    hint.pack(**kwargs)
+            elif hint.winfo_manager() == "pack":
                 hint.pack_forget()
+
+    def _show_repeat_blocked_notice(self) -> None:
+        self._status_banner.show_info(
+            _REPEAT_EDIT_GUARD_MSG,
+            auto_hide_ms=_REPEAT_BLOCKED_INFO_MS,
+        )
+
+    def _set_repeat_edit_guard_visible(self, visible: bool) -> None:
+        label = self._repeat_edit_guard_label
+        if label is None:
+            return
+        if visible:
+            if label.winfo_manager() != "pack":
+                label.pack(side=tk.LEFT, padx=(8, 0))
+        elif label.winfo_manager() == "pack":
+            label.pack_forget()
 
     def _invoke_repeat_session(self) -> None:
         if self._session_editing:
@@ -700,6 +728,7 @@ class WorkoutHistoryView:
 
     def _on_alt_repeat_session(self, _event=None) -> str:
         if self._session_editing:
+            self._show_repeat_blocked_notice()
             return "break"
         if self.selected_session and self.on_repeat_session:
             self.on_repeat_session(self.selected_session.id)
@@ -723,6 +752,7 @@ class WorkoutHistoryView:
         self.edit_btn.state(["disabled"])
         if self.repeat_session_btn is not None:
             self.repeat_session_btn.state(["disabled"])
+        self._set_repeat_edit_guard_visible(True)
         self.detail_text.pack_forget()
         if self._edit_panel is not None:
             self._edit_panel.destroy()
@@ -745,6 +775,7 @@ class WorkoutHistoryView:
         self.edit_btn.state(["!disabled"])
         if self.repeat_session_btn is not None:
             self.repeat_session_btn.state(["!disabled"])
+        self._set_repeat_edit_guard_visible(False)
         if self._edit_panel is not None:
             self._edit_panel.unload_shortcuts()
             self._edit_panel.destroy()
@@ -1206,7 +1237,10 @@ class WorkoutHistoryView:
             except Exception:
                 pass
         for top, seq, funcid in self._alt_r_bindings:
-            unbind_all_func(top, seq, funcid)
+            try:
+                top.unbind(seq, funcid)
+            except Exception:
+                pass
         self._alt_r_bindings.clear()
         if self._conn:
             try:
