@@ -164,10 +164,14 @@ class TestWorkoutHistoryFooterWidth290(unittest.TestCase):
             view._apply_detail_footer_hint_visibility(900)
             root.update_idletasks()
             self.assertEqual(view._alt_e_hint.winfo_manager(), "pack")
-            self.assertLess(
-                view._alt_e_hint.winfo_x(),
-                view.edit_btn.winfo_x(),
-                "Alt+E hint must sit to the left of the Edit button after re-show",
+            edit_group = view.edit_btn.master
+            slaves = list(edit_group.pack_slaves())
+            self.assertIn(view.edit_btn, slaves)
+            self.assertIn(view._alt_e_hint, slaves)
+            self.assertGreater(
+                slaves.index(view._alt_e_hint),
+                slaves.index(view.edit_btn),
+                "Alt+E hint must pack to the left of Edit after re-show (side=RIGHT)",
             )
         finally:
             view.destroy()
