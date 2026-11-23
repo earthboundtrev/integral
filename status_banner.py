@@ -115,7 +115,7 @@ class StatusBanner:
         if self._pause_depth > 0:
             self._schedule_hide(self._auto_hide_ms)
             return
-        if self._kind == _KIND_SUCCESS:
+        if self._auto_hide_ms > 0:
             self.dismiss()
 
     def _bind_pause(self, widget: tk.Misc) -> None:
@@ -125,7 +125,7 @@ class StatusBanner:
 
         def leave(_e=None) -> None:
             self._pause_depth = max(0, self._pause_depth - 1)
-            if self._pause_depth == 0 and self._kind == _KIND_SUCCESS and self._auto_hide_ms > 0:
+            if self._pause_depth == 0 and self._auto_hide_ms > 0:
                 self._schedule_hide(self._auto_hide_ms)
 
         widget.bind("<Enter>", enter, add="+")
@@ -225,7 +225,7 @@ class StatusBanner:
 
         self._bind_pause(frame)
         self._bind_pause(text)
-        if auto_hide_ms > 0 and kind == _KIND_SUCCESS:
+        if auto_hide_ms > 0 and kind in (_KIND_SUCCESS, _KIND_INFO):
             self._schedule_hide(auto_hide_ms)
 
     def show_success(
@@ -273,13 +273,14 @@ class StatusBanner:
         *,
         extra_actions: list[tuple[str, Callable[[], None]]] | None = None,
         dismissible: bool = True,
+        auto_hide_ms: int = 0,
     ) -> None:
         self._show(
             _KIND_INFO,
             message,
             extra_actions=extra_actions,
             closable=dismissible,
-            auto_hide_ms=0,
+            auto_hide_ms=auto_hide_ms,
         )
 
 

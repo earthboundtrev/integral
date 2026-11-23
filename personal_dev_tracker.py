@@ -93,6 +93,7 @@ from data_payload_registry import (
 )
 from vault import (
     VaultPassphraseError,
+    drop_mismatched_journal_backups_after_journal_open,
     encrypted_journal_envelope_path,
     is_encrypted_file,
     load_data_file,
@@ -905,6 +906,7 @@ class PersonalDevelopmentTracker:
                     self.settings, qc_flags
                 )
                 dirty = True
+            drop_mismatched_journal_backups_after_journal_open()
             if dirty:
                 self.save_data(flush=True)
         else:
@@ -4372,11 +4374,23 @@ class PersonalDevelopmentTracker:
             self.show_log_exercise()
             # Note: actual refresh happens via _on_fitness_session_saved callback
         
+        def on_repeat_session(session_id: str) -> None:
+            fitness_ui.repeat_session_into_log(
+                self.root,
+                repo,
+                session_id,
+                tracker=self,
+                fitness_settings=self.settings.get("fitness"),
+                theme=self.theme,
+                on_session_saved=self._on_fitness_session_saved,
+            )
+
         history_view = WorkoutHistoryView(
             parent=win,
             repo=repo,
             theme=self.theme,
             on_log_workout=on_log_workout_with_refresh,
+            on_repeat_session=on_repeat_session,
         )
         self._workout_history_view = history_view
         

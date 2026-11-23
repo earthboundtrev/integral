@@ -20,19 +20,40 @@ def find_latest_session_for_repeat(
     repo: FitnessRepository,
     *,
     exclude_date: str | None = None,
+    family: str | None = None,
 ) -> WorkoutSession | None:
-    """Latest session by save timestamp (``created_at``), optionally skipping a calendar date."""
+    """Latest session by save timestamp (``created_at``), optionally skipping a date or family."""
     exclude = (exclude_date or "").strip()
+    family_key = (family or "").strip().lower()
     list_fn = getattr(repo, "list_workout_sessions_by_created_at", None)
     if callable(list_fn):
         sessions = list_fn(limit=5000)
     else:
         sessions = repo.list_workout_sessions(limit=5000)
+    has_family_fn = getattr(repo, "session_has_family", None)
     for session in sessions:
         if exclude and (session.date or "").strip() == exclude:
             continue
+        if family_key:
+            if not callable(has_family_fn) or not has_family_fn(session.id, family_key):
+                continue
+        items, _ = _prefill_items_for_session(repo, session)
+        if not items:
+            continue
         return session
     return None
+
+
+def prefill_from_session(
+    repo: FitnessRepository,
+    session_id: str,
+) -> tuple[list[dict[str, Any]], WorkoutSession | None, list[str]]:
+    """Build queued-set dicts for a specific session id (#259; no ``exclude_date``)."""
+    session = repo.get_workout_session(session_id)
+    if session is None:
+        return [], None, []
+    items, skip_notes = _prefill_items_for_session(repo, session)
+    return items, session, skip_notes
 
 
 def _prefill_items_for_session(
@@ -68,6 +89,7 @@ def prefill_from_latest_session(
     repo: FitnessRepository,
     *,
     exclude_date: str | None = None,
+    family: str | None = None,
 ) -> tuple[list[dict[str, Any]], str | None, list[str]]:
     """
     Build queued-set dicts from the latest saved session (#114).
@@ -77,16 +99,21 @@ def prefill_from_latest_session(
     only contains removed exercises, walks to an earlier session that still has rows.
     """
     exclude = (exclude_date or "").strip()
+    family_key = (family or "").strip().lower()
     list_fn = getattr(repo, "list_workout_sessions_by_created_at", None)
     if callable(list_fn):
         sessions = list_fn(limit=5000)
     else:
         sessions = repo.list_workout_sessions(limit=5000)
+    has_family_fn = getattr(repo, "session_has_family", None)
     skip_notes: list[str] = []
     for session in sessions:
         if exclude and (session.date or "").strip() == exclude:
             continue
-        items, session_notes = _prefill_items_for_session(repo, session)
+        if family_key:
+            if not callable(has_family_fn) or not has_family_fn(session.id, family_key):
+                continue
+        items, _sess, session_notes = prefill_from_session(repo, session.id)
         skip_notes.extend(session_notes)
         if items:
             return items, session.id, skip_notes

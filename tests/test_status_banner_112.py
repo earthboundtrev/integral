@@ -58,6 +58,22 @@ class TestStatusBanner(unittest.TestCase):
         self.root.mainloop()
         self.assertIsNone(self.banner._frame)
 
+    def test_auto_hide_info_when_auto_hide_ms_set(self):
+        self.banner.show_info("Finish or cancel editing first.", auto_hide_ms=80)
+        self.root.update()
+        self.assertIsNotNone(self.banner._frame)
+        self.assertEqual(self.banner._kind, "info")
+        self.root.after(150, self.root.quit)
+        self.root.mainloop()
+        self.assertIsNone(self.banner._frame)
+
+    def test_info_without_auto_hide_ms_stays_until_dismissed(self):
+        self.banner.show_info("Sticky note.")
+        self.root.update()
+        self.root.after(200, self.root.quit)
+        self.root.mainloop()
+        self.assertIsNotNone(self.banner._frame)
+
     def test_success_does_not_replace_error_until_dismissed(self):
         self.banner.show_error("Save failed.")
         self.root.update()

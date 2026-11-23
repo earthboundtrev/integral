@@ -535,6 +535,138 @@ class FitnessRepository:
             for row in rows
         ]
 
+    def session_has_family(self, session_id: str, family: str) -> bool:
+        family_key = (family or "").strip().lower()
+        if not family_key:
+            return False
+        self.initialize()
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT 1
+                FROM workout_sets ws
+                INNER JOIN exercises e ON e.id = ws.exercise_id
+                WHERE ws.session_id = ?
+                  AND LOWER(COALESCE(e.family, '')) = ?
+                  AND e.deleted_at IS NULL
+                LIMIT 1
+                """,
+                (session_id, family_key),
+            ).fetchone()
+        return row is not None
+
+    def summarize_session_families(self, session_id: str) -> dict[str, int]:
+        self.initialize()
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT LOWER(COALESCE(e.family, '')) AS family, COUNT(*) AS cnt
+                FROM workout_sets ws
+                INNER JOIN exercises e ON e.id = ws.exercise_id
+                WHERE ws.session_id = ?
+                  AND e.deleted_at IS NULL
+                GROUP BY LOWER(COALESCE(e.family, ''))
+                """,
+                (session_id,),
+            ).fetchall()
+        return {row["family"]: int(row["cnt"]) for row in rows if row["family"]}
+
+    def list_families_with_repeatable_sessions(
+        self,
+        *,
+        exclude_date: str | None = None,
+    ) -> list[str]:
+        """Families present in at least one session with sets, newest-first discovery order."""
+        exclude = (exclude_date or "").strip()
+        self.initialize()
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT DISTINCT LOWER(COALESCE(e.family, '')) AS family
+                FROM workout_sessions s
+                INNER JOIN workout_sets ws ON ws.session_id = s.id
+                INNER JOIN exercises e ON e.id = ws.exercise_id
+                WHERE e.deleted_at IS NULL
+                  AND (? = '' OR TRIM(s.date) <> ?)
+                ORDER BY family
+                """,
+                (exclude, exclude),
+            ).fetchall()
+        return [row["family"] for row in rows if row["family"]]
+
+    def list_repeatable_session_rows(
+        self,
+        *,
+        exclude_date: str | None = None,
+        limit: int = 10,
+    ) -> list[dict]:
+        """Up to ``limit`` repeatable sessions in one query (set count + families)."""
+        exclude = (exclude_date or "").strip()
+        cap = max(1, min(int(limit), 50))
+        self.initialize()
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                WITH candidates AS (
+                    SELECT
+                        s.id,
+                        s.date,
+                        s.created_at,
+                        (
+                            SELECT COUNT(DISTINCT ws2.exercise_id)
+                            FROM workout_sets ws2
+                            WHERE ws2.session_id = s.id
+                        ) AS exercise_count
+                    FROM workout_sessions s
+                    WHERE EXISTS (
+                        SELECT 1 FROM workout_sets ws WHERE ws.session_id = s.id
+                    )
+                      AND (? = '' OR TRIM(s.date) <> ?)
+                    ORDER BY COALESCE(s.created_at, '') DESC, s.id DESC
+                    LIMIT ?
+                ),
+                family_totals AS (
+                    SELECT
+                        c.id AS session_id,
+                        LOWER(COALESCE(e.family, '')) AS family,
+                        COUNT(*) AS cnt
+                    FROM candidates c
+                    INNER JOIN workout_sets ws ON ws.session_id = c.id
+                    INNER JOIN exercises e ON e.id = ws.exercise_id
+                    WHERE e.deleted_at IS NULL
+                    GROUP BY c.id, LOWER(COALESCE(e.family, ''))
+                )
+                SELECT
+                    c.id,
+                    c.date,
+                    c.created_at,
+                    c.exercise_count,
+                    ft.family,
+                    ft.cnt
+                FROM candidates c
+                LEFT JOIN family_totals ft ON ft.session_id = c.id
+                ORDER BY COALESCE(c.created_at, '') DESC, c.id DESC, ft.cnt DESC, ft.family
+                """,
+                (exclude, exclude, cap),
+            ).fetchall()
+        grouped: dict[str, dict] = {}
+        order: list[str] = []
+        for row in rows:
+            sid = row["id"]
+            if sid not in grouped:
+                grouped[sid] = {
+                    "session_id": sid,
+                    "date": row["date"],
+                    "created_at": row["created_at"],
+                    "exercise_count": int(row["exercise_count"] or 0),
+                    "family_counts": {},
+                }
+                order.append(sid)
+            fam = row["family"]
+            if fam:
+                grouped[sid]["family_counts"][fam] = int(row["cnt"] or 0)
+        return [grouped[sid] for sid in order]
+
     def insert_workout_session_with_sets(
         self,
         session: WorkoutSession,
@@ -627,6 +759,163 @@ class FitnessRepository:
             conn.execute("DELETE FROM workout_sets WHERE session_id = ?", (session_id,))
             conn.execute("DELETE FROM workout_sessions WHERE id = ?", (session_id,))
 
+    def exercise_exists_active(self, exercise_id: str) -> bool:
+        self.initialize()
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT 1 FROM exercises
+                WHERE id = ? AND deleted_at IS NULL
+                """,
+                (exercise_id,),
+            ).fetchone()
+        return row is not None
+
+    def _recompute_progress_bests_in_conn(
+        self,
+        conn: sqlite3.Connection,
+        exercise_id: str,
+    ) -> None:
+        """Refresh best_* and last_logged_at only; never change status or unlock state."""
+        from progression.models import WorkoutSet
+        from progression.workout_pr import ExerciseBests, update_rolling_bests
+
+        eid = (exercise_id or "").strip()
+        if not eid:
+            return
+        rows = conn.execute(
+            """
+            SELECT ws.id, ws.reps, ws.hold_seconds, ws.weight_kg, ws.ordinal, ws.created_at
+            FROM workout_sets ws
+            INNER JOIN workout_sessions s ON s.id = ws.session_id
+            WHERE ws.exercise_id = ?
+            ORDER BY s.date ASC, COALESCE(s.created_at, '') ASC, s.id ASC,
+                     COALESCE(ws.ordinal, 0) ASC, COALESCE(ws.created_at, '') ASC, ws.id ASC
+            """,
+            (eid,),
+        ).fetchall()
+        rolling = ExerciseBests()
+        last_logged_at: str | None = None
+        for row in rows:
+            wset = WorkoutSet(
+                id=row["id"],
+                session_id="",
+                exercise_id=eid,
+                reps=row["reps"],
+                hold_seconds=row["hold_seconds"],
+                weight_kg=row["weight_kg"],
+                ordinal=row["ordinal"],
+                created_at=row["created_at"],
+            )
+            rolling = update_rolling_bests(rolling, wset)
+        last_row = conn.execute(
+            """
+            SELECT s.created_at
+            FROM workout_sets ws
+            INNER JOIN workout_sessions s ON s.id = ws.session_id
+            WHERE ws.exercise_id = ?
+            ORDER BY s.date DESC, COALESCE(s.created_at, '') DESC, s.id DESC
+            LIMIT 1
+            """,
+            (eid,),
+        ).fetchone()
+        if last_row and last_row["created_at"]:
+            last_logged_at = last_row["created_at"]
+        progress = conn.execute(
+            """
+            SELECT exercise_id, status, current_step, achieved_at
+            FROM user_exercise_progress
+            WHERE exercise_id = ?
+            """,
+            (eid,),
+        ).fetchone()
+        if progress is None:
+            return
+        conn.execute(
+            """
+            UPDATE user_exercise_progress
+            SET best_reps = ?, best_hold_time = ?, best_weight = ?, last_logged_at = ?
+            WHERE exercise_id = ?
+            """,
+            (
+                rolling.best_reps,
+                rolling.best_hold_time,
+                rolling.best_weight,
+                last_logged_at,
+                eid,
+            ),
+        )
+
+    def update_saved_workout_session(
+        self,
+        session_id: str,
+        session_fields: dict,
+        set_updates: list[dict],
+        affected_exercise_ids: list[str],
+    ) -> None:
+        """Update session + sets in one transaction; recompute progress bests."""
+        self.initialize()
+        with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                session_cur = conn.execute(
+                    """
+                    UPDATE workout_sessions
+                    SET notes = ?, duration_minutes = ?, body_weight_kg = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        session_fields.get("notes", ""),
+                        session_fields.get("duration_minutes"),
+                        session_fields.get("body_weight_kg"),
+                        session_id,
+                    ),
+                )
+                if session_cur.rowcount != 1:
+                    conn.rollback()
+                    raise ValueError("Session update failed")
+
+                for item in set_updates:
+                    eid = item.get("exercise_id")
+                    active = conn.execute(
+                        """
+                        SELECT 1 FROM exercises
+                        WHERE id = ? AND deleted_at IS NULL
+                        """,
+                        (eid,),
+                    ).fetchone()
+                    if active is None:
+                        conn.rollback()
+                        raise ValueError("Invalid exercise")
+                    set_cur = conn.execute(
+                        """
+                        UPDATE workout_sets
+                        SET exercise_id = ?, sets = ?, reps = ?,
+                            hold_seconds = ?, weight_kg = ?
+                        WHERE id = ? AND session_id = ?
+                        """,
+                        (
+                            item["exercise_id"],
+                            item.get("sets"),
+                            item.get("reps"),
+                            item.get("hold_seconds"),
+                            item.get("weight_kg"),
+                            item["id"],
+                            session_id,
+                        ),
+                    )
+                    if set_cur.rowcount != 1:
+                        conn.rollback()
+                        raise ValueError("Set update failed")
+
+                for exercise_id in dict.fromkeys(affected_exercise_ids):
+                    self._recompute_progress_bests_in_conn(conn, exercise_id)
+
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
     def has_workout_set(self, session_id: str, exercise_id: str) -> bool:
         self.initialize()
         with self.connect() as conn:
@@ -669,6 +958,7 @@ class FitnessRepository:
         before_date: str | None = None,
         before_id: str | None = None,
         exercise_filter: str | None = None,
+        family_filter: str | None = None,
     ) -> list[WorkoutSession]:
         """Keyset paging for workout sessions (date DESC, created_at DESC, id DESC).
         
@@ -677,13 +967,48 @@ class FitnessRepository:
             before_date: Cursor date (exclusive)
             before_id: Cursor id (exclusive, required if before_date is set)
             exercise_filter: Filter to sessions containing this exercise name (case-insensitive)
+            family_filter: Filter to sessions containing any set in this exercise family
         
         Returns:
             Up to `limit` sessions, newest first
         """
         self.initialize()
         with self.connect() as conn:
-            if exercise_filter:
+            family_key = (family_filter or "").strip().lower()
+            if family_key:
+                query = """
+                    SELECT DISTINCT s.id, s.date, s.notes, s.duration_minutes, s.body_weight_kg, s.created_at
+                    FROM workout_sessions s
+                    INNER JOIN workout_sets ws ON ws.session_id = s.id
+                    INNER JOIN exercises e ON e.id = ws.exercise_id
+                    WHERE (? IS NULL OR (
+                        (s.date, COALESCE(s.created_at, ''), s.id) < (?, COALESCE(?, ''), ?)
+                    ))
+                    AND LOWER(COALESCE(e.family, '')) = ?
+                    AND e.deleted_at IS NULL
+                    ORDER BY s.date DESC, s.created_at DESC, s.id DESC
+                    LIMIT ?
+                """
+                before_created_at = None
+                if before_date and before_id:
+                    cursor_row = conn.execute(
+                        "SELECT created_at FROM workout_sessions WHERE id = ?",
+                        (before_id,),
+                    ).fetchone()
+                    if cursor_row:
+                        before_created_at = cursor_row["created_at"]
+                rows = conn.execute(
+                    query,
+                    (
+                        before_date,
+                        before_date,
+                        before_created_at,
+                        before_id or "",
+                        family_key,
+                        limit,
+                    ),
+                ).fetchall()
+            elif exercise_filter:
                 query = """
                     SELECT DISTINCT s.id, s.date, s.notes, s.duration_minutes, s.body_weight_kg, s.created_at
                     FROM workout_sessions s

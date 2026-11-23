@@ -17,14 +17,13 @@ from ui_accent import (
 )
 
 import personal_dev_tracker
-from tests.conftest import pump_tk
+from tests.conftest import create_tk_root, pump_tk
 from tests.test_sidebar_131 import _mock_tracker_init
 
 
 @pytest.fixture
 def tracker():
-    root = tk.Tk()
-    root.withdraw()
+    root = create_tk_root()
     with patch.object(
         personal_dev_tracker.PersonalDevelopmentTracker,
         "__init__",
@@ -97,8 +96,7 @@ def test_quick_capture_panel_at_most_one_accent(tracker):
 def test_secondary_button_border_contrast_meets_wcag():
     from tkinter import ttk
 
-    root = tk.Tk()
-    root.withdraw()
+    root = create_tk_root()
     for dark in (False, True):
         theme = get_theme(dark)
         apply_theme(root, theme)
@@ -154,8 +152,7 @@ def test_log_dialog_enter_and_escape_bindings(tracker):
 def test_wire_dialog_accent_keys_registers_bindings():
     from tkinter import ttk
 
-    root = tk.Tk()
-    root.withdraw()
+    root = create_tk_root()
     dlg = tk.Toplevel(root)
     accent = ttk.Button(dlg, text="OK")
     accent.pack()

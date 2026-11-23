@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 import threading
 import time
 import tkinter as tk
@@ -274,9 +275,26 @@ def test_enable_waits_for_slow_in_flight_save(tk_root, request):
         return real_save(path, payload, encrypted=encrypted, passphrase=passphrase)
 
     tracker.entries["2026-11-11"] = {"Body & Presence": {"rating": 3}}
-    with patch("personal_dev_tracker.save_data_file", side_effect=slow_save):
-        tracker.save_data(flush=False)
-    assert pump_tk_until(tk_root, lambda: tracker._save_write_in_progress, timeout_s=2.0)
+    windows_exe_ci = (
+        sys.platform == "win32" and os.environ.get("INTEGRAL_WINDOWS_EXE_CI") == "1"
+    )
+    if windows_exe_ci:
+        # GHA windows-latest: vault I/O in a daemon thread while Tk pumps can fatal-exit
+        # the process (0x80000003). Simulate in-flight save on the UI thread instead.
+        tracker._save_idle_event.clear()
+        tracker._save_write_in_progress = True
+
+        def _release_in_progress() -> None:
+            tracker._save_write_in_progress = False
+            tracker._save_idle_event.set()
+
+        tk_root.after(3000, _release_in_progress)
+        pump_tk(tk_root, steps=5)
+        assert tracker._save_write_in_progress
+    else:
+        with patch("personal_dev_tracker.save_data_file", side_effect=slow_save):
+            tracker.save_data(flush=False)
+        assert pump_tk_until(tk_root, lambda: tracker._save_write_in_progress, timeout_s=2.0)
 
     with patch(
         "integral_dialogs.simpledialog.askstring",

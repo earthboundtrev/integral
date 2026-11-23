@@ -169,17 +169,41 @@ def drop_opposite_format_journal_backup(path: str, *, encrypted: bool) -> None:
     _remove_mismatched_journal_backup(path, encrypted=encrypted)
 
 
+def drop_mismatched_journal_backup_after_journal_open(data_path: str) -> None:
+    """Remove a format-mismatched .bak after the live journal has been opened."""
+    with _save_lock:
+        live_format = confirmed_live_journal_encrypted(data_path)
+        if live_format is None:
+            return
+        _remove_mismatched_journal_backup(data_path, encrypted=live_format)
+
+
+def _drop_mismatched_backups_on_validated_journal_paths() -> None:
+    for data_path in _validated_journal_sweep_data_paths():
+        live_format = confirmed_live_journal_encrypted(data_path)
+        if live_format is None:
+            continue
+        _remove_mismatched_journal_backup(data_path, encrypted=live_format)
+
+
+def drop_mismatched_journal_backups_after_journal_open() -> None:
+    """Drop mismatched ``.bak`` files on every validated journal path after open."""
+    with _save_lock:
+        _drop_mismatched_backups_on_validated_journal_paths()
+
+
 def retry_journal_save_artifact_cleanup(data_path: str) -> None:
     """Retry removing a leftover save temp for one journal path (pre-save only)."""
     try_remove_leftover_save_temp(data_path)
 
 
-def iter_journal_sweep_targets() -> list[tuple[str, str]]:
+def iter_journal_sweep_targets(*, prepare_layout: bool = True) -> list[tuple[str, str]]:
     """Return ``(data.json path, owning profile directory)`` pairs for startup sweeps."""
     import paths
     import profiles
 
-    profiles.ensure_app_structure()
+    if prepare_layout:
+        profiles.ensure_app_structure()
     profiles_root = profiles.get_profiles_root()
     seen: set[str] = set()
     out: list[tuple[str, str]] = []
@@ -195,7 +219,23 @@ def iter_journal_sweep_targets() -> list[tuple[str, str]]:
     root_container = os.path.dirname(root_data) or "."
     _append(root_data, root_container)
 
-    for profile in profiles.list_profiles():
+    if prepare_layout:
+        profile_rows = profiles.list_profiles()
+    else:
+        profile_rows: list[dict[str, Any]] = []
+        config_path = profiles.get_config_path()
+        if os.path.isfile(config_path):
+            try:
+                with open(config_path, encoding="utf-8") as handle:
+                    loaded = json.load(handle)
+                if isinstance(loaded, dict):
+                    raw_profiles = loaded.get("profiles")
+                    if isinstance(raw_profiles, list):
+                        profile_rows = [p for p in raw_profiles if isinstance(p, dict)]
+            except (json.JSONDecodeError, OSError, TypeError):
+                profile_rows = []
+
+    for profile in profile_rows:
         try:
             profile_id = profiles.require_safe_profile_id(profile.get("id"))
         except ValueError:
@@ -210,20 +250,26 @@ def iter_journal_sweep_targets() -> list[tuple[str, str]]:
     return out
 
 
+def _validated_journal_sweep_data_paths() -> list[str]:
+    """Journal ``data.json`` paths that pass container validation (issue #275-style paths)."""
+    paths_out: list[str] = []
+    for data_path, container_dir in iter_journal_sweep_targets(prepare_layout=False):
+        if _journal_artifacts_contained(data_path, container_dir):
+            paths_out.append(data_path)
+    return paths_out
+
+
 def sweep_journal_save_artifacts_at_startup() -> None:
-    """Remove leftover save temps and mismatched backups before the first save."""
+    """Remove leftover save temps before the first save (defer .bak cleanup until open)."""
     for data_path, container_dir in iter_journal_sweep_targets():
         if not _journal_artifacts_contained(data_path, container_dir):
             _logger().warning(_SWEEP_PATH_SKIPPED_WARNING)
             continue
         try_remove_leftover_save_temp(data_path, container_dir=container_dir)
-        live_format = confirmed_live_journal_encrypted(data_path)
-        if live_format is None:
+        if confirmed_live_journal_encrypted(data_path) is None:
             bak_path = f"{data_path}.bak"
             if os.path.lexists(bak_path):
                 _logger().warning(_STARTUP_DEFER_BACKUP_CLEANUP_WARNING)
-            continue
-        _remove_mismatched_journal_backup(data_path, encrypted=live_format)
 
 
 def is_encrypted_file(path: str) -> bool:
@@ -440,7 +486,6 @@ def save_data_file(path: str, payload: dict[str, Any], *, encrypted: bool, passp
                 rotated = True
 
             os.replace(temp_path, path)
-            drop_opposite_format_journal_backup(path, encrypted=encrypted)
             try_remove_leftover_save_temp(path)
         except Exception:
             if os.path.exists(temp_path):
@@ -454,3 +499,5 @@ def save_data_file(path: str, payload: dict[str, Any], *, encrypted: bool, passp
                 except OSError:
                     pass
             raise
+    with _save_lock:
+        _drop_mismatched_backups_on_validated_journal_paths()
