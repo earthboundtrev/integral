@@ -66,6 +66,136 @@ def _bottom_packed_frames(parent) -> list:
     return frames
 
 
+class TestWorkoutHistoryFooterWidth290(unittest.TestCase):
+    def test_footer_hints_fit_at_510px_pane_when_buttons_allow(self):
+        try:
+            import tkinter as tk
+
+            from theme import get_theme
+            from workout_history_ui import WorkoutHistoryView
+        except ImportError:
+            self.skipTest("tkinter not available")
+
+        repo, path = _temp_repo()
+        session = _session_with_set(repo)
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            view = WorkoutHistoryView(
+                root,
+                repo,
+                get_theme(False),
+                on_repeat_session=MagicMock(),
+            )
+            view.selected_session = session
+            view.sets_by_session[session.id] = repo.list_workout_sets(session.id)
+            root.update_idletasks()
+            without, with_hints = view._measure_detail_footer_widths()
+            self.assertLessEqual(with_hints, 510, "fixture: hints should fit a 510px detail pane")
+            self.assertTrue(view._detail_footer_hints_should_show(510))
+            view._apply_detail_footer_hint_visibility(510)
+            root.update_idletasks()
+            assert view._alt_r_hint is not None
+            assert view._alt_e_hint is not None
+            self.assertEqual(view._alt_r_hint.winfo_manager(), "pack")
+            self.assertEqual(view._alt_e_hint.winfo_manager(), "pack")
+        finally:
+            view.destroy()
+            root.destroy()
+            _dispose_temp_repo(repo, path)
+
+    def test_footer_hints_fit_at_800px_pane(self):
+        try:
+            import tkinter as tk
+
+            from theme import get_theme
+            from workout_history_ui import WorkoutHistoryView
+        except ImportError:
+            self.skipTest("tkinter not available")
+
+        repo, path = _temp_repo()
+        session = _session_with_set(repo)
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            view = WorkoutHistoryView(
+                root,
+                repo,
+                get_theme(False),
+                on_repeat_session=MagicMock(),
+            )
+            view.selected_session = session
+            root.update_idletasks()
+            self.assertTrue(view._detail_footer_hints_should_show(800))
+            view._apply_detail_footer_hint_visibility(800)
+            root.update_idletasks()
+            assert view._alt_e_hint is not None
+            self.assertEqual(view._alt_e_hint.winfo_manager(), "pack")
+        finally:
+            view.destroy()
+            root.destroy()
+            _dispose_temp_repo(repo, path)
+
+    def test_alt_e_hint_stays_left_of_edit_after_hide_show_cycle(self):
+        try:
+            import tkinter as tk
+
+            from theme import get_theme
+            from workout_history_ui import WorkoutHistoryView
+        except ImportError:
+            self.skipTest("tkinter not available")
+
+        repo, path = _temp_repo()
+        session = _session_with_set(repo)
+        root = tk.Tk()
+        root.geometry("900x500")
+        try:
+            view = WorkoutHistoryView(
+                root,
+                repo,
+                get_theme(False),
+                on_repeat_session=MagicMock(),
+            )
+            view.selected_session = session
+            view.container.pack(fill=tk.BOTH, expand=True)
+            root.update_idletasks()
+            view._apply_detail_footer_hint_visibility(200)
+            root.update_idletasks()
+            view._apply_detail_footer_hint_visibility(900)
+            root.update_idletasks()
+            self.assertEqual(view._alt_e_hint.winfo_manager(), "pack")
+            self.assertLess(
+                view._alt_e_hint.winfo_x(),
+                view.edit_btn.winfo_x(),
+                "Alt+E hint must sit to the left of the Edit button after re-show",
+            )
+        finally:
+            view.destroy()
+            root.destroy()
+            _dispose_temp_repo(repo, path)
+
+    def test_no_inline_repeat_guard_label(self):
+        try:
+            import tkinter as tk
+
+            from theme import get_theme
+            from workout_history_ui import WorkoutHistoryView
+        except ImportError:
+            self.skipTest("tkinter not available")
+
+        repo, path = _temp_repo()
+        _session_with_set(repo)
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            view = WorkoutHistoryView(root, repo, get_theme(False), on_repeat_session=MagicMock())
+            self.assertIsNone(getattr(view, "_repeat_edit_guard_label", None))
+        finally:
+            view.destroy()
+            root.destroy()
+            _dispose_temp_repo(repo, path)
+
+
 class TestWorkoutHistorySingleFooter290(unittest.TestCase):
     def test_one_footer_row_when_both_hooks_present(self):
         try:
@@ -190,6 +320,24 @@ class TestWorkoutHistoryRepeatWhileEditing289(unittest.TestCase):
             repeat_hook.reset_mock()
             view._invoke_repeat_session()
             repeat_hook.assert_called_once_with(session.id)
+        finally:
+            view.destroy()
+            root.destroy()
+
+    def test_blocked_alt_r_info_banner_auto_hides(self):
+        from workout_history_ui import _REPEAT_BLOCKED_INFO_MS
+
+        repeat_hook = MagicMock()
+        root, repo, session, view = self._open_view(repeat_hook)
+        try:
+            view._enter_edit_mode()
+            root.update_idletasks()
+            view._on_alt_repeat_session()
+            root.update()
+            self.assertIsNotNone(view._status_banner._frame)
+            root.after(_REPEAT_BLOCKED_INFO_MS + 100, root.quit)
+            root.mainloop()
+            self.assertIsNone(view._status_banner._frame)
         finally:
             view.destroy()
             root.destroy()

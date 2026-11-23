@@ -115,7 +115,7 @@ class StatusBanner:
         if self._pause_depth > 0:
             self._schedule_hide(self._auto_hide_ms)
             return
-        if self._kind == _KIND_SUCCESS:
+        if self._auto_hide_ms > 0:
             self.dismiss()
 
     def _bind_pause(self, widget: tk.Misc) -> None:
@@ -125,7 +125,7 @@ class StatusBanner:
 
         def leave(_e=None) -> None:
             self._pause_depth = max(0, self._pause_depth - 1)
-            if self._pause_depth == 0 and self._kind == _KIND_SUCCESS and self._auto_hide_ms > 0:
+            if self._pause_depth == 0 and self._auto_hide_ms > 0:
                 self._schedule_hide(self._auto_hide_ms)
 
         widget.bind("<Enter>", enter, add="+")

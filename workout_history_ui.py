@@ -27,9 +27,9 @@ from workout_history_sparkline import (
     sparkline_accessibility_summary,
 )
 
-_DETAIL_FOOTER_HINT_MIN_WIDTH = 560
 _REPEAT_EDIT_GUARD_MSG = "Finish or cancel editing first."
 _REPEAT_BLOCKED_INFO_MS = 4000
+_DETAIL_ACTIONS_PADX = 8
 
 
 def format_date_display(iso_date: str) -> str:
@@ -200,7 +200,6 @@ class WorkoutHistoryView:
         self._detail_frame: ttk.Frame | None = None
         self._alt_r_hint: ttk.Label | None = None
         self._alt_e_hint: ttk.Label | None = None
-        self._repeat_edit_guard_label: ttk.Label | None = None
         self.repeat_session_btn: ttk.Button | None = None
         
         self._build_ui()
@@ -287,12 +286,6 @@ class WorkoutHistoryView:
                 font=("Helvetica", 9),
             )
             self._alt_r_hint.pack(side=tk.LEFT, padx=(6, 0))
-            self._repeat_edit_guard_label = ttk.Label(
-                repeat_group,
-                text=_REPEAT_EDIT_GUARD_MSG,
-                style="OnSurfaceMuted.TLabel",
-                font=("Helvetica", 9),
-            )
 
         edit_group = ttk.Frame(self.detail_actions, style="Surface.TFrame")
         edit_group.pack(side=tk.RIGHT)
@@ -678,46 +671,64 @@ class WorkoutHistoryView:
             return
         self._sync_detail_footer_hints()
 
+    def _measure_detail_footer_widths(self) -> tuple[int, int]:
+        """Return (width without hints, width with hints) for the action footer."""
+        try:
+            self.detail_actions.update_idletasks()
+        except tk.TclError:
+            return (0, 0)
+        left = 0
+        if self.repeat_session_btn is not None:
+            left += int(self.repeat_session_btn.winfo_reqwidth())
+        left_with = left
+        if self._alt_r_hint is not None:
+            self._alt_r_hint.update_idletasks()
+            left_with += 6 + int(self._alt_r_hint.winfo_reqwidth())
+        self.edit_btn.update_idletasks()
+        right = int(self.edit_btn.winfo_reqwidth())
+        right_with = right
+        if self._alt_e_hint is not None:
+            self._alt_e_hint.update_idletasks()
+            right_with += int(self._alt_e_hint.winfo_reqwidth()) + 6
+        without = _DETAIL_ACTIONS_PADX + left + right
+        with_hints = _DETAIL_ACTIONS_PADX + left_with + right_with
+        return without, with_hints
+
+    def _detail_footer_hints_should_show(self, pane_width: int) -> bool:
+        _, with_hints = self._measure_detail_footer_widths()
+        return with_hints <= pane_width
+
+    def _apply_detail_footer_hint_visibility(self, pane_width: int) -> None:
+        show_hints = self._detail_footer_hints_should_show(pane_width)
+        if self._alt_r_hint is not None:
+            if show_hints:
+                if self._alt_r_hint.winfo_manager() != "pack":
+                    self._alt_r_hint.pack(side=tk.LEFT, padx=(6, 0))
+            elif self._alt_r_hint.winfo_manager() == "pack":
+                self._alt_r_hint.pack_forget()
+        if self._alt_e_hint is not None:
+            if show_hints:
+                if self._alt_e_hint.winfo_manager() != "pack":
+                    self._alt_e_hint.pack(side=tk.RIGHT, padx=(0, 6), after=self.edit_btn)
+            elif self._alt_e_hint.winfo_manager() == "pack":
+                self._alt_e_hint.pack_forget()
+
     def _sync_detail_footer_hints(self) -> None:
         if self._detail_frame is None:
             return
         try:
-            width = self._detail_frame.winfo_width()
+            width = int(self._detail_frame.winfo_width())
         except tk.TclError:
             return
         if width <= 1:
             return
-        show_hints = width >= _DETAIL_FOOTER_HINT_MIN_WIDTH
-        for hint, side, padx in (
-            (self._alt_r_hint, tk.LEFT, (6, 0)),
-            (self._alt_e_hint, tk.RIGHT, (0, 6)),
-        ):
-            if hint is None:
-                continue
-            if show_hints:
-                if hint.winfo_manager() != "pack":
-                    kwargs: dict = {"side": side, "padx": padx}
-                    if hint is self._alt_e_hint:
-                        kwargs["before"] = self.edit_btn
-                    hint.pack(**kwargs)
-            elif hint.winfo_manager() == "pack":
-                hint.pack_forget()
+        self._apply_detail_footer_hint_visibility(width)
 
     def _show_repeat_blocked_notice(self) -> None:
         self._status_banner.show_info(
             _REPEAT_EDIT_GUARD_MSG,
             auto_hide_ms=_REPEAT_BLOCKED_INFO_MS,
         )
-
-    def _set_repeat_edit_guard_visible(self, visible: bool) -> None:
-        label = self._repeat_edit_guard_label
-        if label is None:
-            return
-        if visible:
-            if label.winfo_manager() != "pack":
-                label.pack(side=tk.LEFT, padx=(8, 0))
-        elif label.winfo_manager() == "pack":
-            label.pack_forget()
 
     def _invoke_repeat_session(self) -> None:
         if self._session_editing:
@@ -752,7 +763,6 @@ class WorkoutHistoryView:
         self.edit_btn.state(["disabled"])
         if self.repeat_session_btn is not None:
             self.repeat_session_btn.state(["disabled"])
-        self._set_repeat_edit_guard_visible(True)
         self.detail_text.pack_forget()
         if self._edit_panel is not None:
             self._edit_panel.destroy()
@@ -775,7 +785,6 @@ class WorkoutHistoryView:
         self.edit_btn.state(["!disabled"])
         if self.repeat_session_btn is not None:
             self.repeat_session_btn.state(["!disabled"])
-        self._set_repeat_edit_guard_visible(False)
         if self._edit_panel is not None:
             self._edit_panel.unload_shortcuts()
             self._edit_panel.destroy()
