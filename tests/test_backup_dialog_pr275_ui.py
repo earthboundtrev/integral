@@ -330,7 +330,17 @@ def test_encrypted_import_worker_error_shows_generic_banner(tk_root, tmp_path, t
         patch("backup_dialog_ui.backup.validate_backup", return_value=manifest),
         patch("backup_dialog_ui.backup.import_backup", side_effect=OSError("simulated")),
         patch("backup_dialog_ui.prepare_restore_apply", return_value=True),
-        patch("backup_dialog_ui._snapshot_journal_if_present", return_value=None),
+        patch(
+            "backup_dialog_ui._restore_snapshots_for_vault",
+            return_value=backup_dialog_ui.RestoreSnapshotBundle(
+                journal_snap=None,
+                journal_existed=False,
+                profile_snap=None,
+                profile_existed=False,
+                profile_path=None,
+                fitness_rollbacks=[],
+            ),
+        ),
     ):
         _find_button(dialog, "Restore from").invoke()
         pump_tk(tk_root, 30)
