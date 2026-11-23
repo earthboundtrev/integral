@@ -234,6 +234,7 @@ class StatusBanner:
         *,
         undo_label: str | None = None,
         undo_callback: Callable[[], None] | None = None,
+        extra_actions: list[tuple[str, Callable[[], None]]] | None = None,
     ) -> None:
         ms = SUCCESS_UNDO_HIDE_MS if undo_callback else SUCCESS_HIDE_MS
         self._show(
@@ -242,6 +243,7 @@ class StatusBanner:
             auto_hide_ms=ms,
             undo_label=undo_label,
             undo_callback=undo_callback,
+            extra_actions=extra_actions,
         )
 
     def show_error(

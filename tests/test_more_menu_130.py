@@ -350,6 +350,10 @@ def _banner_tracker(root: tk.Tk):
     tracker = MagicMock()
     tracker.root = root
     tracker.theme = theme
+    tracker.settings = {"encryption_enabled": False}
+    tracker.data_path = "/tmp/mock-data.json"
+    tracker.vault_passphrase = None
+    tracker.save_data = MagicMock()
     tracker.entries = {}
     tracker.categories = {}
     tracker.sessions = []
@@ -435,26 +439,36 @@ def test_show_backup_export_uses_banner_not_messagebox():
     root.withdraw()
     tracker, banner = _banner_tracker(root)
     try:
-        with patch("integral_dialogs.filedialog.asksaveasfilename", return_value="/tmp/backup.zip"):
+        with patch("backup_dialog_ui.filedialog.asksaveasfilename", return_value="/tmp/backup.zip"):
             with patch(
-                "integral_dialogs.write_full_backup",
+                "backup_dialog_ui.integral_io.write_full_backup",
                 return_value={"creative_file_count": 2, "has_fitness": True},
             ):
-                with patch("integral_dialogs.creative_projects_dir", return_value="/tmp/creative"):
+                with patch("backup_dialog_ui.creative_projects_dir", return_value="/tmp/creative"):
                     with patch(
-                        "integral_dialogs._active_fitness_db_path", return_value=None
+                        "backup_dialog_ui._active_fitness_db_path", return_value=None
                     ):
                         show_backup_dialog(tracker)
                         root.update()
                         backup_btn = None
+
+                        def _walk_buttons(parent):
+                            for child in parent.winfo_children():
+                                yield child
+                                yield from _walk_buttons(child)
+
                         for win in root.winfo_children():
-                            if isinstance(win, tk.Toplevel):
-                                for child in win.winfo_children():
-                                    if isinstance(child, ttk.Frame):
-                                        for btn in child.winfo_children():
-                                            if isinstance(btn, ttk.Button) and btn.cget("text") == "Export Backup…":
-                                                backup_btn = btn
-                                                break
+                            if not isinstance(win, tk.Toplevel):
+                                continue
+                            for node in _walk_buttons(win):
+                                if not isinstance(node, ttk.Button):
+                                    continue
+                                text = str(node.cget("text"))
+                                if "Export" in text and "Backup" in text:
+                                    backup_btn = node
+                                    break
+                            if backup_btn is not None:
+                                break
                         assert backup_btn is not None
                         with patch("tkinter.messagebox.showinfo") as show_info:
                             with patch("tkinter.messagebox.showerror") as show_error:
