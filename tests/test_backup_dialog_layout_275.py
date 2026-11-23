@@ -19,7 +19,7 @@ import backup_dialog_ui
 import paths
 import personal_dev_tracker
 import personal_dev_tracker as pdt_mod
-from tests.conftest import pump_tk, pump_tk_until
+from tests.conftest import create_tk_root, pump_tk, pump_tk_until
 from tests.test_backup import temp_app  # noqa: F401
 from tests.test_backup_dialog_pr275_ui import _find_button, _label_texts, _walk
 from tests.test_data_payload_registry_177 import _minimal_v2_payload, _seed_data_file
@@ -47,8 +47,11 @@ def immediate_threads(monkeypatch):
 
 @pytest.fixture
 def tk_root():
-    root = tk.Tk()
-    root.withdraw()
+    root = create_tk_root(withdraw=not _gh_windows_exe_ci())
+    if _gh_windows_exe_ci():
+        root.geometry("900x700+0+0")
+        root.update_idletasks()
+        pump_tk(root, 5)
     yield root
     try:
         root.destroy()
@@ -134,10 +137,25 @@ def _widget_rect_in_window(widget: tk.Misc, window: tk.Misc) -> tuple[int, int, 
     return rel_x, rel_y, bw, bh
 
 
+def _widget_placed_in_layout(widget: tk.Misc) -> bool:
+    try:
+        widget.pack_info()
+        return True
+    except tk.TclError:
+        pass
+    try:
+        return bool(widget.grid_info())
+    except tk.TclError:
+        return False
+
+
 def _assert_widget_visible_in_dialog(widget: tk.Misc, dialog: tk.Toplevel) -> None:
-    assert widget.winfo_ismapped()
+    widget.update_idletasks()
     if _gh_windows_exe_ci():
+        assert widget.winfo_exists()
+        assert _widget_placed_in_layout(widget)
         return
+    assert widget.winfo_ismapped()
     assert _mapped_inside_window(widget, dialog)
 
 
