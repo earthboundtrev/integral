@@ -759,6 +759,163 @@ class FitnessRepository:
             conn.execute("DELETE FROM workout_sets WHERE session_id = ?", (session_id,))
             conn.execute("DELETE FROM workout_sessions WHERE id = ?", (session_id,))
 
+    def exercise_exists_active(self, exercise_id: str) -> bool:
+        self.initialize()
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT 1 FROM exercises
+                WHERE id = ? AND deleted_at IS NULL
+                """,
+                (exercise_id,),
+            ).fetchone()
+        return row is not None
+
+    def _recompute_progress_bests_in_conn(
+        self,
+        conn: sqlite3.Connection,
+        exercise_id: str,
+    ) -> None:
+        """Refresh best_* and last_logged_at only; never change status or unlock state."""
+        from progression.models import WorkoutSet
+        from progression.workout_pr import ExerciseBests, update_rolling_bests
+
+        eid = (exercise_id or "").strip()
+        if not eid:
+            return
+        rows = conn.execute(
+            """
+            SELECT ws.id, ws.reps, ws.hold_seconds, ws.weight_kg, ws.ordinal, ws.created_at
+            FROM workout_sets ws
+            INNER JOIN workout_sessions s ON s.id = ws.session_id
+            WHERE ws.exercise_id = ?
+            ORDER BY s.date ASC, COALESCE(s.created_at, '') ASC, s.id ASC,
+                     COALESCE(ws.ordinal, 0) ASC, COALESCE(ws.created_at, '') ASC, ws.id ASC
+            """,
+            (eid,),
+        ).fetchall()
+        rolling = ExerciseBests()
+        last_logged_at: str | None = None
+        for row in rows:
+            wset = WorkoutSet(
+                id=row["id"],
+                session_id="",
+                exercise_id=eid,
+                reps=row["reps"],
+                hold_seconds=row["hold_seconds"],
+                weight_kg=row["weight_kg"],
+                ordinal=row["ordinal"],
+                created_at=row["created_at"],
+            )
+            rolling = update_rolling_bests(rolling, wset)
+        last_row = conn.execute(
+            """
+            SELECT s.created_at
+            FROM workout_sets ws
+            INNER JOIN workout_sessions s ON s.id = ws.session_id
+            WHERE ws.exercise_id = ?
+            ORDER BY s.date DESC, COALESCE(s.created_at, '') DESC, s.id DESC
+            LIMIT 1
+            """,
+            (eid,),
+        ).fetchone()
+        if last_row and last_row["created_at"]:
+            last_logged_at = last_row["created_at"]
+        progress = conn.execute(
+            """
+            SELECT exercise_id, status, current_step, achieved_at
+            FROM user_exercise_progress
+            WHERE exercise_id = ?
+            """,
+            (eid,),
+        ).fetchone()
+        if progress is None:
+            return
+        conn.execute(
+            """
+            UPDATE user_exercise_progress
+            SET best_reps = ?, best_hold_time = ?, best_weight = ?, last_logged_at = ?
+            WHERE exercise_id = ?
+            """,
+            (
+                rolling.best_reps,
+                rolling.best_hold_time,
+                rolling.best_weight,
+                last_logged_at,
+                eid,
+            ),
+        )
+
+    def update_saved_workout_session(
+        self,
+        session_id: str,
+        session_fields: dict,
+        set_updates: list[dict],
+        affected_exercise_ids: list[str],
+    ) -> None:
+        """Update session + sets in one transaction; recompute progress bests."""
+        self.initialize()
+        with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                session_cur = conn.execute(
+                    """
+                    UPDATE workout_sessions
+                    SET notes = ?, duration_minutes = ?, body_weight_kg = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        session_fields.get("notes", ""),
+                        session_fields.get("duration_minutes"),
+                        session_fields.get("body_weight_kg"),
+                        session_id,
+                    ),
+                )
+                if session_cur.rowcount != 1:
+                    conn.rollback()
+                    raise ValueError("Session update failed")
+
+                for item in set_updates:
+                    eid = item.get("exercise_id")
+                    active = conn.execute(
+                        """
+                        SELECT 1 FROM exercises
+                        WHERE id = ? AND deleted_at IS NULL
+                        """,
+                        (eid,),
+                    ).fetchone()
+                    if active is None:
+                        conn.rollback()
+                        raise ValueError("Invalid exercise")
+                    set_cur = conn.execute(
+                        """
+                        UPDATE workout_sets
+                        SET exercise_id = ?, sets = ?, reps = ?,
+                            hold_seconds = ?, weight_kg = ?
+                        WHERE id = ? AND session_id = ?
+                        """,
+                        (
+                            item["exercise_id"],
+                            item.get("sets"),
+                            item.get("reps"),
+                            item.get("hold_seconds"),
+                            item.get("weight_kg"),
+                            item["id"],
+                            session_id,
+                        ),
+                    )
+                    if set_cur.rowcount != 1:
+                        conn.rollback()
+                        raise ValueError("Set update failed")
+
+                for exercise_id in dict.fromkeys(affected_exercise_ids):
+                    self._recompute_progress_bests_in_conn(conn, exercise_id)
+
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
     def has_workout_set(self, session_id: str, exercise_id: str) -> bool:
         self.initialize()
         with self.connect() as conn:
