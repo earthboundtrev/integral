@@ -19,6 +19,7 @@ import unicodedata
 import zipfile
 from contextlib import contextmanager
 from datetime import datetime
+from dataclasses import dataclass, field
 from typing import Iterator
 
 import paths
@@ -52,6 +53,7 @@ ENCRYPTED_BACKUP_SALT_BYTES = 16
 ENCRYPTED_BACKUP_MAX_CONTAINER_BYTES = 512 * 1024 * 1024
 ENCRYPTED_BACKUP_DEFAULT_SUFFIX = ".integral-backup.enc"
 BACKUP_IMPORT_STAGING_DIRNAME = ".backup-import-staging"
+BACKUP_REPLACE_ASIDE_DIRNAME = ".backup-replace-aside"
 
 
 def normalize_backup_passphrase(passphrase: str) -> str:
@@ -388,41 +390,213 @@ def _install_profile_artifacts(staging_profiles: str, profile_id: str) -> None:
             shutil.copy2(src, os.path.join(dest_dir, filename))
 
 
-def _replace_profile_artifacts(staging_profiles: str, profile_id: str) -> None:
+@dataclass
+class _ReplaceAsideLedger:
+    root: str
+    moves: list[tuple[str, str]] = field(default_factory=list)
+
+    def record_move(self, aside_path: str, original_path: str) -> None:
+        self.moves.append((aside_path, original_path))
+
+    def rollback(self) -> None:
+        for aside_path, original_path in reversed(self.moves):
+            _assert_path_within_root(aside_path, self.root)
+            parent = os.path.dirname(original_path)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+            if os.path.lexists(original_path):
+                raise OSError(f"Cannot roll back: destination still exists: {original_path!r}")
+            if os.path.isdir(aside_path):
+                shutil.move(aside_path, original_path)
+            else:
+                os.replace(aside_path, original_path)
+
+    def commit(self) -> None:
+        if not _staging_path_contained_in_app_dir(self.root):
+            raise OSError("Refusing to remove aside ledger outside app data directory.")
+        shutil.rmtree(self.root)
+
+
+def _create_replace_aside_ledger() -> _ReplaceAsideLedger:
+    profiles.ensure_app_structure()
+    parent = os.path.join(profiles.get_app_dir(), BACKUP_REPLACE_ASIDE_DIRNAME)
+    os.makedirs(parent, exist_ok=True)
+    root = os.path.join(parent, f"run-{os.getpid()}-{os.urandom(4).hex()}")
+    os.makedirs(root, exist_ok=True)
+    if not _staging_path_contained_in_app_dir(root):
+        raise OSError("Aside ledger path is outside the app data directory.")
+    return _ReplaceAsideLedger(root=root)
+
+
+def _aside_path_for_key(ledger: _ReplaceAsideLedger, key: str) -> str:
+    normalized = key.replace("\\", "/").lstrip("/")
+    if ".." in normalized.split("/"):
+        raise ValueError(f"Unsafe aside key: {key!r}")
+    dest = os.path.join(ledger.root, *normalized.split("/"))
+    _assert_path_within_root(dest, ledger.root)
+    return dest
+
+
+def _ensure_parent_dir(path: str) -> None:
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+
+
+def _move_live_path_to_aside(live_path: str, aside_path: str, ledger: _ReplaceAsideLedger) -> None:
+    _ensure_parent_dir(aside_path)
+    if os.path.lexists(aside_path):
+        raise OSError(f"Aside path already exists: {aside_path!r}")
+    os.replace(live_path, aside_path)
+    ledger.record_move(aside_path, live_path)
+
+
+def _atomic_install_staged_file(
+    staged_src: str,
+    dest: str,
+    ledger: _ReplaceAsideLedger,
+    aside_key: str,
+) -> None:
+    if not os.path.isfile(staged_src):
+        raise OSError(f"Staged file missing: {staged_src!r}")
+    if os.path.lexists(dest):
+        aside_path = _aside_path_for_key(ledger, aside_key)
+        _move_live_path_to_aside(dest, aside_path, ledger)
+    _ensure_parent_dir(dest)
+    temp_path = f"{dest}.import-{os.getpid()}-{os.urandom(4).hex()}"
+    shutil.copy2(staged_src, temp_path)
+    try:
+        os.replace(temp_path, dest)
+    except OSError:
+        if os.path.isfile(temp_path):
+            os.remove(temp_path)
+        raise
+
+
+def _aside_config_profile_dirs(
+    config_profile_ids: set[str],
+    backup_profile_ids: set[str],
+    ledger: _ReplaceAsideLedger,
+) -> None:
+    for pid in config_profile_ids - backup_profile_ids:
+        safe_id = profiles.require_safe_profile_id(pid)
+        profile_dir = profiles.get_profile_dir(safe_id)
+        if not os.path.isdir(profile_dir):
+            continue
+        aside_path = _aside_path_for_key(ledger, f"profiles-removed/{safe_id}")
+        _ensure_parent_dir(os.path.dirname(aside_path))
+        if os.path.lexists(aside_path):
+            raise OSError(f"Aside profile path already exists: {aside_path!r}")
+        shutil.move(profile_dir, aside_path)
+        ledger.record_move(aside_path, profile_dir)
+
+
+def _staging_creative_relative_paths(staging_creative: str) -> set[str]:
+    if not os.path.isdir(staging_creative):
+        return set()
+    rels: set[str] = set()
+    for dirpath, _dirnames, filenames in os.walk(staging_creative):
+        for name in filenames:
+            abs_path = os.path.join(dirpath, name)
+            rel = os.path.relpath(abs_path, staging_creative).replace("\\", "/")
+            if rel and ".." not in rel.split("/"):
+                rels.add(rel)
+    return rels
+
+
+def _aside_creative_orphans(
+    creative_root: str,
+    backup_rels: set[str],
+    ledger: _ReplaceAsideLedger,
+) -> None:
+    if not os.path.isdir(creative_root):
+        return
+    for dirpath, _dirnames, filenames in os.walk(creative_root):
+        for name in filenames:
+            abs_path = os.path.join(dirpath, name)
+            rel = os.path.relpath(abs_path, creative_root).replace("\\", "/")
+            if not rel or ".." in rel.split("/"):
+                continue
+            if rel in backup_rels:
+                continue
+            aside_path = _aside_path_for_key(ledger, f"creative-removed/{rel}")
+            _move_live_path_to_aside(abs_path, aside_path, ledger)
+
+
+def _replace_profile_artifacts_from_staging(
+    staging_profiles: str,
+    profile_id: str,
+    ledger: _ReplaceAsideLedger,
+) -> None:
     safe_id = profiles.require_safe_profile_id(profile_id)
     dest_dir = profiles.get_profile_dir(safe_id)
-    if os.path.isdir(dest_dir):
-        shutil.rmtree(dest_dir, ignore_errors=True)
     os.makedirs(dest_dir, exist_ok=True)
     staged_dir = os.path.join(staging_profiles, safe_id)
     if not os.path.isdir(staged_dir):
         return
     for filename in PROFILE_ARTIFACTS:
-        src = os.path.join(staged_dir, filename)
-        if os.path.isfile(src):
-            shutil.copy2(src, os.path.join(dest_dir, filename))
-
-
-def _remove_profile_dirs_not_in_backup(allowed_ids: set[str]) -> None:
-    root = profiles.get_profiles_root()
-    if not os.path.isdir(root):
-        return
-    for name in os.listdir(root):
-        path = os.path.join(root, name)
-        if not os.path.isdir(path):
+        staged_src = os.path.join(staged_dir, filename)
+        if not os.path.isfile(staged_src):
             continue
+        dest = os.path.join(dest_dir, filename)
+        aside_key = f"profiles-replaced/{safe_id}/{filename}"
+        _atomic_install_staged_file(staged_src, dest, ledger, aside_key)
+
+
+def _install_creative_tree_replace(
+    staging_creative: str,
+    creative_root: str,
+    ledger: _ReplaceAsideLedger,
+) -> int:
+    if not os.path.isdir(staging_creative):
+        return 0
+    installed = 0
+    for dirpath, _dirnames, filenames in os.walk(staging_creative):
+        for name in filenames:
+            abs_path = os.path.join(dirpath, name)
+            rel = os.path.relpath(abs_path, staging_creative).replace("\\", "/")
+            if not rel or ".." in rel.split("/"):
+                continue
+            dest = os.path.join(creative_root, *rel.split("/"))
+            aside_key = f"creative-replaced/{rel}"
+            _atomic_install_staged_file(abs_path, dest, ledger, aside_key)
+            installed += 1
+    return installed
+
+
+def _apply_replace_app_state(
+    *,
+    staging_profiles: str,
+    staging_creative: str,
+    creative_dest: str,
+    backup_profile_ids: list[str],
+    imported_config: dict,
+) -> int:
+    config_before = profiles.load_config()
+    ledger = _create_replace_aside_ledger()
+    config_profile_ids = {
+        profiles.require_safe_profile_id(p["id"])
+        for p in config_before.get("profiles", [])
+        if isinstance(p, dict)
+    }
+    backup_ids = {profiles.require_safe_profile_id(pid) for pid in backup_profile_ids}
+    backup_creative_rels = _staging_creative_relative_paths(staging_creative)
+    try:
+        _aside_config_profile_dirs(config_profile_ids, backup_ids, ledger)
+        _aside_creative_orphans(creative_dest, backup_creative_rels, ledger)
+        for pid in backup_profile_ids:
+            _replace_profile_artifacts_from_staging(staging_profiles, pid, ledger)
+        restored_docs = _install_creative_tree_replace(staging_creative, creative_dest, ledger)
+        profiles.save_config(imported_config)
+    except Exception:
         try:
-            pid = profiles.require_safe_profile_id(name)
-        except ValueError:
-            continue
-        if pid not in allowed_ids:
-            shutil.rmtree(path, ignore_errors=True)
-
-
-def _clear_creative_tree(creative_root: str) -> None:
-    if os.path.isdir(creative_root):
-        shutil.rmtree(creative_root, ignore_errors=True)
-    os.makedirs(creative_root, exist_ok=True)
+            profiles.save_config(config_before)
+        except OSError:
+            pass
+        ledger.rollback()
+        raise
+    ledger.commit()
+    return restored_docs
 
 
 def _install_creative_tree(staging_creative: str, creative_root: str) -> int:
@@ -524,7 +698,6 @@ def import_backup(
     profiles.ensure_app_structure()
     creative_dest = creative_root if creative_root is not None else paths.creative_projects_dir()
     backup_profile_ids = _manifest_profile_ids(manifest)
-    allowed_ids = set(backup_profile_ids)
 
     with _backup_zipfile(zip_path, passphrase) as zf:
         budget = zip_import_safety.prepare_zip_import(zf)
@@ -555,31 +728,34 @@ def import_backup(
             _restore_creative_files(zf, staging_creative, budget)
 
             if replace_app_state:
-                _remove_profile_dirs_not_in_backup(allowed_ids)
-                _clear_creative_tree(creative_dest)
-                install_profile = _replace_profile_artifacts
+                restored_docs = _apply_replace_app_state(
+                    staging_profiles=staging_profiles,
+                    staging_creative=staging_creative,
+                    creative_dest=creative_dest,
+                    backup_profile_ids=backup_profile_ids,
+                    imported_config=imported_config,
+                )
             else:
-                install_profile = _install_profile_artifacts
-
-            for pid in backup_profile_ids:
-                install_profile(staging_profiles, pid)
-            restored_docs = _install_creative_tree(staging_creative, creative_dest)
+                for pid in backup_profile_ids:
+                    _install_profile_artifacts(staging_profiles, pid)
+                restored_docs = _install_creative_tree(staging_creative, creative_dest)
 
         manifest = {**manifest, "restored_creative_files": restored_docs}
 
-        if merge_profiles:
-            current = profiles.load_config()
-            existing_ids = {p["id"] for p in current["profiles"]}
-            for profile in imported_config.get("profiles", []):
-                if not isinstance(profile, dict):
-                    continue
-                pid = profiles.require_safe_profile_id(profile.get("id"))
-                profile = {**profile, "id": pid}
-                if pid not in existing_ids:
-                    current["profiles"].append(profile)
-            profiles.save_config(current)
-        else:
-            profiles.save_config(imported_config)
+        if not replace_app_state:
+            if merge_profiles:
+                current = profiles.load_config()
+                existing_ids = {p["id"] for p in current["profiles"]}
+                for profile in imported_config.get("profiles", []):
+                    if not isinstance(profile, dict):
+                        continue
+                    pid = profiles.require_safe_profile_id(profile.get("id"))
+                    profile = {**profile, "id": pid}
+                    if pid not in existing_ids:
+                        current["profiles"].append(profile)
+                profiles.save_config(current)
+            else:
+                profiles.save_config(imported_config)
 
     return manifest
 

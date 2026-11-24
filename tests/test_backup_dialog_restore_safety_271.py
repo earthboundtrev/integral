@@ -23,6 +23,7 @@ from backup_dialog_ui import apply_undo_from_safety_backup
 from tests.conftest import create_tk_root, pump_tk, pump_tk_until
 from tests.test_backup import temp_app  # noqa: F401
 from tests.test_backup_dialog_layout_275 import (
+    _apply_geometry,
     _assert_button_width_at_least_reqwidth,
     _dialog,
     _dialog_client_size,
@@ -37,6 +38,15 @@ _DIALOG_SCALINGS = (1.0, 1.5)
 
 MARKER_CURRENT = "current-live-marker"
 MARKER_BACKUP = "backup-marker-271"
+
+
+class _ImmediateThread:
+    def __init__(self, target=None, daemon=None, args=(), kwargs=None):
+        self._target = target
+
+    def start(self) -> None:
+        if self._target:
+            self._target()
 
 
 @pytest.fixture(autouse=True)
@@ -162,21 +172,26 @@ def _confirm_restore(dialog: tk.Toplevel, tk_root) -> None:
     pump_tk(tk_root, 20)
 
 
-def test_vault_locked_blocks_before_passphrase(tk_root, temp_app, tmp_path):
+@pytest.fixture
+def immediate_threads(monkeypatch):
+    monkeypatch.setattr(backup_dialog_ui.threading, "Thread", _ImmediateThread)
+
+
+def test_vault_locked_blocks_before_passphrase(tk_root, temp_app, tmp_path, immediate_threads):
     tracker = _tracker_vault_on_locked(tk_root)
     zip_path = _make_backup_zip(tmp_path)
-    backup_dialog_ui.show_backup_dialog(tracker)
-    pump_tk(tk_root)
-    dialog = next(w for w in tk_root.winfo_children() if isinstance(w, tk.Toplevel))
-    with patch("backup_dialog_ui.filedialog.askopenfilename", return_value=zip_path):
-        _find_button(dialog, "Restore from").invoke()
-        pump_tk(tk_root, 10)
-    assert not safety_backup._safety_backup_filenames()
+    dialog = _dialog(tk_root, tracker)
+    _apply_geometry(tk_root, dialog, "560x420")
+    from tests.test_backup_dialog_layout_275 import _assert_widget_visible_in_dialog
     from tests.test_backup_dialog_restore_vault_278 import _vault_unlock_entries
+    from tests.test_backup_dialog_vault_unlock_layout_293 import _open_vault_unlock_panel
 
+    _open_vault_unlock_panel(tk_root, dialog, zip_path)
+    pump_tk(tk_root, 12)
+    assert not safety_backup._safety_backup_filenames()
     vault_entry, _ = _vault_unlock_entries(dialog)
     assert vault_entry is not None
-    assert vault_entry.winfo_ismapped() or vault_entry.winfo_exists()
+    _assert_widget_visible_in_dialog(vault_entry, dialog)
 
 
 def test_cancel_confirm_writes_no_safety_copy(tk_root, temp_app, tmp_path):
@@ -208,8 +223,9 @@ def test_undo_from_safety_backup(tk_root, temp_app, tmp_path, monkeypatch):
     monkeypatch.setattr(pjs, "sync_active_profile_journal_to_tracker", lambda *_a: None)
     monkeypatch.setattr(backup_dialog_ui, "reencrypt_restored_journal_from_disk", lambda _t: (True, None))
     banner = tracker.ensure_status_banner()
-    apply_undo_from_safety_backup(tracker, safety_path)
-    pump_tk(tk_root, 10)
+    with patch("backup_dialog_ui.threading.Thread", _ImmediateThread):
+        apply_undo_from_safety_backup(tracker, safety_path)
+    pump_tk(tk_root, 25)
     assert _day_notes(tracker) == MARKER_CURRENT
     assert "Undo complete" in (banner._message_var.get() or "")
 

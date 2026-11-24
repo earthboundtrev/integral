@@ -866,11 +866,59 @@ def _show_restore_success_banner(
     )
 
 
+def _complete_undo_restore_ui(
+    tracker: PersonalDevelopmentTracker,
+    snapshots: RestoreSnapshotBundle,
+    undo_safety_path: str,
+) -> None:
+    _remove_restore_snapshots(
+        snapshots.journal_snap,
+        snapshots.profile_snap,
+        snapshots.fitness_rollbacks,
+    )
+    tracker.cancel_pending_save()
+    tracker.load_data()
+    tracker.create_dashboard()
+    display_path = safety_backup.middle_ellipsize_path(undo_safety_path)
+    vault_on = backup.is_encrypted_backup_file(undo_safety_path)
+    tracker.ensure_status_banner().show_success(
+        f"Undo complete. Your previous data is back. Current data saved to {display_path}",
+        subtitle="Protected by your vault passphrase." if vault_on else None,
+        message_tooltip=undo_safety_path,
+        auto_hide_ms=0,
+        closable=True,
+        bind_escape=True,
+    )
+
+
+def _rollback_undo_restore_ui(
+    tracker: PersonalDevelopmentTracker,
+    snapshots: RestoreSnapshotBundle | None,
+    *,
+    error_message: str | None = None,
+    safety_banner: bool = False,
+    detail: str | None = None,
+) -> None:
+    if snapshots is not None:
+        _rollback_restore_snapshots(tracker, snapshots)
+    tracker.cancel_pending_save()
+    try:
+        tracker.load_data()
+    except Exception:
+        pass
+    if safety_banner and detail is not None:
+        _show_safety_copy_failed_banner(tracker, detail)
+    elif error_message:
+        tracker.ensure_status_banner().show_error(error_message)
+
+
 def apply_undo_from_safety_backup(
     tracker: PersonalDevelopmentTracker,
     safety_path: str,
 ) -> None:
     if not _guard_restore_against_pending_rollback(tracker):
+        return
+    if getattr(tracker, "_undo_safety_busy", False):
         return
     passphrase: str | None = None
     if backup.is_encrypted_backup_file(safety_path):
@@ -894,90 +942,78 @@ def apply_undo_from_safety_backup(
             safety_backup._user_friendly_write_error(exc),
         )
         return
-    try:
-        undo_safety_path = safety_backup.write_pre_restore_safety_backup(
-            tracker=tracker,
-            vault_on=_vault_active(tracker),
-            passphrase=tracker.vault_passphrase if _vault_active(tracker) else None,
-            creative_root=creative_projects_dir(),
-        )
-    except safety_backup.SafetyBackupError as exc:
-        _show_safety_copy_failed_banner(tracker, exc.user_detail)
-        return
-    try:
-        snapshots = _restore_snapshots_for_vault(tracker)
-    except profile_journal_sync.ProfileJournalSyncError:
-        tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
-        return
-    if snapshots.live_snapshot_incomplete():
-        tracker.ensure_status_banner().show_error(GENERIC_RESTORE_SNAPSHOT_FAILED_MSG)
-        return
-    try:
-        backup.import_backup(
-            safety_path,
-            merge_profiles=False,
-            replace_app_state=True,
-            creative_root=creative_projects_dir(),
-            passphrase=passphrase,
-        )
-    except BaseException:
-        _rollback_restore_snapshots(tracker, snapshots)
-        tracker.cancel_pending_save()
-        try:
-            tracker.load_data()
-        except Exception:
-            pass
-        tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
-        return
-    tracker.cancel_pending_save()
-    try:
-        profile_journal_sync.sync_active_profile_journal_to_tracker(tracker.data_path)
-    except profile_journal_sync.ProfileJournalSyncError:
-        _rollback_restore_snapshots(tracker, snapshots)
-        tracker.cancel_pending_save()
-        try:
-            tracker.load_data()
-        except Exception:
-            pass
-        tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
-        return
-    ok, msg = reencrypt_restored_journal_from_disk(tracker)
-    if not ok:
-        _rollback_restore_snapshots(tracker, snapshots)
-        tracker.cancel_pending_save()
-        try:
-            tracker.load_data()
-        except Exception:
-            pass
-        tracker.ensure_status_banner().show_error(msg or GENERIC_REENCRYPT_ERROR)
-        return
-    if _vault_active(tracker) and not is_encrypted_file(tracker.data_path):
-        _rollback_restore_snapshots(tracker, snapshots)
-        tracker.cancel_pending_save()
-        try:
-            tracker.load_data()
-        except Exception:
-            pass
-        tracker.ensure_status_banner().show_error(GENERIC_REENCRYPT_ERROR)
-        return
-    _remove_restore_snapshots(
-        snapshots.journal_snap,
-        snapshots.profile_snap,
-        snapshots.fitness_rollbacks,
+
+    tracker._undo_safety_busy = True
+    indicator = BusyIndicator(
+        tracker.root,
+        label="Working…",
+        theme=tracker.theme,
+        delay_ms=DEFAULT_DELAY_MS,
     )
-    tracker.cancel_pending_save()
-    tracker.load_data()
-    tracker.create_dashboard()
-    display_path = safety_backup.middle_ellipsize_path(undo_safety_path)
-    vault_on = backup.is_encrypted_backup_file(undo_safety_path)
-    tracker.ensure_status_banner().show_success(
-        f"Undo complete. Your previous data is back. Current data saved to {display_path}",
-        subtitle="Protected by your vault passphrase." if vault_on else None,
-        message_tooltip=undo_safety_path,
-        auto_hide_ms=0,
-        closable=True,
-        bind_escape=True,
-    )
+    indicator.start()
+
+    def worker() -> None:
+        snapshots: RestoreSnapshotBundle | None = None
+        undo_safety_path: str | None = None
+        try:
+            undo_safety_path = safety_backup.write_pre_restore_safety_backup(
+                tracker=tracker,
+                vault_on=_vault_active(tracker),
+                passphrase=tracker.vault_passphrase if _vault_active(tracker) else None,
+                creative_root=creative_projects_dir(),
+            )
+            snapshots = _restore_snapshots_for_vault(tracker)
+            if snapshots.live_snapshot_incomplete():
+                raise RuntimeError(GENERIC_RESTORE_SNAPSHOT_FAILED_MSG)
+            backup.import_backup(
+                safety_path,
+                merge_profiles=False,
+                replace_app_state=True,
+                creative_root=creative_projects_dir(),
+                passphrase=passphrase,
+            )
+            profile_journal_sync.sync_active_profile_journal_to_tracker(tracker.data_path)
+            ok, msg = reencrypt_restored_journal_from_disk(tracker)
+            if not ok:
+                raise RuntimeError(msg or GENERIC_REENCRYPT_ERROR)
+            if _vault_active(tracker) and not is_encrypted_file(tracker.data_path):
+                raise RuntimeError(GENERIC_REENCRYPT_ERROR)
+            _schedule_ui_callback(
+                tracker.root,
+                lambda usp=undo_safety_path, snap=snapshots: _complete_undo_restore_ui(
+                    tracker, snap, usp
+                ),
+            )
+        except safety_backup.SafetyBackupError as exc:
+            _schedule_ui_callback(
+                tracker.root,
+                lambda d=exc.user_detail, snap=snapshots: _rollback_undo_restore_ui(
+                    tracker, snap, safety_banner=True, detail=d
+                ),
+            )
+        except profile_journal_sync.ProfileJournalSyncError:
+            _schedule_ui_callback(
+                tracker.root,
+                lambda snap=snapshots: _rollback_undo_restore_ui(
+                    tracker, snap, error_message=GENERIC_RESTORE_ERROR
+                ),
+            )
+        except BaseException:
+            _schedule_ui_callback(
+                tracker.root,
+                lambda snap=snapshots: _rollback_undo_restore_ui(
+                    tracker, snap, error_message=GENERIC_RESTORE_ERROR
+                ),
+            )
+        finally:
+
+            def _finish_undo_busy() -> None:
+                indicator.stop()
+                tracker._undo_safety_busy = False
+
+            _schedule_ui_callback(tracker.root, _finish_undo_busy)
+
+    threading.Thread(target=worker, daemon=True).start()
 
 
 def _open_containing_folder(path: str) -> None:
