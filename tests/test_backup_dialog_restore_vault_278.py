@@ -219,6 +219,37 @@ def test_verify_vault_passphrase_all_plaintext_requires_matching_confirm(temp_ap
     assert msg is not None
 
 
+def test_encrypted_backup_vault_locked_at_pick_shows_unlock_then_backup_passphrase(
+    tk_root, temp_app, tmp_path,
+):
+    container_pw = "twelve-char-pp"
+    vault_pw = "vault-secret-12"
+    enc = str(tmp_path / f"pick{backup.ENCRYPTED_BACKUP_DEFAULT_SUFFIX}")
+    profiles.set_active_profile("default")
+    backup.export_backup(enc, profile_id="default", passphrase=container_pw)
+
+    tracker = _vault_on_locked_tracker(tk_root)
+    backup_dialog_ui.show_backup_dialog(tracker)
+    pump_tk(tk_root)
+    dialog = next(w for w in tk_root.winfo_children() if isinstance(w, tk.Toplevel))
+
+    with patch("backup_dialog_ui.filedialog.askopenfilename", return_value=enc):
+        _find_button(dialog, "Restore from").invoke()
+        pump_tk(tk_root, 15)
+
+    vault_entry, vault_confirm = _vault_unlock_entries(dialog)
+    assert vault_entry is not None
+    assert safety_backup.UNLOCK_VAULT_FIRST_MSG in _label_texts(dialog)
+
+    vault_entry.insert(0, vault_pw)
+    if vault_confirm is not None:
+        vault_confirm.insert(0, vault_pw)
+    _vault_continue_button(dialog).invoke()
+    pump_tk(tk_root, 15)
+
+    assert any("Restore passphrase" in t for t in _label_texts(dialog))
+
+
 def test_plaintext_vault_unlock_mismatch_never_reencrypts_or_sets_session(
     tk_root, temp_app, tmp_path,
 ):

@@ -284,7 +284,12 @@ class StatusBanner:
                 if cb:
                     cb()
 
-            btn = ttk.Button(actions, text=undo_label, command=do_undo, takefocus=0)
+            btn = ttk.Button(
+                actions,
+                text=undo_label,
+                command=do_undo,
+                takefocus=1 if focusable_actions and not actions_disabled else 0,
+            )
             btn.pack(side=tk.LEFT, padx=(0, 8) if actions_below else (8, 0))
             self._bind_pause(btn)
 
@@ -345,6 +350,7 @@ class StatusBanner:
         message_tooltip: str | None = None,
         closable: bool = False,
         bind_escape: bool = False,
+        focusable_actions: bool = False,
     ) -> None:
         if auto_hide_ms is None:
             ms = SUCCESS_UNDO_HIDE_MS if undo_callback else SUCCESS_HIDE_MS
@@ -362,6 +368,7 @@ class StatusBanner:
             message_tooltip=message_tooltip,
             closable=closable or bind_escape,
             bind_escape=bind_escape,
+            focusable_actions=focusable_actions,
         )
 
     def show_error(

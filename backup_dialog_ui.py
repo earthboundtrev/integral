@@ -903,6 +903,7 @@ def _show_restore_success_banner(
         actions_below=True,
         closable=True,
         bind_escape=True,
+        focusable_actions=True,
     )
 
 
@@ -1717,12 +1718,18 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
     def _vault_ready_for_restore() -> bool:
         return not _vault_active(tracker) or _vault_unlocked(tracker)
 
-    def _run_after_vault_unlock(apply_fn: Callable[[], None]) -> None:
+    def _run_after_vault_unlock(
+        apply_fn: Callable[[], None],
+        *,
+        pick_locked_hint: bool = False,
+    ) -> None:
         if _vault_ready_for_restore():
             apply_fn()
             return
         restore_state["pending_apply"] = apply_fn
         show_vault_unlock_ui()
+        if pick_locked_hint:
+            set_field_error(restore_err, safety_backup.UNLOCK_VAULT_FIRST_MSG)
 
     def submit_vault_unlock_for_restore() -> None:
         if restore_busy["active"]:
@@ -1811,6 +1818,11 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         restore_state["kind"] = "legacy"
         window.after_idle(refresh_dialog_scroll)
 
+    confirm_restore_btn = ttk.Button(confirm_buttons, text="Restore")
+    cancel_confirm_btn = ttk.Button(confirm_buttons, text="Cancel")
+    confirm_restore_btn.pack(side=tk.LEFT, padx=(0, 8))
+    cancel_confirm_btn.pack(side=tk.LEFT)
+
     def _confirm_enter_cancels(_event: tk.Event | None = None) -> str:
         if confirm_bar.winfo_ismapped():
             cancel_restore_flow()
@@ -1819,11 +1831,8 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
 
     confirm_bar.bind("<Return>", _confirm_enter_cancels, add="+")
     confirm_bar.bind("<KP_Enter>", _confirm_enter_cancels, add="+")
-
-    confirm_restore_btn = ttk.Button(confirm_buttons, text="Restore")
-    cancel_confirm_btn = ttk.Button(confirm_buttons, text="Cancel")
-    confirm_restore_btn.pack(side=tk.LEFT, padx=(0, 8))
-    cancel_confirm_btn.pack(side=tk.LEFT)
+    cancel_confirm_btn.bind("<Return>", _confirm_enter_cancels, add="+")
+    cancel_confirm_btn.bind("<KP_Enter>", _confirm_enter_cancels, add="+")
 
     def cancel_restore_flow() -> None:
         restore_state.update(path=None, encrypted=False, manifest=None, passphrase=None)
@@ -2030,12 +2039,6 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
             return
         if not _guard_restore_against_pending_rollback(tracker):
             return
-        if _vault_active(tracker) and not _vault_unlocked(tracker):
-            _show_vault_locked_restore_block(
-                path,
-                encrypted=bool(restore_state.get("encrypted")),
-            )
-            return
         kind = restore_state.get("kind") or "encrypted"
 
         def do_apply() -> None:
@@ -2182,21 +2185,30 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
 
         _run_after_vault_unlock(show_confirm)
 
-    def _show_vault_locked_restore_block(path: str, *, encrypted: bool) -> None:
-        hide_restore_ui()
-        restore_state["path"] = path
-        restore_state["encrypted"] = encrypted
-        restore_panel.pack(side=tk.BOTTOM, fill=tk.X, padx=15, pady=(4, 0), before=buttons)
-        restore_vault_note.pack_forget()
-        restore_pass_row.pack_forget()
-        vault_unlock_note.pack_forget()
-        vault_unlock_row.pack_forget()
-        vault_confirm_row.pack_forget()
-        vault_unlock_actions.pack_forget()
-        restore_caps.pack_forget()
-        restore_err.pack(anchor="w", fill=tk.X, pady=(2, 0))
-        set_field_error(restore_err, safety_backup.UNLOCK_VAULT_FIRST_MSG)
-        window.after_idle(refresh_dialog_scroll)
+    def _proceed_after_backup_pick() -> None:
+        path = restore_state.get("path")
+        if not path:
+            return
+        encrypted = bool(restore_state.get("encrypted"))
+        if encrypted:
+            if use_vault_var.get() and _vault_unlocked(tracker):
+                restore_state["passphrase"] = tracker.vault_passphrase
+                show_restore_passphrase_ui()
+                try_decrypt_manifest(path, tracker.vault_passphrase, finish_decrypt_preview)
+                return
+            show_restore_passphrase_ui()
+            if use_vault_var.get() and _vault_unlocked(tracker):
+                submit_restore_passphrase()
+            return
+
+        if path.lower().endswith(".json") or integral_io.is_full_backup_zip(path):
+            legacy_restore(path)
+            return
+        if _is_profile_backup_zip(path):
+            profile_zip_restore(path)
+            return
+
+        tracker.ensure_status_banner().show_error(BACKUP_WRONG_FILE_MSG)
 
     def restore_now() -> None:
         if restore_busy["active"] or restore_operation_in_progress():
@@ -2220,25 +2232,14 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         restore_state["path"] = path
         restore_state["encrypted"] = encrypted
 
-        if encrypted:
-            if use_vault_var.get() and _vault_unlocked(tracker):
-                restore_state["passphrase"] = tracker.vault_passphrase
-                show_restore_passphrase_ui()
-                try_decrypt_manifest(path, tracker.vault_passphrase, finish_decrypt_preview)
-                return
-            show_restore_passphrase_ui()
-            if use_vault_var.get() and _vault_unlocked(tracker):
-                submit_restore_passphrase()
+        if _vault_active(tracker) and not _vault_unlocked(tracker):
+            _run_after_vault_unlock(
+                _proceed_after_backup_pick,
+                pick_locked_hint=True,
+            )
             return
 
-        if path.lower().endswith(".json") or integral_io.is_full_backup_zip(path):
-            legacy_restore(path)
-            return
-        if _is_profile_backup_zip(path):
-            profile_zip_restore(path)
-            return
-
-        tracker.ensure_status_banner().show_error(BACKUP_WRONG_FILE_MSG)
+        _proceed_after_backup_pick()
 
     export_btn.configure(command=backup_now)
     restore_btn.configure(command=restore_now)
