@@ -100,6 +100,23 @@ def _isolated_user_data_home(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _reset_global_restore_busy_state() -> Iterator[None]:
+    """Prevent restore/undo busy counters from leaking across tests (#271)."""
+    import backup
+    import backup_dialog_ui
+
+    backup._REPLACE_TEST_HOOK = None
+    backup._REPLACE_TEST_INSTALL_COUNT = 0
+    backup_dialog_ui.reset_restore_operation_depth_for_tests()
+    yield
+    backup._REPLACE_TEST_HOOK = None
+    backup._REPLACE_TEST_INSTALL_COUNT = 0
+    backup_dialog_ui.reset_restore_operation_depth_for_tests()
+    if getattr(backup_dialog_ui, "_restore_operation_trackers", None):
+        backup_dialog_ui._restore_operation_trackers.clear()
+
+
+@pytest.fixture(autouse=True)
 def _stub_tk_messageboxes(request: pytest.FixtureRequest) -> Iterator[None]:
     """Prevent blocking messagebox modals from hanging headless pytest runs."""
     if request.node.get_closest_marker("allow_tk_messagebox"):
@@ -160,6 +177,7 @@ def pytest_sessionstart(session: pytest.Session) -> None:
 # NEEDS-WINDOWS (real machine, INTEGRAL_WINDOWS_EXE_CI unset): docs/WINDOWS_PR_BUILD_CHECKLIST.md
 _GHA_WINDOWS_EXE_SKIP_NODEIDS = frozenset(
     {
+        "tests/test_workout_pr_117.py::TestExerciseHistoryPerformance::test_heavy_dataset_page_fetch_under_100ms",
         "tests/test_app_shell_128.py::test_theme_toggle_preserves_inline_todo_draft_and_focus",
         "tests/test_journal_ui_131.py::test_journal_escape_from_focused_child_cancels_and_closes",
         "tests/test_journal_ui_99.py::TestJournalWindowLayout::test_header_wraplength_fits_minimum_window_width",

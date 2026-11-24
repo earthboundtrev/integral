@@ -83,7 +83,7 @@ I care enough to use it. I just wasn't going to hand-write all of this code myse
 
 - **Everything lives on your machine** — searchable, reviewable, exportable
 - **Optional encryption** — journal-grade privacy for thoughts you would not put on a random cloud app
-- **Backups and CSV export** — full zip backup includes life data, Writing Project manuscripts (`creative/`), and fitness progress; optional passphrase-encrypted `.integral-backup.enc` export and restore from Backup & Restore; CSV Export also ships a creative documents zip for offline copies
+- **Backups and CSV export** — full zip backup includes life data, Writing Project manuscripts (`creative/`), and fitness progress; optional passphrase-encrypted `.integral-backup.enc` export and restore from Backup & Restore; restore saves a timestamped safety copy under `Safety backups/` (with undo); CSV Export also ships a creative documents zip for offline copies
 - **Backdated entries with a reason** — catch up honestly without pretending you logged on the day (accountability, not cheating the tool)
 - **Fitness Hub** — CC and other programs as structured progressions, not scattered notes
 - **Writing Projects** — novels and scripts with an inspiration document beside the manuscript (autosave, local files)

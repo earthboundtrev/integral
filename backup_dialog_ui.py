@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Callable, NamedTuple
 import backup
 import integral_io
 import profile_journal_sync
+import safety_backup
 from busy_indicator import BusyIndicator, DEFAULT_DELAY_MS
 from inline_validation import (
     focus_first_invalid,
@@ -224,9 +225,49 @@ def _container_rollback_marker_blocks_activity(container_dir: str) -> bool:
     return status == "unreadable" or bool(artifacts)
 
 
+_restore_operation_depth = 0
+_restore_operation_trackers: list[PersonalDevelopmentTracker | None] = []
+
+
+def begin_restore_operation(tracker: PersonalDevelopmentTracker | None = None) -> None:
+    global _restore_operation_depth
+    _restore_operation_depth += 1
+    _restore_operation_trackers.append(tracker)
+    if tracker is not None:
+        tracker.defer_saves_for_restore()
+
+
+def end_restore_operation(*, replay_queued_saves: bool = False) -> None:
+    global _restore_operation_depth
+    tracker: PersonalDevelopmentTracker | None = None
+    if _restore_operation_trackers:
+        tracker = _restore_operation_trackers.pop()
+    _restore_operation_depth = max(0, _restore_operation_depth - 1)
+    if _restore_operation_depth == 0 and tracker is not None:
+        if replay_queued_saves:
+            tracker.flush_deferred_saves_after_restore()
+        else:
+            tracker.discard_deferred_saves_after_restore()
+
+
+def restore_operation_in_progress() -> bool:
+    return _restore_operation_depth > 0
+
+
+def reset_restore_operation_depth_for_tests() -> None:
+    """Reset global restore busy depth (pytest isolation)."""
+    global _restore_operation_depth, _restore_operation_trackers
+    _restore_operation_depth = 0
+    _restore_operation_trackers.clear()
+
+
 def restore_blocked_by_pending_rollback() -> bool:
     from vault import iter_journal_sweep_targets
 
+    import backup
+
+    if backup.replace_import_recovery_pending():
+        return True
     for _data_path, container_dir in iter_journal_sweep_targets():
         if _container_rollback_marker_blocks_activity(container_dir):
             return True
@@ -824,6 +865,218 @@ def reencrypt_restored_journal_from_disk(tracker: PersonalDevelopmentTracker) ->
     return True, None
 
 
+def _format_restore_profile_count(count: int) -> str:
+    noun = "profile" if count == 1 else "profiles"
+    return f"{count} {noun}"
+
+
+def _show_safety_copy_failed_banner(tracker: PersonalDevelopmentTracker, detail: str) -> None:
+    def show_details() -> None:
+        messagebox.showinfo(
+            "Safety copy",
+            safety_backup.safety_details_message(detail),
+            parent=tracker.root,
+        )
+
+    tracker.ensure_status_banner().show_error(
+        safety_backup.SAFETY_COPY_FAILED_BANNER,
+        extra_actions=[("Details", show_details)],
+    )
+
+
+def _show_restore_success_banner(
+    tracker: PersonalDevelopmentTracker,
+    safety_path: str,
+    *,
+    vault_on: bool,
+    undo_callback: Callable[[], None],
+) -> None:
+    display_path = safety_backup.middle_ellipsize_path(safety_path)
+    tracker.ensure_status_banner().show_success(
+        f"Restored. Your previous data was saved to {display_path}",
+        subtitle="Protected by your vault passphrase." if vault_on else None,
+        message_tooltip=safety_path,
+        undo_label="Undo restore",
+        undo_callback=undo_callback,
+        extra_actions=[("Open folder", lambda: _open_containing_folder(safety_path))],
+        auto_hide_ms=0,
+        actions_below=True,
+        closable=True,
+        bind_escape=True,
+        focusable_actions=True,
+    )
+
+
+def _complete_undo_restore_ui(
+    tracker: PersonalDevelopmentTracker,
+    snapshots: RestoreSnapshotBundle,
+    undo_safety_path: str,
+) -> None:
+    _remove_restore_snapshots(
+        snapshots.journal_snap,
+        snapshots.profile_snap,
+        snapshots.fitness_rollbacks,
+    )
+    tracker.cancel_pending_save()
+    tracker.discard_deferred_saves_after_restore()
+    tracker.load_data()
+    tracker.create_dashboard()
+    display_path = safety_backup.middle_ellipsize_path(undo_safety_path)
+    vault_on = backup.is_encrypted_backup_file(undo_safety_path)
+    tracker.ensure_status_banner().show_success(
+        f"Undo complete. Your previous data is back. Current data saved to {display_path}",
+        subtitle="Protected by your vault passphrase." if vault_on else None,
+        message_tooltip=undo_safety_path,
+        auto_hide_ms=0,
+        closable=True,
+        bind_escape=True,
+    )
+
+
+def _rollback_undo_restore_ui(
+    tracker: PersonalDevelopmentTracker,
+    snapshots: RestoreSnapshotBundle | None,
+    *,
+    error_message: str | None = None,
+    safety_banner: bool = False,
+    detail: str | None = None,
+) -> None:
+    if snapshots is not None:
+        _rollback_restore_snapshots(tracker, snapshots)
+    tracker.cancel_pending_save()
+    try:
+        tracker.load_data()
+    except Exception:
+        pass
+    if safety_banner and detail is not None:
+        _show_safety_copy_failed_banner(tracker, detail)
+    elif error_message:
+        tracker.ensure_status_banner().show_error(error_message)
+
+
+def apply_undo_from_safety_backup(
+    tracker: PersonalDevelopmentTracker,
+    safety_path: str,
+) -> None:
+    if not _guard_restore_against_pending_rollback(tracker):
+        return
+    if restore_operation_in_progress():
+        return
+    passphrase: str | None = None
+    if backup.is_encrypted_backup_file(safety_path):
+        passphrase = getattr(tracker, "vault_passphrase", None)
+        if not passphrase:
+            tracker.ensure_status_banner().show_error(safety_backup.UNLOCK_VAULT_FIRST_MSG)
+            return
+    if not prepare_restore_apply(tracker):
+        tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
+        return
+    try:
+        tracker.save_data(flush=True)
+        if not tracker.wait_for_save_idle():
+            raise safety_backup.SafetyBackupError("The safety copy couldn't be saved.")
+    except safety_backup.SafetyBackupError as exc:
+        _show_safety_copy_failed_banner(tracker, exc.user_detail)
+        return
+    except Exception as exc:  # noqa: BLE001
+        _show_safety_copy_failed_banner(
+            tracker,
+            safety_backup._user_friendly_write_error(exc),
+        )
+        return
+
+    indicator: BusyIndicator | None = None
+    try:
+        begin_restore_operation(tracker)
+        indicator = BusyIndicator(
+            tracker.root,
+            label="Working…",
+            theme=tracker.theme,
+            delay_ms=DEFAULT_DELAY_MS,
+        )
+        indicator.start()
+    except BaseException:
+        end_restore_operation()
+        raise
+
+    def worker() -> None:
+        snapshots: RestoreSnapshotBundle | None = None
+        undo_safety_path: str | None = None
+        replace_ledger: backup.ReplaceAsideLedger | None = None
+        ledger_committed = False
+        ui_failure: Callable[[], None] | None = None
+        try:
+            undo_safety_path = safety_backup.write_pre_restore_safety_backup(
+                tracker=tracker,
+                vault_on=_vault_active(tracker),
+                passphrase=tracker.vault_passphrase if _vault_active(tracker) else None,
+                creative_root=creative_projects_dir(),
+            )
+            snapshots = _restore_snapshots_for_vault(tracker)
+            if snapshots.live_snapshot_incomplete():
+                raise RuntimeError(GENERIC_RESTORE_SNAPSHOT_FAILED_MSG)
+            manifest = backup.import_backup(
+                safety_path,
+                merge_profiles=False,
+                replace_app_state=True,
+                creative_root=creative_projects_dir(),
+                passphrase=passphrase,
+            )
+            replace_ledger = manifest.get(backup.REPLACE_LEDGER_MANIFEST_KEY)
+            profile_journal_sync.sync_active_profile_journal_to_tracker(tracker.data_path)
+            ok, msg = reencrypt_restored_journal_from_disk(tracker)
+            if not ok:
+                raise RuntimeError(msg or GENERIC_REENCRYPT_ERROR)
+            if _vault_active(tracker) and not is_encrypted_file(tracker.data_path):
+                raise RuntimeError(GENERIC_REENCRYPT_ERROR)
+            if replace_ledger is not None:
+                backup.commit_replace_aside_ledger(replace_ledger)
+                ledger_committed = True
+                manifest.pop(backup.REPLACE_LEDGER_MANIFEST_KEY, None)
+            _schedule_ui_callback(
+                tracker.root,
+                lambda usp=undo_safety_path, snap=snapshots: _complete_undo_restore_ui(
+                    tracker, snap, usp
+                ),
+            )
+        except safety_backup.SafetyBackupError as exc:
+            detail = exc.user_detail
+            snap = snapshots
+
+            def _ui_fail() -> None:
+                _rollback_undo_restore_ui(tracker, snap, safety_banner=True, detail=detail)
+
+            ui_failure = _ui_fail
+        except profile_journal_sync.ProfileJournalSyncError:
+            snap = snapshots
+
+            def _ui_fail() -> None:
+                _rollback_undo_restore_ui(tracker, snap, error_message=GENERIC_RESTORE_ERROR)
+
+            ui_failure = _ui_fail
+        except BaseException:
+            snap = snapshots
+
+            def _ui_fail() -> None:
+                _rollback_undo_restore_ui(tracker, snap, error_message=GENERIC_RESTORE_ERROR)
+
+            ui_failure = _ui_fail
+        finally:
+            if replace_ledger is not None and not ledger_committed:
+                backup.rollback_replace_aside_ledger(replace_ledger)
+
+            def _finish_undo_sequence() -> None:
+                if ui_failure is not None:
+                    ui_failure()
+                if indicator is not None:
+                    indicator.stop()
+                end_restore_operation(replay_queued_saves=ui_failure is not None)
+
+            _schedule_ui_callback(tracker.root, _finish_undo_sequence)
+
+    threading.Thread(target=worker, daemon=True).start()
+
+
 def _open_containing_folder(path: str) -> None:
     folder = os.path.dirname(os.path.abspath(path))
     if not folder:
@@ -942,6 +1195,17 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         except tk.TclError:
             pass
 
+    def _show_backup_main_scroll() -> None:
+        if not scroll_outer.winfo_ismapped():
+            scroll_outer.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+        window.after_idle(refresh_dialog_scroll)
+
+    def _hide_backup_main_scroll() -> None:
+        try:
+            scroll_outer.pack_forget()
+        except tk.TclError:
+            pass
+
     export_busy = {"active": False}
     restore_busy = {"active": False}
     plaintext_bar_visible = {"visible": False}
@@ -951,7 +1215,7 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         text=(
             "Full backup zip from Export includes life data, creative/ manuscripts, and fitness.db "
             "when present. Encrypted backups use a separate .integral-backup.enc container.\n\n"
-            "Restore replaces current data (a .bak copy of data.json is kept)."
+            "Restore replaces current data. Your current data is saved automatically before apply."
         ),
         wraplength=520,
     )
@@ -1089,7 +1353,8 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         foreground=tracker.theme.get("muted", "#6B7280"),
     )
     vault_unlock_row = ttk.Frame(restore_panel)
-    ttk.Label(vault_unlock_row, text="Vault passphrase").pack(side=tk.LEFT)
+    vault_unlock_row.columnconfigure(1, weight=1)
+    ttk.Label(vault_unlock_row, text="Vault passphrase").grid(row=0, column=0, sticky="w")
     vault_unlock_entry = ttk.Entry(vault_unlock_row, show="*", width=VAULT_UNLOCK_ENTRY_WIDTH)
     vault_unlock_show = tk.BooleanVar(value=False)
 
@@ -1104,12 +1369,13 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         variable=vault_unlock_show,
         command=toggle_vault_unlock_visibility,
     )
-    vault_unlock_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(8, 8))
-    vault_unlock_show_btn.pack(side=tk.RIGHT, padx=(8, 0))
+    vault_unlock_entry.grid(row=0, column=1, sticky="ew", padx=(8, 8))
+    vault_unlock_show_btn.grid(row=0, column=2, sticky="e", padx=(0, 0))
     vault_confirm_row = ttk.Frame(restore_panel)
-    ttk.Label(vault_confirm_row, text="Confirm vault passphrase").pack(side=tk.LEFT)
+    vault_confirm_row.columnconfigure(1, weight=1)
+    ttk.Label(vault_confirm_row, text="Confirm vault passphrase").grid(row=0, column=0, sticky="w")
     vault_confirm_entry = ttk.Entry(vault_confirm_row, show="*", width=VAULT_UNLOCK_ENTRY_WIDTH)
-    vault_confirm_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(8, 8))
+    vault_confirm_entry.grid(row=0, column=1, sticky="ew", padx=(8, 8))
     vault_unlock_actions = ttk.Frame(restore_panel)
     vault_unlock_cancel_btn = ttk.Button(vault_unlock_actions, text="Back")
     vault_unlock_cancel_btn.pack(side=tk.LEFT, padx=(0, 8))
@@ -1123,23 +1389,25 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
     )
 
     def _layout_vault_unlock_show_toggle() -> None:
-        vault_unlock_show_btn.pack_forget()
-        vault_unlock_entry.pack_forget()
-        vault_unlock_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(8, 8))
         vault_unlock_row.update_idletasks()
-        row_width = vault_unlock_row.winfo_width()
-        entry_req = vault_unlock_entry.winfo_reqwidth()
-        label_req = vault_unlock_row.winfo_children()[0].winfo_reqwidth()
+        row_width = max(vault_unlock_row.winfo_width(), vault_unlock_row.winfo_reqwidth())
+        label_req = vault_unlock_row.grid_slaves(row=0, column=0)[0].winfo_reqwidth()
         show_req = vault_unlock_show_btn.winfo_reqwidth()
-        if row_width >= label_req + entry_req + show_req + 24:
-            vault_unlock_show_btn.pack(side=tk.RIGHT, padx=(8, 0))
-            vault_unlock_row.update_idletasks()
-            if vault_unlock_entry.winfo_width() < entry_req:
-                vault_unlock_show_btn.pack_forget()
+        min_entry = vault_unlock_entry.winfo_reqwidth()
+        if row_width > 0 and row_width < label_req + min_entry + show_req + 24:
+            vault_unlock_show_btn.grid_remove()
+        else:
+            vault_unlock_show_btn.grid(row=0, column=2, sticky="e", padx=(0, 0))
 
     confirm_bar = ttk.Frame(footer)
     confirm_label = ttk.Label(confirm_bar, text="", wraplength=500)
-    confirm_label.pack(anchor="w", pady=(0, 8))
+    confirm_label.pack(anchor="w", pady=(0, 4))
+    confirm_saved_label = ttk.Label(
+        confirm_bar,
+        text="Your current data will be saved first.",
+        wraplength=500,
+    )
+    confirm_saved_label.pack(anchor="w", pady=(0, 8))
     confirm_buttons = ttk.Frame(confirm_bar)
 
     encrypt_chk.pack(side=tk.LEFT)
@@ -1237,14 +1505,20 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
     indicator = BusyIndicator(busy_host, label="Working…", theme=tracker.theme, delay_ms=DEFAULT_DELAY_MS)
 
     def set_buttons_enabled(export: bool, restore: bool) -> None:
+        blocked = restore_operation_in_progress()
         try:
-            export_btn.configure(state=tk.NORMAL if export else tk.DISABLED)
-            restore_btn.configure(state=tk.NORMAL if restore else tk.DISABLED)
+            export_btn.configure(
+                state=tk.NORMAL if export and not blocked else tk.DISABLED
+            )
+            restore_btn.configure(
+                state=tk.NORMAL if restore and not blocked else tk.DISABLED
+            )
             close_allowed = (
                 export
                 and restore
                 and not restore_busy["active"]
                 and not export_busy["active"]
+                and not blocked
             )
             close_btn.configure(state=tk.NORMAL if close_allowed else tk.DISABLED)
         except tk.TclError:
@@ -1256,6 +1530,7 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         "manifest": None,
         "passphrase": None,
         "pending_apply": None,
+        "kind": "encrypted",
     }
 
     def clear_passphrase_widgets() -> None:
@@ -1265,7 +1540,7 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         set_field_error(restore_err, None)
 
     def on_close() -> None:
-        if restore_busy["active"] or export_busy["active"]:
+        if restore_busy["active"] or export_busy["active"] or restore_operation_in_progress():
             return
         restore_state["passphrase"] = None
         clear_passphrase_widgets()
@@ -1378,7 +1653,7 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         threading.Thread(target=worker, daemon=True).start()
 
     def backup_now() -> None:
-        if export_busy["active"]:
+        if export_busy["active"] or restore_operation_in_progress():
             return
         if encrypt_var.get() and CRYPTO_AVAILABLE:
             run_encrypted_export()
@@ -1403,13 +1678,16 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
     export_plain_btn = ttk.Button(plaintext_buttons, text="Export unencrypted", command=export_unencrypted)
     export_plain_btn.pack(side=tk.LEFT)
 
-    def hide_restore_ui() -> None:
+    def hide_restore_ui(*, restore_main_scroll: bool = True) -> None:
         restore_panel.pack_forget()
         confirm_bar.pack_forget()
+        if restore_main_scroll:
+            _show_backup_main_scroll()
         window.after_idle(refresh_dialog_scroll)
 
     def show_vault_unlock_ui() -> None:
-        hide_restore_ui()
+        hide_restore_ui(restore_main_scroll=False)
+        _hide_backup_main_scroll()
         restore_panel.pack(side=tk.BOTTOM, fill=tk.X, padx=15, pady=(4, 0), before=buttons)
         restore_pass_row.pack_forget()
         restore_vault_note.pack_forget()
@@ -1440,12 +1718,18 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
     def _vault_ready_for_restore() -> bool:
         return not _vault_active(tracker) or _vault_unlocked(tracker)
 
-    def _run_after_vault_unlock(apply_fn: Callable[[], None]) -> None:
+    def _run_after_vault_unlock(
+        apply_fn: Callable[[], None],
+        *,
+        pick_locked_hint: bool = False,
+    ) -> None:
         if _vault_ready_for_restore():
             apply_fn()
             return
         restore_state["pending_apply"] = apply_fn
         show_vault_unlock_ui()
+        if pick_locked_hint:
+            set_field_error(restore_err, safety_backup.UNLOCK_VAULT_FIRST_MSG)
 
     def submit_vault_unlock_for_restore() -> None:
         if restore_busy["active"]:
@@ -1509,18 +1793,46 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         restore_panel.pack_forget()
         date_txt = _format_backup_date(str(manifest.get("exported_at", "")))
         profile_count = len(manifest.get("profiles") or [])
+        profiles_txt = _format_restore_profile_count(profile_count)
         confirm_label.config(
-            text=f"Replace your current data with the backup from {date_txt} ({profile_count} profiles)?"
+            text=f"Replace your current data with the backup from {date_txt} ({profiles_txt})?"
         )
+        confirm_saved_label.config(text="Your current data will be saved first.")
         confirm_bar.pack(side=tk.BOTTOM, fill=tk.X, padx=15, pady=(8, 0), before=buttons)
         confirm_buttons.pack(anchor="w")
         cancel_confirm_btn.focus_set()
+        confirm_restore_btn.configure(takefocus=0)
+        window.after_idle(refresh_dialog_scroll)
+
+    def show_legacy_confirm_bar(path: str) -> None:
+        restore_panel.pack_forget()
+        confirm_label.config(
+            text="Replace your current data with the selected backup file?"
+        )
+        confirm_saved_label.config(text="Your current data will be saved first.")
+        confirm_bar.pack(side=tk.BOTTOM, fill=tk.X, padx=15, pady=(8, 0), before=buttons)
+        confirm_buttons.pack(anchor="w")
+        cancel_confirm_btn.focus_set()
+        confirm_restore_btn.configure(takefocus=0)
+        restore_state["path"] = path
+        restore_state["kind"] = "legacy"
         window.after_idle(refresh_dialog_scroll)
 
     confirm_restore_btn = ttk.Button(confirm_buttons, text="Restore")
     cancel_confirm_btn = ttk.Button(confirm_buttons, text="Cancel")
     confirm_restore_btn.pack(side=tk.LEFT, padx=(0, 8))
     cancel_confirm_btn.pack(side=tk.LEFT)
+
+    def _confirm_enter_cancels(_event: tk.Event | None = None) -> str:
+        if confirm_bar.winfo_ismapped():
+            cancel_restore_flow()
+            return "break"
+        return "break"
+
+    confirm_bar.bind("<Return>", _confirm_enter_cancels, add="+")
+    confirm_bar.bind("<KP_Enter>", _confirm_enter_cancels, add="+")
+    cancel_confirm_btn.bind("<Return>", _confirm_enter_cancels, add="+")
+    cancel_confirm_btn.bind("<KP_Enter>", _confirm_enter_cancels, add="+")
 
     def cancel_restore_flow() -> None:
         restore_state.update(path=None, encrypted=False, manifest=None, passphrase=None)
@@ -1535,6 +1847,7 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         *,
         snapshots: RestoreSnapshotBundle,
         sync_from_profile: bool = True,
+        safety_path: str | None = None,
     ) -> bool:
         tracker.cancel_pending_save()
         try:
@@ -1579,93 +1892,207 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
             snapshots.fitness_rollbacks,
         )
         tracker.cancel_pending_save()
+        tracker.discard_deferred_saves_after_restore()
         tracker.load_data()
         tracker.create_dashboard()
-        tracker.ensure_status_banner().show_success("Journal restored from backup.")
+        if safety_path:
+            vault_on = backup.is_encrypted_backup_file(safety_path)
+            _show_restore_success_banner(
+                tracker,
+                safety_path,
+                vault_on=vault_on,
+                undo_callback=lambda p=safety_path: apply_undo_from_safety_backup(tracker, p),
+            )
+        else:
+            tracker.ensure_status_banner().show_success("Journal restored from backup.")
         cancel_restore_flow()
         window.destroy()
         return True
 
-    def finish_restore_success(
+    def _begin_restored_apply(
         *,
-        snapshots: RestoreSnapshotBundle,
+        path: str,
+        backup_passphrase: str | None,
+        run_import: Callable[[], None],
         sync_from_profile: bool = True,
+        on_wrong_passphrase: Callable[[str], None] | None = None,
     ) -> None:
-        _complete_restore_after_import(
-            snapshots=snapshots,
-            sync_from_profile=sync_from_profile,
-        )
+        if not prepare_restore_apply(tracker):
+            tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
+            cancel_restore_flow()
+            return
+        try:
+            snapshots = _restore_snapshots_for_vault(tracker)
+        except profile_journal_sync.ProfileJournalSyncError:
+            tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
+            cancel_restore_flow()
+            return
+        if snapshots.live_snapshot_incomplete():
+            tracker.ensure_status_banner().show_error(GENERIC_RESTORE_SNAPSHOT_FAILED_MSG)
+            cancel_restore_flow()
+            return
+        try:
+            tracker.save_data(flush=True)
+            if not tracker.wait_for_save_idle():
+                raise SafetyBackupError("The safety copy couldn't be saved.")
+        except safety_backup.SafetyBackupError as exc:
+            _show_safety_copy_failed_banner(tracker, exc.user_detail)
+            restore_state["snapshots"] = None
+            cancel_restore_flow()
+            return
+        except Exception as exc:  # noqa: BLE001
+            _show_safety_copy_failed_banner(
+                tracker,
+                safety_backup._user_friendly_write_error(exc),
+            )
+            restore_state["snapshots"] = None
+            cancel_restore_flow()
+            return
 
-    def apply_encrypted_restore() -> None:
+        restore_state["snapshots"] = snapshots
+        restore_busy["active"] = True
+        begin_restore_operation(tracker)
+        set_buttons_enabled(False, False)
+        indicator.start()
+
+        def on_safety_fail(detail: str) -> None:
+            restore_busy["active"] = False
+            indicator.stop()
+            end_restore_operation(replay_queued_saves=True)
+            set_buttons_enabled(True, True)
+            snapshots_local = restore_state.get("snapshots")
+            if snapshots_local is not None:
+                _remove_restore_snapshots(
+                    snapshots_local.journal_snap,
+                    snapshots_local.profile_snap,
+                    snapshots_local.fitness_rollbacks,
+                )
+            restore_state["snapshots"] = None
+            _show_safety_copy_failed_banner(tracker, detail)
+
+        def on_import_fail(exc: BaseException) -> None:
+            restore_busy["active"] = False
+            indicator.stop()
+            end_restore_operation(replay_queued_saves=True)
+            set_buttons_enabled(True, True)
+            snapshots_local = restore_state.get("snapshots")
+            if snapshots_local is not None:
+                _rollback_restore_snapshots(tracker, snapshots_local)
+            restore_state["snapshots"] = None
+            msg = _safe_user_error(exc, context="restore")
+            if isinstance(exc, WrongPassphraseError) and on_wrong_passphrase is not None:
+                on_wrong_passphrase(msg)
+                return
+            tracker.ensure_status_banner().show_error(msg)
+            cancel_restore_flow()
+
+        def on_success(safety_path: str) -> None:
+            restore_busy["active"] = False
+            indicator.stop()
+            snapshots_local = restore_state.get("snapshots")
+            restore_state["snapshots"] = None
+            try:
+                if snapshots_local is None:
+                    return
+                _complete_restore_after_import(
+                    snapshots=snapshots_local,
+                    sync_from_profile=sync_from_profile,
+                    safety_path=safety_path,
+                )
+            finally:
+                end_restore_operation()
+                set_buttons_enabled(True, True)
+
+        def worker() -> None:
+            try:
+                safety_path = safety_backup.write_pre_restore_safety_backup(
+                    tracker=tracker,
+                    vault_on=_vault_active(tracker),
+                    passphrase=tracker.vault_passphrase if _vault_active(tracker) else None,
+                    creative_root=creative_projects_dir(),
+                )
+            except safety_backup.SafetyBackupError as exc:
+                _schedule_ui_callback(tracker.root, lambda d=exc.user_detail: on_safety_fail(d))
+                return
+            try:
+                run_import()
+            except BaseException as exc:  # noqa: BLE001
+                _schedule_ui_callback(tracker.root, lambda e=exc: on_import_fail(e))
+                return
+            _schedule_ui_callback(tracker.root, lambda sp=safety_path: on_success(sp))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _wrong_passphrase_restore_ui(msg: str) -> None:
+        set_field_error(restore_err, msg)
+        try:
+            restore_pass_entry.select_range(0, tk.END)
+            restore_pass_entry.focus_set()
+        except tk.TclError:
+            pass
+        show_restore_passphrase_ui()
+        confirm_bar.pack_forget()
+
+    def apply_confirmed_restore() -> None:
         path = restore_state.get("path")
-        passphrase = restore_state.get("passphrase")
-        if not path or not passphrase:
+        if not path:
             return
         if not _guard_restore_against_pending_rollback(tracker):
             return
+        kind = restore_state.get("kind") or "encrypted"
 
         def do_apply() -> None:
-            if not prepare_restore_apply(tracker):
-                tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
-                return
-            try:
-                snapshots = _restore_snapshots_for_vault(tracker)
-            except profile_journal_sync.ProfileJournalSyncError:
-                tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
-                cancel_restore_flow()
-                return
-            if snapshots.live_snapshot_incomplete():
-                tracker.ensure_status_banner().show_error(GENERIC_RESTORE_SNAPSHOT_FAILED_MSG)
-                cancel_restore_flow()
-                return
-            restore_state["snapshots"] = snapshots
-            restore_busy["active"] = True
-            set_buttons_enabled(False, False)
-            indicator.start()
+            if kind == "legacy":
 
-            def worker() -> None:
-                try:
+                def run_import() -> None:
+                    integral_io.restore_backup_file(
+                        path,
+                        tracker.data_path,
+                        creative_root=creative_projects_dir(),
+                        fitness_db_path=_active_fitness_db_path(tracker, require_exists=False),
+                        make_copy=False,
+                    )
+
+                _begin_restored_apply(
+                    path=path,
+                    backup_passphrase=None,
+                    run_import=run_import,
+                    sync_from_profile=False,
+                )
+                return
+            if kind == "profile_zip":
+
+                def run_import() -> None:
                     backup.import_backup(
                         path,
                         merge_profiles=True,
                         creative_root=creative_projects_dir(),
-                        passphrase=passphrase,
                     )
-                    _schedule_ui_callback(tracker.root, lambda: on_import_done(None))
-                except BaseException as exc:  # noqa: BLE001
-                    _schedule_ui_callback(tracker.root, lambda e=exc: on_import_done(e))
 
-            def on_import_done(exc: BaseException | None) -> None:
-                restore_busy["active"] = False
-                indicator.stop()
-                set_buttons_enabled(True, True)
-                snapshots = restore_state.get("snapshots")
-                if exc is not None:
-                    if snapshots is not None:
-                        _rollback_restore_snapshots(tracker, snapshots)
-                    restore_state["snapshots"] = None
-                    msg = _safe_user_error(exc, context="restore")
-                    if isinstance(exc, WrongPassphraseError):
-                        set_field_error(restore_err, msg)
-                        try:
-                            restore_pass_entry.select_range(0, tk.END)
-                            restore_pass_entry.focus_set()
-                        except tk.TclError:
-                            pass
-                        show_restore_passphrase_ui()
-                        confirm_bar.pack_forget()
-                    else:
-                        tracker.ensure_status_banner().show_error(msg)
-                        cancel_restore_flow()
-                    return
-                if snapshots is not None:
-                    _complete_restore_after_import(snapshots=snapshots)
+                _begin_restored_apply(path=path, backup_passphrase=None, run_import=run_import)
+                return
+            passphrase = restore_state.get("passphrase")
+            if not passphrase:
+                return
 
-            threading.Thread(target=worker, daemon=True).start()
+            def run_import() -> None:
+                backup.import_backup(
+                    path,
+                    merge_profiles=True,
+                    creative_root=creative_projects_dir(),
+                    passphrase=passphrase,
+                )
+
+            _begin_restored_apply(
+                path=path,
+                backup_passphrase=passphrase,
+                run_import=run_import,
+                on_wrong_passphrase=_wrong_passphrase_restore_ui,
+            )
 
         _run_after_vault_unlock(do_apply)
 
-    confirm_restore_btn.configure(command=apply_encrypted_restore)
+    confirm_restore_btn.configure(command=apply_confirmed_restore)
 
     def try_decrypt_manifest(
         path: str,
@@ -1704,6 +2131,7 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
             return
         if manifest:
             restore_state["manifest"] = manifest
+            restore_state["kind"] = "encrypted"
             show_confirm_bar(manifest)
 
     def submit_restore_passphrase() -> None:
@@ -1734,47 +2162,11 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
     def legacy_restore(path: str) -> None:
         if not _guard_restore_against_pending_rollback(tracker):
             return
-        if not messagebox.askyesno(
-            "Confirm restore",
-            "This replaces your current journal and Writing Project documents with the backup. Continue?",
-            parent=window,
-        ):
-            return
 
-        def do_apply() -> None:
-            if not prepare_restore_apply(tracker):
-                tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
-                return
-            try:
-                snapshots = _restore_snapshots_for_vault(tracker)
-            except profile_journal_sync.ProfileJournalSyncError:
-                tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
-                return
-            if snapshots.live_snapshot_incomplete():
-                tracker.ensure_status_banner().show_error(GENERIC_RESTORE_SNAPSHOT_FAILED_MSG)
-                return
-            try:
-                result = integral_io.restore_backup_file(
-                    path,
-                    tracker.data_path,
-                    creative_root=creative_projects_dir(),
-                    fitness_db_path=_active_fitness_db_path(tracker, require_exists=False),
-                    make_copy=True,
-                )
-                if not _complete_restore_after_import(
-                    snapshots=snapshots,
-                    sync_from_profile=False,
-                ):
-                    return
-                warning = result.get("warning")
-                if warning:
-                    tracker.ensure_status_banner().show_info(warning)
-                clear_passphrase_widgets()
-            except (OSError, ValueError):
-                _rollback_restore_snapshots(tracker, snapshots)
-                tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
+        def show_confirm() -> None:
+            show_legacy_confirm_bar(path)
 
-        _run_after_vault_unlock(do_apply)
+        _run_after_vault_unlock(show_confirm)
 
     def profile_zip_restore(path: str) -> None:
         if not _guard_restore_against_pending_rollback(tracker):
@@ -1784,58 +2176,20 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         except (OSError, ValueError):
             tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
             return
-        date_txt = _format_backup_date(str(manifest.get("exported_at", "")))
-        profile_count = len(manifest.get("profiles") or [])
-        if not messagebox.askyesno(
-            "Confirm restore",
-            f"Replace your current data with the backup from {date_txt} ({profile_count} profiles)?",
-            parent=window,
-        ):
-            return
+        restore_state["path"] = path
+        restore_state["kind"] = "profile_zip"
+        restore_state["manifest"] = manifest
 
-        def do_apply() -> None:
-            if not prepare_restore_apply(tracker):
-                tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
-                return
-            try:
-                snapshots = _restore_snapshots_for_vault(tracker)
-            except profile_journal_sync.ProfileJournalSyncError:
-                tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
-                return
-            if snapshots.live_snapshot_incomplete():
-                tracker.ensure_status_banner().show_error(GENERIC_RESTORE_SNAPSHOT_FAILED_MSG)
-                return
-            try:
-                backup.import_backup(path, merge_profiles=True, creative_root=creative_projects_dir())
-                finish_restore_success(snapshots=snapshots)
-            except (OSError, ValueError):
-                _rollback_restore_snapshots(tracker, snapshots)
-                tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
+        def show_confirm() -> None:
+            show_confirm_bar(manifest)
 
-        _run_after_vault_unlock(do_apply)
+        _run_after_vault_unlock(show_confirm)
 
-    def restore_now() -> None:
-        if restore_busy["active"]:
-            return
-        cancel_restore_flow()
-        path = filedialog.askopenfilename(
-            parent=window,
-            title="Restore backup",
-            filetypes=[
-                ("Integral backups", f"*.zip *.json *{backup.ENCRYPTED_BACKUP_DEFAULT_SUFFIX}"),
-                ("Encrypted backup", f"*{backup.ENCRYPTED_BACKUP_DEFAULT_SUFFIX}"),
-                ("Full zip backup", "*.zip"),
-                ("Legacy JSON backup", "*.json"),
-                ("All files", "*.*"),
-            ],
-        )
+    def _proceed_after_backup_pick() -> None:
+        path = restore_state.get("path")
         if not path:
             return
-
-        encrypted = backup.is_encrypted_backup_file(path)
-        restore_state["path"] = path
-        restore_state["encrypted"] = encrypted
-
+        encrypted = bool(restore_state.get("encrypted"))
         if encrypted:
             if use_vault_var.get() and _vault_unlocked(tracker):
                 restore_state["passphrase"] = tracker.vault_passphrase
@@ -1856,11 +2210,42 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
 
         tracker.ensure_status_banner().show_error(BACKUP_WRONG_FILE_MSG)
 
+    def restore_now() -> None:
+        if restore_busy["active"] or restore_operation_in_progress():
+            return
+        cancel_restore_flow()
+        path = filedialog.askopenfilename(
+            parent=window,
+            title="Restore backup",
+            filetypes=[
+                ("Integral backups", f"*.zip *.json *{backup.ENCRYPTED_BACKUP_DEFAULT_SUFFIX}"),
+                ("Encrypted backup", f"*{backup.ENCRYPTED_BACKUP_DEFAULT_SUFFIX}"),
+                ("Full zip backup", "*.zip"),
+                ("Legacy JSON backup", "*.json"),
+                ("All files", "*.*"),
+            ],
+        )
+        if not path:
+            return
+
+        encrypted = backup.is_encrypted_backup_file(path)
+        restore_state["path"] = path
+        restore_state["encrypted"] = encrypted
+
+        if _vault_active(tracker) and not _vault_unlocked(tracker):
+            _run_after_vault_unlock(
+                _proceed_after_backup_pick,
+                pick_locked_hint=True,
+            )
+            return
+
+        _proceed_after_backup_pick()
+
     export_btn.configure(command=backup_now)
     restore_btn.configure(command=restore_now)
 
     def on_escape(_event: tk.Event | None = None) -> str:
-        if restore_busy["active"] or export_busy["active"]:
+        if restore_busy["active"] or export_busy["active"] or restore_operation_in_progress():
             return "break"
         if plaintext_bar_visible["visible"]:
             encrypt_instead()

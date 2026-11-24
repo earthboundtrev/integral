@@ -169,6 +169,9 @@ class PersonalDevelopmentTracker:
         self._save_after_id: str | None = None
         self._pending_save_payload: dict | None = None
         self._save_after_callbacks: list[Callable[[bool, BaseException | None], None]] = []
+        self._restore_deferred_saves: list[
+            tuple[dict | None, list[Callable[[bool, BaseException | None], None]]]
+        ] = []
         self._save_write_in_progress = False
         self._save_idle_event = threading.Event()
         self._save_idle_event.set()
@@ -248,8 +251,10 @@ class PersonalDevelopmentTracker:
 
         sweep_journal_save_artifacts_at_startup()
 
+        from backup import sweep_replace_aside_pending_at_startup
         from backup_dialog_ui import sweep_pre_restore_journal_snaps_at_startup
 
+        sweep_replace_aside_pending_at_startup()
         sweep_pre_restore_journal_snaps_at_startup()
 
         if encrypted_journal_envelope_path(DATA_FILE) and not prompt_vault_unlock(self):
@@ -681,6 +686,10 @@ class PersonalDevelopmentTracker:
         return self._insights_cache
 
     def _on_close(self) -> None:
+        from backup_dialog_ui import restore_operation_in_progress
+
+        if restore_operation_in_progress():
+            return
         notifications = normalize_notification_settings(self.settings)["notifications"]
         if notifications.get("minimize_on_close"):
             self.root.iconify()
@@ -961,6 +970,38 @@ class PersonalDevelopmentTracker:
         self._pending_save_payload = None
         self._save_after_callbacks = []
 
+    def defer_saves_for_restore(self) -> None:
+        """Hold pending saves while a restore is in flight; flush after restore ends."""
+        if self._save_after_id:
+            try:
+                self.root.after_cancel(self._save_after_id)
+            except tk.TclError:
+                pass
+            self._save_after_id = None
+        if self._pending_save_payload is not None or self._save_after_callbacks:
+            self._restore_deferred_saves.append(
+                (self._pending_save_payload, list(self._save_after_callbacks))
+            )
+        self._pending_save_payload = None
+        self._save_after_callbacks = []
+
+    def discard_deferred_saves_after_restore(self) -> None:
+        """Drop saves queued during restore; notify waiters without writing disk."""
+        for _payload, callbacks in self._restore_deferred_saves:
+            self._invoke_save_callbacks(callbacks, False, None)
+        self._restore_deferred_saves.clear()
+
+    def flush_deferred_saves_after_restore(self) -> None:
+        if not self._restore_deferred_saves:
+            return
+        for payload, callbacks in self._restore_deferred_saves:
+            if payload is not None:
+                self._pending_save_payload = payload
+            self._save_after_callbacks.extend(callbacks)
+        self._restore_deferred_saves.clear()
+        if self._pending_save_payload is not None:
+            self._flush_save(sync=True)
+
     def wait_for_save_idle(self, *, timeout_s: float = 8.0) -> bool:
         """Wait until an in-flight save finishes (does not start a new save)."""
         import time
@@ -987,6 +1028,15 @@ class PersonalDevelopmentTracker:
         flush: bool = False,
         on_complete: Callable[[bool, BaseException | None], None] | None = None,
     ) -> None:
+        from backup_dialog_ui import restore_operation_in_progress
+
+        if restore_operation_in_progress():
+            payload = self._payload(recompute_fitness=recompute_fitness)
+            callbacks: list[Callable[[bool, BaseException | None], None]] = []
+            if on_complete is not None:
+                callbacks.append(on_complete)
+            self._restore_deferred_saves.append((payload, callbacks))
+            return
         if categories is not None:
             self.categories = categories
         if on_complete is not None:
@@ -1047,15 +1097,28 @@ class PersonalDevelopmentTracker:
         self._save_after_id = self.root.after(0, lambda: self._flush_save(sync=False))
 
     def _flush_save(self, sync: bool = False) -> None:
+        from backup_dialog_ui import restore_operation_in_progress
+
         self._save_after_id = None
-        if self._save_write_in_progress:
+        pending_payload = self._pending_save_payload
+        pending_callbacks = list(self._save_after_callbacks)
+        self._pending_save_payload = None
+        self._save_after_callbacks = []
+        if restore_operation_in_progress():
+            if pending_payload is not None or pending_callbacks:
+                self._restore_deferred_saves.append((pending_payload, pending_callbacks))
             return
-        payload = self._pending_save_payload
+        if self._save_write_in_progress:
+            self._pending_save_payload = pending_payload
+            self._save_after_callbacks = pending_callbacks
+            return
+        payload = pending_payload
         if payload is None:
+            if pending_callbacks:
+                self._invoke_save_callbacks(pending_callbacks, False, None)
             return
 
-        callbacks = self._save_after_callbacks
-        self._save_after_callbacks = []
+        callbacks = pending_callbacks
 
         encrypted = bool(self.settings.get("encryption_enabled"))
         passphrase = self.vault_passphrase

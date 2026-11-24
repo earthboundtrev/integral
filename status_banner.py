@@ -43,6 +43,7 @@ class StatusBanner:
         self._pause_depth = 0
         self._undo_callback: Callable[[], None] | None = None
         self._deferred_success: tuple[str, str | None, Callable[[], None] | None] | None = None
+        self._escape_bind_id: str | None = None
         self._sr_label = tk.Label(self._host, text="", takefocus=0)
         self._sr_label.place(x=-10000, y=-10000, width=1, height=1)
 
@@ -96,6 +97,13 @@ class StatusBanner:
     def dismiss(self) -> None:
         deferred = self._deferred_success if self._kind == _KIND_ERROR else None
         self._deferred_success = None
+        if self._escape_bind_id is not None:
+            top = self._host.winfo_toplevel()
+            try:
+                top.unbind("<Escape>", self._escape_bind_id)
+            except tk.TclError:
+                pass
+            self._escape_bind_id = None
         self._clear_frame()
         self._kind = None
         self._sr_label.config(text="")
@@ -145,6 +153,10 @@ class StatusBanner:
         closable: bool = False,
         focusable_actions: bool = False,
         actions_disabled: bool = False,
+        subtitle: str | None = None,
+        actions_below: bool = False,
+        message_tooltip: str | None = None,
+        bind_escape: bool = False,
     ) -> None:
         if kind == _KIND_SUCCESS and self._kind == _KIND_ERROR and self._frame is not None:
             self._deferred_success = (message, undo_label, undo_callback)
@@ -170,23 +182,98 @@ class StatusBanner:
 
         msg = f"{icon}  {message}" if icon else message
         self._message_var.set(msg)
+        sr_text = message if not subtitle else f"{message} {subtitle}"
+        self._sr_label.config(text=sr_text)
+
+        text_host = tk.Frame(inner, bg=bg)
+        text_host.pack(fill=tk.X, expand=True)
+
         text = tk.Label(
-            inner,
+            text_host,
             textvariable=self._message_var,
             bg=bg,
             fg=fg,
             font=("Helvetica", 10),
             anchor="w",
             justify=tk.LEFT,
-            wraplength=720,
             takefocus=0,
         )
-        self._sr_label.config(text=message)
+        text.pack(anchor="w", fill=tk.X)
+
+        subtitle_label: tk.Label | None = None
+        if subtitle:
+            subtitle_label = tk.Label(
+                text_host,
+                text=subtitle,
+                bg=bg,
+                fg=fg,
+                font=("Helvetica", 10),
+                anchor="w",
+                justify=tk.LEFT,
+                takefocus=0,
+            )
+            subtitle_label.pack(anchor="w", fill=tk.X, pady=(4, 0))
+
+        if message_tooltip:
+            tip_holder: list[tk.Toplevel | None] = [None]
+
+            def show_tooltip(_e: tk.Event | None = None) -> None:
+                if tip_holder[0] is not None:
+                    return
+                tip = tk.Toplevel(text)
+                tip.wm_overrideredirect(True)
+                tip.configure(bg=bg)
+                tip_label = tk.Label(
+                    tip,
+                    text=message_tooltip,
+                    bg=bg,
+                    fg=fg,
+                    font=("Helvetica", 9),
+                    justify=tk.LEFT,
+                    padx=8,
+                    pady=4,
+                )
+                tip_label.pack()
+                try:
+                    x = text.winfo_rootx()
+                    y = text.winfo_rooty() + text.winfo_height() + 4
+                    tip.geometry(f"+{x}+{y}")
+                except tk.TclError:
+                    pass
+                tip_holder[0] = tip
+
+            def hide_tooltip(_e: tk.Event | None = None) -> None:
+                tip = tip_holder[0]
+                if tip is not None:
+                    try:
+                        tip.destroy()
+                    except tk.TclError:
+                        pass
+                    tip_holder[0] = None
+
+            text.bind("<Enter>", show_tooltip, add="+")
+            text.bind("<Leave>", hide_tooltip, add="+")
+
+        def _apply_wraplength(_event: tk.Event | None = None) -> None:
+            try:
+                width = max(inner.winfo_width() - 24, 120)
+            except tk.TclError:
+                return
+            try:
+                text.configure(wraplength=width)
+                if subtitle_label is not None:
+                    subtitle_label.configure(wraplength=width)
+            except tk.TclError:
+                pass
+
+        inner.bind("<Configure>", _apply_wraplength, add="+")
+        _apply_wraplength()
 
         actions = tk.Frame(inner, bg=bg)
-        actions.pack(side=tk.RIGHT)
-
-        text.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        if actions_below:
+            actions.pack(fill=tk.X, pady=(10, 0))
+        else:
+            actions.pack(side=tk.RIGHT)
 
         if undo_label and undo_callback:
             self._undo_callback = undo_callback
@@ -197,8 +284,13 @@ class StatusBanner:
                 if cb:
                     cb()
 
-            btn = ttk.Button(actions, text=undo_label, command=do_undo, takefocus=0)
-            btn.pack(side=tk.LEFT, padx=(8, 0))
+            btn = ttk.Button(
+                actions,
+                text=undo_label,
+                command=do_undo,
+                takefocus=1 if focusable_actions and not actions_disabled else 0,
+            )
+            btn.pack(side=tk.LEFT, padx=(0, 8) if actions_below else (8, 0))
             self._bind_pause(btn)
 
         if extra_actions:
@@ -212,7 +304,7 @@ class StatusBanner:
                 )
                 if actions_disabled:
                     btn.state(["disabled"])
-                btn.pack(side=tk.LEFT, padx=(8, 0))
+                btn.pack(side=tk.LEFT, padx=(0, 8) if actions_below else (8, 0))
 
         if closable or kind == _KIND_ERROR:
 
@@ -225,6 +317,23 @@ class StatusBanner:
 
         self._bind_pause(frame)
         self._bind_pause(text)
+        if subtitle_label is not None:
+            self._bind_pause(subtitle_label)
+
+        if bind_escape:
+            top = self._host.winfo_toplevel()
+
+            def on_escape(_e: tk.Event | None = None) -> str:
+                self.dismiss()
+                return "break"
+
+            if self._escape_bind_id is not None:
+                try:
+                    top.unbind("<Escape>", self._escape_bind_id)
+                except tk.TclError:
+                    pass
+            self._escape_bind_id = top.bind("<Escape>", on_escape, add="+")
+
         if auto_hide_ms > 0 and kind in (_KIND_SUCCESS, _KIND_INFO):
             self._schedule_hide(auto_hide_ms)
 
@@ -235,8 +344,18 @@ class StatusBanner:
         undo_label: str | None = None,
         undo_callback: Callable[[], None] | None = None,
         extra_actions: list[tuple[str, Callable[[], None]]] | None = None,
+        auto_hide_ms: int | None = None,
+        subtitle: str | None = None,
+        actions_below: bool = False,
+        message_tooltip: str | None = None,
+        closable: bool = False,
+        bind_escape: bool = False,
+        focusable_actions: bool = False,
     ) -> None:
-        ms = SUCCESS_UNDO_HIDE_MS if undo_callback else SUCCESS_HIDE_MS
+        if auto_hide_ms is None:
+            ms = SUCCESS_UNDO_HIDE_MS if undo_callback else SUCCESS_HIDE_MS
+        else:
+            ms = auto_hide_ms
         self._show(
             _KIND_SUCCESS,
             message,
@@ -244,6 +363,12 @@ class StatusBanner:
             undo_label=undo_label,
             undo_callback=undo_callback,
             extra_actions=extra_actions,
+            subtitle=subtitle,
+            actions_below=actions_below,
+            message_tooltip=message_tooltip,
+            closable=closable or bind_escape,
+            bind_escape=bind_escape,
+            focusable_actions=focusable_actions,
         )
 
     def show_error(

@@ -19,6 +19,7 @@ import unicodedata
 import zipfile
 from contextlib import contextmanager
 from datetime import datetime
+from dataclasses import dataclass, field
 from typing import Iterator
 
 import paths
@@ -52,6 +53,23 @@ ENCRYPTED_BACKUP_SALT_BYTES = 16
 ENCRYPTED_BACKUP_MAX_CONTAINER_BYTES = 512 * 1024 * 1024
 ENCRYPTED_BACKUP_DEFAULT_SUFFIX = ".integral-backup.enc"
 BACKUP_IMPORT_STAGING_DIRNAME = ".backup-import-staging"
+BACKUP_REPLACE_ASIDE_DIRNAME = ".backup-replace-aside"
+REPLACE_PENDING_MARKER_BASENAME = ".backup-replace-pending.json"
+REPLACE_LEDGER_STATE_FILENAME = "ledger-state.json"
+REPLACE_CONFIG_BEFORE_FILENAME = "config-before.json"
+REPLACE_LEDGER_MANIFEST_KEY = "_replace_aside_ledger"
+REPLACE_LEDGER_STATUS_ACTIVE = "active"
+REPLACE_LEDGER_STATUS_ROLLED_BACK = "rolled_back"
+REPLACE_LEDGER_STATUS_COMMITTED = "committed"
+_REPLACE_MARKER_VERSION = 1
+_REPLACE_TEST_HOOK: str | None = None
+_REPLACE_TEST_INSTALL_COUNT = 0
+
+
+def _replace_test_hook(name: str) -> None:
+    global _REPLACE_TEST_HOOK
+    if _REPLACE_TEST_HOOK == name:
+        raise OSError(f"replace-test-hook:{name}")
 
 
 def normalize_backup_passphrase(passphrase: str) -> str:
@@ -236,6 +254,88 @@ def _staging_path_contained_in_app_dir(path: str) -> bool:
         return False
 
 
+def _replace_aside_parent_dir() -> str:
+    return os.path.join(profiles.get_app_dir(), BACKUP_REPLACE_ASIDE_DIRNAME)
+
+
+def _validate_replace_live_path(live_path: str) -> None:
+    if not _staging_path_contained_in_app_dir(live_path):
+        raise ValueError(f"Replace ledger live path outside app data: {live_path!r}")
+
+
+def _validate_replace_aside_path(aside_path: str, ledger_root: str) -> None:
+    if not _staging_path_contained_in_app_dir(aside_path):
+        raise ValueError(f"Replace ledger aside path outside app data: {aside_path!r}")
+    _assert_path_within_root(aside_path, ledger_root)
+
+
+def _clear_ledger_state_file(ledger_root: str) -> None:
+    state_path = os.path.join(ledger_root, REPLACE_LEDGER_STATE_FILENAME)
+    if os.path.lexists(state_path):
+        try:
+            os.remove(state_path)
+        except OSError:
+            pass
+
+
+def _cleanup_config_import_temp_files() -> None:
+    config_path = profiles.get_config_path()
+    parent = os.path.dirname(config_path) or profiles.get_app_dir()
+    if not os.path.isdir(parent):
+        return
+    prefix = os.path.basename(config_path) + ".import-"
+    for name in os.listdir(parent):
+        if not name.startswith(prefix):
+            continue
+        try:
+            os.remove(os.path.join(parent, name))
+        except OSError:
+            pass
+
+
+def _remove_replace_aside_run_dir(run_dir: str) -> None:
+    if not _staging_path_contained_in_app_dir(run_dir):
+        return
+    parent = os.path.join(profiles.get_app_dir(), BACKUP_REPLACE_ASIDE_DIRNAME)
+    run_real = os.path.normcase(os.path.realpath(run_dir))
+    parent_real = os.path.normcase(os.path.realpath(parent))
+    sep = os.path.normcase(os.sep)
+    if run_real != parent_real and not run_real.startswith(parent_real + sep):
+        return
+    if os.path.isdir(run_dir):
+        try:
+            shutil.rmtree(run_dir, ignore_errors=True)
+        except OSError:
+            pass
+
+
+def _sweep_stale_replace_aside_runs() -> None:
+    parent = os.path.join(profiles.get_app_dir(), BACKUP_REPLACE_ASIDE_DIRNAME)
+    if not os.path.isdir(parent):
+        return
+    for name in os.listdir(parent):
+        run_dir = os.path.join(parent, name)
+        if not os.path.isdir(run_dir):
+            continue
+        if not _staging_path_contained_in_app_dir(run_dir):
+            continue
+        state_path = os.path.join(run_dir, REPLACE_LEDGER_STATE_FILENAME)
+        if not os.path.isfile(state_path):
+            _remove_replace_aside_run_dir(run_dir)
+            continue
+        try:
+            with open(state_path, encoding="utf-8") as handle:
+                payload = json.load(handle)
+            raw_status = payload.get("status")
+            if raw_status in (
+                REPLACE_LEDGER_STATUS_ROLLED_BACK,
+                REPLACE_LEDGER_STATUS_COMMITTED,
+            ):
+                _remove_replace_aside_run_dir(run_dir)
+        except (json.JSONDecodeError, OSError, TypeError):
+            continue
+
+
 def _remove_import_staging_dir(staging: str) -> None:
     if not os.path.isdir(staging):
         return
@@ -388,6 +488,489 @@ def _install_profile_artifacts(staging_profiles: str, profile_id: str) -> None:
             shutil.copy2(src, os.path.join(dest_dir, filename))
 
 
+@dataclass
+class ReplaceAsideLedger:
+    root: str
+    config_before: dict | None = None
+    ops: list[tuple[str, ...]] = field(default_factory=list)
+    status: str = REPLACE_LEDGER_STATUS_ACTIVE
+
+    def _validate_op_paths(self, op: tuple[str, ...]) -> None:
+        kind = op[0]
+        if kind in ("aside", "aside_intent"):
+            _validate_replace_aside_path(op[1], self.root)
+            _validate_replace_live_path(op[2])
+        elif kind == "install":
+            _validate_replace_live_path(op[1])
+
+    def _aside_live_map(self) -> dict[str, str]:
+        mapping: dict[str, str] = {}
+        for op in self.ops:
+            if op[0] in ("aside", "aside_intent"):
+                mapping[op[2]] = op[1]
+        return mapping
+
+    def record_aside_intent(self, aside_path: str, live_path: str, *, is_dir: bool = False) -> None:
+        _validate_replace_aside_path(aside_path, self.root)
+        _validate_replace_live_path(live_path)
+        self.ops.append(("aside_intent", aside_path, live_path, "1" if is_dir else "0"))
+        self._persist_state()
+
+    def record_aside(self, aside_path: str, live_path: str, *, is_dir: bool = False) -> None:
+        _validate_replace_aside_path(aside_path, self.root)
+        _validate_replace_live_path(live_path)
+        for index in range(len(self.ops) - 1, -1, -1):
+            op = self.ops[index]
+            if (
+                op[0] == "aside_intent"
+                and op[1] == aside_path
+                and op[2] == live_path
+            ):
+                self.ops[index] = ("aside", aside_path, live_path, op[3])
+                self._persist_state()
+                return
+        self.ops.append(("aside", aside_path, live_path, "1" if is_dir else "0"))
+        self._persist_state()
+
+    def record_install(self, live_path: str) -> None:
+        _validate_replace_live_path(live_path)
+        self.ops.append(("install", live_path))
+        self._persist_state()
+
+    def is_finished(self) -> bool:
+        return self.status in (REPLACE_LEDGER_STATUS_ROLLED_BACK, REPLACE_LEDGER_STATUS_COMMITTED)
+
+    def _persist_state(self) -> None:
+        if self.status != REPLACE_LEDGER_STATUS_ACTIVE:
+            return
+        state_path = os.path.join(self.root, REPLACE_LEDGER_STATE_FILENAME)
+        payload = {
+            "version": _REPLACE_MARKER_VERSION,
+            "status": self.status,
+            "ops": [list(op) for op in self.ops],
+        }
+        _ensure_parent_dir(state_path)
+        temp = f"{state_path}.tmp-{os.getpid()}"
+        with open(temp, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp, state_path)
+        if self.config_before is not None:
+            snap = os.path.join(self.root, REPLACE_CONFIG_BEFORE_FILENAME)
+            temp_cfg = f"{snap}.tmp-{os.getpid()}"
+            with open(temp_cfg, "w", encoding="utf-8") as handle:
+                json.dump(self.config_before, handle, indent=2)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temp_cfg, snap)
+
+    def _mark_finished(self, status: str) -> None:
+        self.status = status
+        _clear_ledger_state_file(self.root)
+
+    def rollback(self) -> bool:
+        """Best-effort rollback; returns True when fully restored, False if leftovers remain."""
+        if self.is_finished():
+            return True
+        aside_for_live = self._aside_live_map()
+        incomplete = False
+        for op in reversed(self.ops):
+            try:
+                self._validate_op_paths(op)
+                kind = op[0]
+                if kind == "install":
+                    live_path = op[1]
+                    paired_aside = aside_for_live.get(live_path)
+                    if paired_aside is not None:
+                        if not os.path.lexists(paired_aside):
+                            incomplete = True
+                            continue
+                    if os.path.isfile(live_path):
+                        os.remove(live_path)
+                    elif os.path.isdir(live_path) and not os.path.islink(live_path):
+                        try:
+                            os.rmdir(live_path)
+                        except OSError:
+                            incomplete = True
+                elif kind == "aside_intent":
+                    aside_path, live_path = op[1], op[2]
+                    if not os.path.lexists(aside_path):
+                        continue
+                    if os.path.lexists(live_path):
+                        incomplete = True
+                        continue
+                    is_dir = op[3] == "1"
+                    parent = os.path.dirname(live_path)
+                    if parent:
+                        os.makedirs(parent, exist_ok=True)
+                    os.replace(aside_path, live_path)
+                elif kind == "aside":
+                    aside_path = op[1]
+                    live_path = op[2]
+                    is_dir = op[3] == "1"
+                    if not os.path.lexists(aside_path):
+                        continue
+                    parent = os.path.dirname(live_path)
+                    if parent:
+                        os.makedirs(parent, exist_ok=True)
+                    if os.path.lexists(live_path):
+                        if os.path.isfile(live_path):
+                            os.remove(live_path)
+                        elif os.path.isdir(live_path):
+                            incomplete = True
+                            continue
+                    os.replace(aside_path, live_path)
+            except (OSError, ValueError):
+                incomplete = True
+        if self.config_before is not None:
+            try:
+                profiles.save_config(self.config_before)
+            except OSError:
+                incomplete = True
+        if incomplete:
+            _write_replace_pending_marker(self.root)
+            return False
+        _cleanup_config_import_temp_files()
+        self._mark_finished(REPLACE_LEDGER_STATUS_ROLLED_BACK)
+        try:
+            _clear_replace_pending_marker()
+        except OSError:
+            pass
+        return True
+
+    def commit(self) -> None:
+        if not _staging_path_contained_in_app_dir(self.root):
+            raise OSError("Refusing to remove aside ledger outside app data directory.")
+        self._mark_finished(REPLACE_LEDGER_STATUS_COMMITTED)
+        _clear_replace_pending_marker()
+        shutil.rmtree(self.root)
+
+
+def _replace_pending_marker_path() -> str:
+    return os.path.join(profiles.get_app_dir(), REPLACE_PENDING_MARKER_BASENAME)
+
+
+def _write_replace_pending_marker(aside_root: str) -> None:
+    marker_path = _replace_pending_marker_path()
+    payload = {
+        "version": _REPLACE_MARKER_VERSION,
+        "aside_root": os.path.abspath(aside_root),
+    }
+    _ensure_parent_dir(marker_path)
+    temp = f"{marker_path}.tmp-{os.getpid()}"
+    with open(temp, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(temp, marker_path)
+
+
+def _clear_replace_pending_marker() -> None:
+    marker_path = _replace_pending_marker_path()
+    if os.path.lexists(marker_path):
+        try:
+            os.remove(marker_path)
+        except OSError as exc:
+            raise OSError(f"Could not clear replace pending marker: {marker_path!r}") from exc
+
+
+def _load_ledger_from_aside_root(aside_root: str) -> ReplaceAsideLedger | None:
+    state_path = os.path.join(aside_root, REPLACE_LEDGER_STATE_FILENAME)
+    if not os.path.isfile(state_path):
+        return None
+    try:
+        with open(state_path, encoding="utf-8") as handle:
+            payload = json.load(handle)
+        raw_status = payload.get("status")
+        if raw_status in (REPLACE_LEDGER_STATUS_ROLLED_BACK, REPLACE_LEDGER_STATUS_COMMITTED):
+            return None
+        raw_ops = payload.get("ops")
+        if not isinstance(raw_ops, list):
+            return None
+        ops = [tuple(str(item) for item in entry) for entry in raw_ops if isinstance(entry, list)]
+        status = (
+            raw_status
+            if isinstance(raw_status, str) and raw_status
+            else REPLACE_LEDGER_STATUS_ACTIVE
+        )
+        if status != REPLACE_LEDGER_STATUS_ACTIVE:
+            return None
+        ledger = ReplaceAsideLedger(root=aside_root, ops=ops, status=status)
+        cfg_path = os.path.join(aside_root, REPLACE_CONFIG_BEFORE_FILENAME)
+        if os.path.isfile(cfg_path):
+            with open(cfg_path, encoding="utf-8") as handle:
+                ledger.config_before = json.load(handle)
+        return ledger
+    except (json.JSONDecodeError, OSError, TypeError, ValueError):
+        return None
+
+
+def sweep_replace_aside_pending_at_startup() -> None:
+    """Finish interrupted exact-replace imports using aside ledger state."""
+    profiles.ensure_app_structure()
+    app_dir = profiles.get_app_dir()
+    marker_path = _replace_pending_marker_path()
+    aside_roots: list[str] = []
+    if os.path.isfile(marker_path):
+        try:
+            with open(marker_path, encoding="utf-8") as handle:
+                payload = json.load(handle)
+            raw_root = payload.get("aside_root")
+            if isinstance(raw_root, str) and raw_root.strip():
+                aside_roots.append(os.path.abspath(raw_root.strip()))
+        except (json.JSONDecodeError, OSError, TypeError):
+            pass
+    parent = os.path.join(app_dir, BACKUP_REPLACE_ASIDE_DIRNAME)
+    if os.path.isdir(parent):
+        for name in os.listdir(parent):
+            run_dir = os.path.join(parent, name)
+            if os.path.isdir(run_dir) and run_dir not in aside_roots:
+                state = os.path.join(run_dir, REPLACE_LEDGER_STATE_FILENAME)
+                if os.path.isfile(state):
+                    aside_roots.append(run_dir)
+    seen: set[str] = set()
+    for aside_root in aside_roots:
+        norm = os.path.normcase(os.path.abspath(aside_root))
+        if norm in seen or not _staging_path_contained_in_app_dir(aside_root):
+            continue
+        seen.add(norm)
+        ledger = _load_ledger_from_aside_root(aside_root)
+        if ledger is None or ledger.is_finished():
+            continue
+        if ledger.rollback():
+            _remove_replace_aside_run_dir(aside_root)
+            try:
+                _clear_replace_pending_marker()
+            except OSError:
+                pass
+    _cleanup_config_import_temp_files()
+    _sweep_stale_replace_aside_runs()
+
+
+def commit_replace_aside_ledger(ledger: ReplaceAsideLedger) -> None:
+    ledger.commit()
+
+
+def rollback_replace_aside_ledger(ledger: ReplaceAsideLedger | None) -> None:
+    if ledger is None:
+        return
+    ledger.rollback()
+
+
+def replace_import_recovery_pending() -> bool:
+    return os.path.isfile(_replace_pending_marker_path())
+
+
+def _create_replace_aside_ledger() -> ReplaceAsideLedger:
+    profiles.ensure_app_structure()
+    parent = os.path.join(profiles.get_app_dir(), BACKUP_REPLACE_ASIDE_DIRNAME)
+    os.makedirs(parent, exist_ok=True)
+    root = os.path.join(parent, f"run-{os.getpid()}-{os.urandom(4).hex()}")
+    os.makedirs(root, exist_ok=True)
+    if not _staging_path_contained_in_app_dir(root):
+        raise OSError("Aside ledger path is outside the app data directory.")
+    return ReplaceAsideLedger(root=root)
+
+
+def _aside_path_for_key(ledger: ReplaceAsideLedger, key: str) -> str:
+    normalized = key.replace("\\", "/").lstrip("/")
+    if ".." in normalized.split("/"):
+        raise ValueError(f"Unsafe aside key: {key!r}")
+    dest = os.path.join(ledger.root, *normalized.split("/"))
+    _assert_path_within_root(dest, ledger.root)
+    return dest
+
+
+def _ensure_parent_dir(path: str) -> None:
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+
+
+def _move_live_path_to_aside(
+    live_path: str, aside_path: str, ledger: ReplaceAsideLedger, *, is_dir: bool = False
+) -> None:
+    _ensure_parent_dir(aside_path)
+    if os.path.lexists(aside_path):
+        raise OSError(f"Aside path already exists: {aside_path!r}")
+    ledger.record_aside_intent(aside_path, live_path, is_dir=is_dir)
+    os.replace(live_path, aside_path)
+    ledger.record_aside(aside_path, live_path, is_dir=is_dir)
+
+
+def _atomic_install_staged_file(
+    staged_src: str,
+    dest: str,
+    ledger: ReplaceAsideLedger,
+    aside_key: str,
+) -> None:
+    if not os.path.isfile(staged_src):
+        raise OSError(f"Staged file missing: {staged_src!r}")
+    if os.path.lexists(dest):
+        aside_path = _aside_path_for_key(ledger, aside_key)
+        _move_live_path_to_aside(dest, aside_path, ledger)
+    _ensure_parent_dir(dest)
+    temp_path = f"{dest}.import-{os.getpid()}-{os.urandom(4).hex()}"
+    shutil.copy2(staged_src, temp_path)
+    try:
+        os.replace(temp_path, dest)
+    except OSError:
+        if os.path.isfile(temp_path):
+            os.remove(temp_path)
+        raise
+    ledger.record_install(dest)
+    global _REPLACE_TEST_INSTALL_COUNT
+    _REPLACE_TEST_INSTALL_COUNT += 1
+    _replace_test_hook(f"install-{_REPLACE_TEST_INSTALL_COUNT}")
+
+
+def _aside_config_profile_dirs(
+    config_profile_ids: set[str],
+    backup_profile_ids: set[str],
+    ledger: ReplaceAsideLedger,
+) -> None:
+    removed_parent = os.path.join(ledger.root, "profiles-removed")
+    os.makedirs(removed_parent, exist_ok=True)
+    for pid in config_profile_ids - backup_profile_ids:
+        safe_id = profiles.require_safe_profile_id(pid)
+        profile_dir = profiles.get_profile_dir(safe_id)
+        if not os.path.isdir(profile_dir):
+            continue
+        aside_path = os.path.join(removed_parent, safe_id)
+        if os.path.lexists(aside_path):
+            raise OSError(f"Aside profile path already exists: {aside_path!r}")
+        ledger.record_aside_intent(aside_path, profile_dir, is_dir=True)
+        os.replace(profile_dir, aside_path)
+        ledger.record_aside(aside_path, profile_dir, is_dir=True)
+
+
+def _staging_creative_relative_paths(staging_creative: str) -> set[str]:
+    if not os.path.isdir(staging_creative):
+        return set()
+    rels: set[str] = set()
+    for dirpath, _dirnames, filenames in os.walk(staging_creative):
+        for name in filenames:
+            abs_path = os.path.join(dirpath, name)
+            rel = os.path.relpath(abs_path, staging_creative).replace("\\", "/")
+            if rel and ".." not in rel.split("/"):
+                rels.add(rel)
+    return rels
+
+
+def _aside_creative_orphans(
+    creative_root: str,
+    backup_rels: set[str],
+    ledger: ReplaceAsideLedger,
+) -> None:
+    if not os.path.isdir(creative_root):
+        return
+    for dirpath, _dirnames, filenames in os.walk(creative_root):
+        for name in filenames:
+            abs_path = os.path.join(dirpath, name)
+            rel = os.path.relpath(abs_path, creative_root).replace("\\", "/")
+            if not rel or ".." in rel.split("/"):
+                continue
+            if rel in backup_rels:
+                continue
+            aside_path = _aside_path_for_key(ledger, f"creative-removed/{rel}")
+            _move_live_path_to_aside(abs_path, aside_path, ledger)
+
+
+def _replace_profile_artifacts_from_staging(
+    staging_profiles: str,
+    profile_id: str,
+    ledger: ReplaceAsideLedger,
+) -> None:
+    safe_id = profiles.require_safe_profile_id(profile_id)
+    dest_dir = profiles.get_profile_dir(safe_id)
+    os.makedirs(dest_dir, exist_ok=True)
+    staged_dir = os.path.join(staging_profiles, safe_id)
+    if not os.path.isdir(staged_dir):
+        return
+    for filename in PROFILE_ARTIFACTS:
+        staged_src = os.path.join(staged_dir, filename)
+        if not os.path.isfile(staged_src):
+            continue
+        dest = os.path.join(dest_dir, filename)
+        aside_key = f"profiles-replaced/{safe_id}/{filename}"
+        _atomic_install_staged_file(staged_src, dest, ledger, aside_key)
+
+
+def _install_creative_tree_replace(
+    staging_creative: str,
+    creative_root: str,
+    ledger: ReplaceAsideLedger,
+) -> int:
+    if not os.path.isdir(staging_creative):
+        return 0
+    installed = 0
+    for dirpath, _dirnames, filenames in os.walk(staging_creative):
+        for name in filenames:
+            abs_path = os.path.join(dirpath, name)
+            rel = os.path.relpath(abs_path, staging_creative).replace("\\", "/")
+            if not rel or ".." in rel.split("/"):
+                continue
+            dest = os.path.join(creative_root, *rel.split("/"))
+            aside_key = f"creative-replaced/{rel}"
+            _atomic_install_staged_file(abs_path, dest, ledger, aside_key)
+            installed += 1
+    return installed
+
+
+def _atomic_replace_config(imported_config: dict, ledger: ReplaceAsideLedger) -> None:
+    config_path = profiles.get_config_path()
+    temp_path = f"{config_path}.import-{os.getpid()}-{os.urandom(4).hex()}"
+    _ensure_parent_dir(config_path)
+    with open(temp_path, "w", encoding="utf-8") as handle:
+        json.dump(imported_config, handle, indent=2, ensure_ascii=False)
+        handle.flush()
+        os.fsync(handle.fileno())
+    if os.path.lexists(config_path):
+        aside_path = _aside_path_for_key(ledger, "config-replaced/config.json")
+        _move_live_path_to_aside(config_path, aside_path, ledger)
+    _replace_test_hook("after-config-aside")
+    ledger.record_install(config_path)
+    os.replace(temp_path, config_path)
+
+
+def _apply_replace_app_state(
+    *,
+    staging_profiles: str,
+    staging_creative: str,
+    creative_dest: str,
+    backup_profile_ids: list[str],
+    imported_config: dict,
+) -> tuple[int, ReplaceAsideLedger]:
+    config_before = profiles.load_config()
+    ledger = _create_replace_aside_ledger()
+    ledger.config_before = config_before
+    ledger._persist_state()
+    config_profile_ids = {
+        profiles.require_safe_profile_id(p["id"])
+        for p in config_before.get("profiles", [])
+        if isinstance(p, dict)
+    }
+    backup_ids = {profiles.require_safe_profile_id(pid) for pid in backup_profile_ids}
+    backup_creative_rels = _staging_creative_relative_paths(staging_creative)
+    try:
+        _aside_config_profile_dirs(config_profile_ids, backup_ids, ledger)
+        _replace_test_hook("after-aside-profiles")
+        _aside_creative_orphans(creative_dest, backup_creative_rels, ledger)
+        _replace_test_hook("after-aside-creative")
+        for pid in backup_profile_ids:
+            _replace_profile_artifacts_from_staging(staging_profiles, pid, ledger)
+        _replace_test_hook("after-profile-artifacts")
+        restored_docs = _install_creative_tree_replace(staging_creative, creative_dest, ledger)
+        _replace_test_hook("after-creative-install")
+        _atomic_replace_config(imported_config, ledger)
+        _replace_test_hook("after-config-replace")
+    except Exception:
+        ledger.rollback()
+        raise
+    return restored_docs, ledger
+
+
 def _install_creative_tree(staging_creative: str, creative_root: str) -> int:
     if not os.path.isdir(staging_creative):
         return 0
@@ -478,11 +1061,15 @@ def import_backup(
     *,
     creative_root: str | None = None,
     passphrase: str | None = None,
+    replace_app_state: bool = False,
 ) -> dict:
     """Restore profiles and creative documents from a validated backup zip."""
+    if replace_app_state and merge_profiles:
+        raise ValueError("replace_app_state requires merge_profiles=False")
     manifest = validate_backup(zip_path, passphrase=passphrase)
     profiles.ensure_app_structure()
     creative_dest = creative_root if creative_root is not None else paths.creative_projects_dir()
+    backup_profile_ids = _manifest_profile_ids(manifest)
 
     with _backup_zipfile(zip_path, passphrase) as zf:
         budget = zip_import_safety.prepare_zip_import(zf)
@@ -495,7 +1082,7 @@ def import_backup(
             staging_creative = os.path.join(staging, CREATIVE_PREFIX.rstrip("/"))
             os.makedirs(staging_profiles, exist_ok=True)
 
-            for pid in _manifest_profile_ids(manifest):
+            for pid in backup_profile_ids:
                 prefix = f"profiles/{pid}/"
                 staged_profile = os.path.join(staging_profiles, pid)
                 os.makedirs(staged_profile, exist_ok=True)
@@ -510,27 +1097,40 @@ def import_backup(
                     _assert_path_within_root(target, staged_profile)
                     zip_import_safety.copy_zip_member_to_file(zf, name, target, budget)
 
-            restored_docs = _restore_creative_files(zf, staging_creative, budget)
+            _restore_creative_files(zf, staging_creative, budget)
 
-            for pid in _manifest_profile_ids(manifest):
-                _install_profile_artifacts(staging_profiles, pid)
-            restored_docs = _install_creative_tree(staging_creative, creative_dest)
+            replace_ledger: ReplaceAsideLedger | None = None
+            if replace_app_state:
+                restored_docs, replace_ledger = _apply_replace_app_state(
+                    staging_profiles=staging_profiles,
+                    staging_creative=staging_creative,
+                    creative_dest=creative_dest,
+                    backup_profile_ids=backup_profile_ids,
+                    imported_config=imported_config,
+                )
+            else:
+                for pid in backup_profile_ids:
+                    _install_profile_artifacts(staging_profiles, pid)
+                restored_docs = _install_creative_tree(staging_creative, creative_dest)
 
         manifest = {**manifest, "restored_creative_files": restored_docs}
+        if replace_ledger is not None:
+            manifest[REPLACE_LEDGER_MANIFEST_KEY] = replace_ledger
 
-        if merge_profiles:
-            current = profiles.load_config()
-            existing_ids = {p["id"] for p in current["profiles"]}
-            for profile in imported_config.get("profiles", []):
-                if not isinstance(profile, dict):
-                    continue
-                pid = profiles.require_safe_profile_id(profile.get("id"))
-                profile = {**profile, "id": pid}
-                if pid not in existing_ids:
-                    current["profiles"].append(profile)
-            profiles.save_config(current)
-        else:
-            profiles.save_config(imported_config)
+        if not replace_app_state:
+            if merge_profiles:
+                current = profiles.load_config()
+                existing_ids = {p["id"] for p in current["profiles"]}
+                for profile in imported_config.get("profiles", []):
+                    if not isinstance(profile, dict):
+                        continue
+                    pid = profiles.require_safe_profile_id(profile.get("id"))
+                    profile = {**profile, "id": pid}
+                    if pid not in existing_ids:
+                        current["profiles"].append(profile)
+                profiles.save_config(current)
+            else:
+                profiles.save_config(imported_config)
 
     return manifest
 
