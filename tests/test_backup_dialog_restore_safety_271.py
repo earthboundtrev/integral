@@ -156,7 +156,7 @@ def _make_backup_zip(tmp_path, marker: str = MARKER_BACKUP) -> str:
 
 
 def _confirm_restore(dialog: tk.Toplevel, tk_root) -> None:
-    restore_btn = _find_button(dialog, "Restore")
+    restore_btn = _find_button(dialog, "Restore", exclude="from")
     assert _find_button(dialog, "Cancel") is not None
     restore_btn.invoke()
     pump_tk(tk_root, 20)

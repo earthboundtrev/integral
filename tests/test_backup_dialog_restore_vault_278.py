@@ -250,7 +250,7 @@ def test_plaintext_vault_unlock_mismatch_never_reencrypts_or_sets_session(
     with patch("backup_dialog_ui.filedialog.askopenfilename", return_value=plain_zip):
         _find_button(dialog, "Restore from").invoke()
         pump_tk(tk_root, 12)
-    _find_button(dialog, "Restore").invoke()
+    _find_button(dialog, "Restore", exclude="from").invoke()
     pump_tk(tk_root, 20)
     assert tracker.vault_passphrase == "vault-secret-12"
 
@@ -278,7 +278,7 @@ def test_plaintext_vault_unlock_matching_confirm_restores_and_encrypts(
     with patch("backup_dialog_ui.filedialog.askopenfilename", return_value=plain_zip):
         _find_button(dialog, "Restore from").invoke()
         pump_tk(tk_root, 15)
-    _find_button(dialog, "Restore").invoke()
+    _find_button(dialog, "Restore", exclude="from").invoke()
     pump_tk(tk_root, 30)
 
     pump_tk_until(tk_root, lambda: is_encrypted_file(data_path), timeout_s=5.0)
@@ -326,7 +326,7 @@ def test_plaintext_legacy_restore_prompts_vault_before_apply(
         _find_button(dialog, "Restore from").invoke()
         pump_tk(tk_root, 15)
     assert prior_marker in open(data_path, encoding="utf-8").read()
-    _find_button(dialog, "Restore").invoke()
+    _find_button(dialog, "Restore", exclude="from").invoke()
     pump_tk(tk_root, 30)
 
     pump_tk_until(tk_root, lambda: is_encrypted_file(data_path), timeout_s=5.0)
