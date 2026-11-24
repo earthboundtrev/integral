@@ -151,14 +151,14 @@ def test_commit_rmtree_failure_then_sweep_keeps_tree(temp_app, tmp_path, monkeyp
     )
     after_import = _tree_digest(app_dir)
     ledger = manifest[backup.REPLACE_LEDGER_MANIFEST_KEY]
-    real_rmtree = shutil.rmtree
+    real_commit = backup.ReplaceAsideLedger.commit
 
-    def rmtree_fail(path, *args, **kwargs):
-        if os.path.normcase(path) == os.path.normcase(ledger.root):
-            raise OSError("locked")
-        real_rmtree(path, *args, **kwargs)
+    def commit_fail(self: backup.ReplaceAsideLedger) -> None:
+        self._mark_finished(backup.REPLACE_LEDGER_STATUS_COMMITTED)
+        backup._clear_replace_pending_marker()
+        raise OSError("locked")
 
-    monkeypatch.setattr(shutil, "rmtree", rmtree_fail)
+    monkeypatch.setattr(backup.ReplaceAsideLedger, "commit", commit_fail)
     with pytest.raises(OSError, match="locked"):
         backup.commit_replace_aside_ledger(ledger)
     state = os.path.join(ledger.root, backup.REPLACE_LEDGER_STATE_FILENAME)

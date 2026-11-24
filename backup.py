@@ -303,7 +303,10 @@ def _remove_replace_aside_run_dir(run_dir: str) -> None:
     if run_real != parent_real and not run_real.startswith(parent_real + sep):
         return
     if os.path.isdir(run_dir):
-        shutil.rmtree(run_dir, ignore_errors=True)
+        try:
+            shutil.rmtree(run_dir, ignore_errors=True)
+        except OSError:
+            pass
 
 
 def _sweep_stale_replace_aside_runs() -> None:
