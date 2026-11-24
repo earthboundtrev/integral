@@ -14,6 +14,7 @@ pytest.importorskip("cryptography")
 
 import backup
 import backup_dialog_ui
+import safety_backup
 import integral_io
 import paths
 import personal_dev_tracker
@@ -45,6 +46,15 @@ def _sync_data_file(monkeypatch):
 @pytest.fixture(autouse=True)
 def _restore_apply_ready(monkeypatch):
     monkeypatch.setattr(backup_dialog_ui, "prepare_restore_apply", lambda _tracker: True)
+
+
+@pytest.fixture(autouse=True)
+def _skip_dashboard_rebuild(monkeypatch):
+    monkeypatch.setattr(
+        personal_dev_tracker.PersonalDevelopmentTracker,
+        "create_dashboard",
+        lambda self: None,
+    )
 
 
 @pytest.fixture
@@ -228,28 +238,21 @@ def test_plaintext_vault_unlock_mismatch_never_reencrypts_or_sets_session(
 
     with (
         patch("backup_dialog_ui.filedialog.askopenfilename", return_value=plain_zip),
-        patch("backup_dialog_ui.messagebox.askyesno", return_value=True),
         patch("backup_dialog_ui.save_data_file") as mock_save,
     ):
         _find_button(dialog, "Restore from").invoke()
         pump_tk(tk_root, 15)
 
-    assert vault_restore_needs_passphrase_confirmation(tracker)
-    vault_entry, vault_confirm = _vault_unlock_entries(dialog)
-    assert vault_entry is not None
-    assert vault_confirm is not None
-
-    vault_continue = _vault_continue_button(dialog)
-    vault_entry.insert(0, "vault-secret-12")
-    vault_confirm.insert(0, "vault-secret-13")
-    vault_continue.invoke()
-    pump_tk(tk_root, 10)
-
-    assert tracker.vault_passphrase is None
+    assert safety_backup.UNLOCK_VAULT_FIRST_MSG in " ".join(_label_texts(dialog))
     mock_save.assert_not_called()
-    assert not is_encrypted_file(data_path)
-    errors = [t for t in _label_texts(dialog) if VAULT_PASSPHRASE_MISMATCH_MSG in t]
-    assert errors, _label_texts(dialog)
+
+    tracker.vault_passphrase = "vault-secret-12"
+    with patch("backup_dialog_ui.filedialog.askopenfilename", return_value=plain_zip):
+        _find_button(dialog, "Restore from").invoke()
+        pump_tk(tk_root, 12)
+    _find_button(dialog, "Restore").invoke()
+    pump_tk(tk_root, 20)
+    assert tracker.vault_passphrase == "vault-secret-12"
 
 
 def test_plaintext_vault_unlock_matching_confirm_restores_and_encrypts(
@@ -271,17 +274,11 @@ def test_plaintext_vault_unlock_matching_confirm_restores_and_encrypts(
     pump_tk(tk_root)
     dialog = next(w for w in tk_root.winfo_children() if isinstance(w, tk.Toplevel))
 
+    tracker.vault_passphrase = passphrase
     with patch("backup_dialog_ui.filedialog.askopenfilename", return_value=plain_zip):
-        with patch("backup_dialog_ui.messagebox.askyesno", return_value=True):
-            _find_button(dialog, "Restore from").invoke()
-            pump_tk(tk_root, 15)
-
-    vault_entry, vault_confirm = _vault_unlock_entries(dialog)
-    assert vault_confirm is not None
-    vault_continue = _vault_continue_button(dialog)
-    vault_entry.insert(0, passphrase)
-    vault_confirm.insert(0, passphrase)
-    vault_continue.invoke()
+        _find_button(dialog, "Restore from").invoke()
+        pump_tk(tk_root, 15)
+    _find_button(dialog, "Restore").invoke()
     pump_tk(tk_root, 30)
 
     pump_tk_until(tk_root, lambda: is_encrypted_file(data_path), timeout_s=5.0)
@@ -320,37 +317,22 @@ def test_plaintext_legacy_restore_prompts_vault_before_apply(
     dialog = next(w for w in tk_root.winfo_children() if isinstance(w, tk.Toplevel))
 
     with patch("backup_dialog_ui.filedialog.askopenfilename", return_value=plain_zip):
-        with patch("backup_dialog_ui.messagebox.askyesno", return_value=True):
-            _find_button(dialog, "Restore from").invoke()
-            pump_tk(tk_root, 15)
+        _find_button(dialog, "Restore from").invoke()
+        pump_tk(tk_root, 15)
+    assert safety_backup.UNLOCK_VAULT_FIRST_MSG in " ".join(_label_texts(dialog))
 
-    joined = " ".join(_label_texts(dialog))
-    assert "Vault passphrase" in joined
-
-    vault_entry, vault_confirm = _vault_unlock_entries(dialog)
-    assert vault_entry is not None
-    assert vault_confirm is None or not vault_confirm.winfo_ismapped()
-    assert prior_marker in prior_text
+    tracker.vault_passphrase = "vault-secret-12"
+    with patch("backup_dialog_ui.filedialog.askopenfilename", return_value=plain_zip):
+        _find_button(dialog, "Restore from").invoke()
+        pump_tk(tk_root, 15)
     assert prior_marker in open(data_path, encoding="utf-8").read()
-
-    vault_continue = _vault_continue_button(dialog)
-    vault_entry.insert(0, "wrong-pass-xx")
-    vault_continue.invoke()
-    pump_tk(tk_root, 10)
-    assert VAULT_WRONG_PASSPHRASE_MSG in " ".join(_label_texts(dialog))
-    assert prior_marker in open(data_path, encoding="utf-8").read()
-    assert banner._kind != "success"
-
-    vault_entry.delete(0, tk.END)
-    vault_entry.insert(0, "vault-secret-12")
-    assert vault_restore_needs_passphrase_confirmation(tracker) is False
-    vault_continue.invoke()
+    _find_button(dialog, "Restore").invoke()
     pump_tk(tk_root, 30)
 
     pump_tk_until(tk_root, lambda: is_encrypted_file(data_path), timeout_s=5.0)
     assert is_encrypted_file(data_path)
     pump_tk_until(tk_root, lambda: banner._kind == "success", timeout_s=5.0)
-    assert "Journal restored from backup." in (banner._message_var.get() or "")
+    assert "Restored." in (banner._message_var.get() or "")
     assert "vault-secret-12" not in (banner._message_var.get() or "")
 
 
@@ -369,12 +351,10 @@ def test_plaintext_restore_no_success_leaves_journal_plain_when_vault_unlock_can
     dialog = next(w for w in tk_root.winfo_children() if isinstance(w, tk.Toplevel))
 
     with patch("backup_dialog_ui.filedialog.askopenfilename", return_value=str(plain_json)):
-        with patch("backup_dialog_ui.messagebox.askyesno", return_value=True):
-            _find_button(dialog, "Restore from").invoke()
-            pump_tk(tk_root, 15)
+        _find_button(dialog, "Restore from").invoke()
+        pump_tk(tk_root, 15)
 
-    _find_button(dialog, "Back").invoke()
-    pump_tk(tk_root, 10)
+    assert safety_backup.UNLOCK_VAULT_FIRST_MSG in " ".join(_label_texts(dialog))
 
     assert not is_encrypted_file(data_path)
     assert banner._kind != "success"
