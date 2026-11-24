@@ -46,6 +46,7 @@ def test_save_data_blocked_while_restore_operation_active(tracker_with_data, tem
         tracker.save_data(flush=True)
         tracker.root.update_idletasks()
         assert open(data_path, encoding="utf-8").read() == before
+        assert tracker._restore_deferred_saves
     finally:
         backup_dialog_ui.end_restore_operation()
 

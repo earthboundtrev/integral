@@ -58,6 +58,9 @@ REPLACE_PENDING_MARKER_BASENAME = ".backup-replace-pending.json"
 REPLACE_LEDGER_STATE_FILENAME = "ledger-state.json"
 REPLACE_CONFIG_BEFORE_FILENAME = "config-before.json"
 REPLACE_LEDGER_MANIFEST_KEY = "_replace_aside_ledger"
+REPLACE_LEDGER_STATUS_ACTIVE = "active"
+REPLACE_LEDGER_STATUS_ROLLED_BACK = "rolled_back"
+REPLACE_LEDGER_STATUS_COMMITTED = "committed"
 _REPLACE_MARKER_VERSION = 1
 _REPLACE_TEST_HOOK: str | None = None
 _REPLACE_TEST_INSTALL_COUNT = 0
@@ -251,6 +254,30 @@ def _staging_path_contained_in_app_dir(path: str) -> bool:
         return False
 
 
+def _replace_aside_parent_dir() -> str:
+    return os.path.join(profiles.get_app_dir(), BACKUP_REPLACE_ASIDE_DIRNAME)
+
+
+def _validate_replace_live_path(live_path: str) -> None:
+    if not _staging_path_contained_in_app_dir(live_path):
+        raise ValueError(f"Replace ledger live path outside app data: {live_path!r}")
+
+
+def _validate_replace_aside_path(aside_path: str, ledger_root: str) -> None:
+    if not _staging_path_contained_in_app_dir(aside_path):
+        raise ValueError(f"Replace ledger aside path outside app data: {aside_path!r}")
+    _assert_path_within_root(aside_path, ledger_root)
+
+
+def _clear_ledger_state_file(ledger_root: str) -> None:
+    state_path = os.path.join(ledger_root, REPLACE_LEDGER_STATE_FILENAME)
+    if os.path.lexists(state_path):
+        try:
+            os.remove(state_path)
+        except OSError:
+            pass
+
+
 def _remove_import_staging_dir(staging: str) -> None:
     if not os.path.isdir(staging):
         return
@@ -408,19 +435,60 @@ class ReplaceAsideLedger:
     root: str
     config_before: dict | None = None
     ops: list[tuple[str, ...]] = field(default_factory=list)
+    status: str = REPLACE_LEDGER_STATUS_ACTIVE
+
+    def _validate_op_paths(self, op: tuple[str, ...]) -> None:
+        kind = op[0]
+        if kind in ("aside", "aside_intent"):
+            _validate_replace_aside_path(op[1], self.root)
+            _validate_replace_live_path(op[2])
+        elif kind == "install":
+            _validate_replace_live_path(op[1])
+
+    def _aside_live_map(self) -> dict[str, str]:
+        mapping: dict[str, str] = {}
+        for op in self.ops:
+            if op[0] in ("aside", "aside_intent"):
+                mapping[op[2]] = op[1]
+        return mapping
+
+    def record_aside_intent(self, aside_path: str, live_path: str, *, is_dir: bool = False) -> None:
+        _validate_replace_aside_path(aside_path, self.root)
+        _validate_replace_live_path(live_path)
+        self.ops.append(("aside_intent", aside_path, live_path, "1" if is_dir else "0"))
+        self._persist_state()
 
     def record_aside(self, aside_path: str, live_path: str, *, is_dir: bool = False) -> None:
+        _validate_replace_aside_path(aside_path, self.root)
+        _validate_replace_live_path(live_path)
+        for index in range(len(self.ops) - 1, -1, -1):
+            op = self.ops[index]
+            if (
+                op[0] == "aside_intent"
+                and op[1] == aside_path
+                and op[2] == live_path
+            ):
+                self.ops[index] = ("aside", aside_path, live_path, op[3])
+                self._persist_state()
+                return
         self.ops.append(("aside", aside_path, live_path, "1" if is_dir else "0"))
         self._persist_state()
 
     def record_install(self, live_path: str) -> None:
+        _validate_replace_live_path(live_path)
         self.ops.append(("install", live_path))
         self._persist_state()
 
+    def is_finished(self) -> bool:
+        return self.status in (REPLACE_LEDGER_STATUS_ROLLED_BACK, REPLACE_LEDGER_STATUS_COMMITTED)
+
     def _persist_state(self) -> None:
+        if self.status != REPLACE_LEDGER_STATUS_ACTIVE:
+            return
         state_path = os.path.join(self.root, REPLACE_LEDGER_STATE_FILENAME)
         payload = {
             "version": _REPLACE_MARKER_VERSION,
+            "status": self.status,
             "ops": [list(op) for op in self.ops],
         }
         _ensure_parent_dir(state_path)
@@ -439,13 +507,27 @@ class ReplaceAsideLedger:
                 os.fsync(handle.fileno())
             os.replace(temp_cfg, snap)
 
+    def _mark_finished(self, status: str) -> None:
+        self.status = status
+        _clear_ledger_state_file(self.root)
+
     def rollback(self) -> bool:
         """Best-effort rollback; returns True when fully restored, False if leftovers remain."""
+        if self.is_finished():
+            return True
+        aside_for_live = self._aside_live_map()
         incomplete = False
         for op in reversed(self.ops):
             try:
-                if op[0] == "install":
+                self._validate_op_paths(op)
+                kind = op[0]
+                if kind == "install":
                     live_path = op[1]
+                    paired_aside = aside_for_live.get(live_path)
+                    if paired_aside is not None:
+                        if not os.path.lexists(paired_aside):
+                            incomplete = True
+                            continue
                     if os.path.isfile(live_path):
                         os.remove(live_path)
                     elif os.path.isdir(live_path) and not os.path.islink(live_path):
@@ -453,11 +535,22 @@ class ReplaceAsideLedger:
                             os.rmdir(live_path)
                         except OSError:
                             incomplete = True
-                elif op[0] == "aside":
+                elif kind == "aside_intent":
+                    aside_path, live_path = op[1], op[2]
+                    if not os.path.lexists(aside_path):
+                        continue
+                    if os.path.lexists(live_path):
+                        incomplete = True
+                        continue
+                    is_dir = op[3] == "1"
+                    parent = os.path.dirname(live_path)
+                    if parent:
+                        os.makedirs(parent, exist_ok=True)
+                    os.replace(aside_path, live_path)
+                elif kind == "aside":
                     aside_path = op[1]
                     live_path = op[2]
                     is_dir = op[3] == "1"
-                    _assert_path_within_root(aside_path, self.root)
                     if not os.path.lexists(aside_path):
                         continue
                     parent = os.path.dirname(live_path)
@@ -469,11 +562,8 @@ class ReplaceAsideLedger:
                         elif os.path.isdir(live_path):
                             incomplete = True
                             continue
-                    if is_dir:
-                        os.replace(aside_path, live_path)
-                    else:
-                        os.replace(aside_path, live_path)
-            except OSError:
+                    os.replace(aside_path, live_path)
+            except (OSError, ValueError):
                 incomplete = True
         if self.config_before is not None:
             try:
@@ -483,11 +573,17 @@ class ReplaceAsideLedger:
         if incomplete:
             _write_replace_pending_marker(self.root)
             return False
+        self._mark_finished(REPLACE_LEDGER_STATUS_ROLLED_BACK)
+        try:
+            _clear_replace_pending_marker()
+        except OSError:
+            pass
         return True
 
     def commit(self) -> None:
         if not _staging_path_contained_in_app_dir(self.root):
             raise OSError("Refusing to remove aside ledger outside app data directory.")
+        self._mark_finished(REPLACE_LEDGER_STATUS_COMMITTED)
         _clear_replace_pending_marker()
         shutil.rmtree(self.root)
 
@@ -527,11 +623,21 @@ def _load_ledger_from_aside_root(aside_root: str) -> ReplaceAsideLedger | None:
     try:
         with open(state_path, encoding="utf-8") as handle:
             payload = json.load(handle)
+        raw_status = payload.get("status")
+        if raw_status in (REPLACE_LEDGER_STATUS_ROLLED_BACK, REPLACE_LEDGER_STATUS_COMMITTED):
+            return None
         raw_ops = payload.get("ops")
         if not isinstance(raw_ops, list):
             return None
         ops = [tuple(str(item) for item in entry) for entry in raw_ops if isinstance(entry, list)]
-        ledger = ReplaceAsideLedger(root=aside_root, ops=ops)
+        status = (
+            raw_status
+            if isinstance(raw_status, str) and raw_status
+            else REPLACE_LEDGER_STATUS_ACTIVE
+        )
+        if status != REPLACE_LEDGER_STATUS_ACTIVE:
+            return None
+        ledger = ReplaceAsideLedger(root=aside_root, ops=ops, status=status)
         cfg_path = os.path.join(aside_root, REPLACE_CONFIG_BEFORE_FILENAME)
         if os.path.isfile(cfg_path):
             with open(cfg_path, encoding="utf-8") as handle:
@@ -571,7 +677,7 @@ def sweep_replace_aside_pending_at_startup() -> None:
             continue
         seen.add(norm)
         ledger = _load_ledger_from_aside_root(aside_root)
-        if ledger is None:
+        if ledger is None or ledger.is_finished():
             continue
         if ledger.rollback():
             try:
@@ -630,6 +736,7 @@ def _move_live_path_to_aside(
     _ensure_parent_dir(aside_path)
     if os.path.lexists(aside_path):
         raise OSError(f"Aside path already exists: {aside_path!r}")
+    ledger.record_aside_intent(aside_path, live_path, is_dir=is_dir)
     os.replace(live_path, aside_path)
     ledger.record_aside(aside_path, live_path, is_dir=is_dir)
 
@@ -675,6 +782,7 @@ def _aside_config_profile_dirs(
         aside_path = os.path.join(removed_parent, safe_id)
         if os.path.lexists(aside_path):
             raise OSError(f"Aside profile path already exists: {aside_path!r}")
+        ledger.record_aside_intent(aside_path, profile_dir, is_dir=True)
         os.replace(profile_dir, aside_path)
         ledger.record_aside(aside_path, profile_dir, is_dir=True)
 

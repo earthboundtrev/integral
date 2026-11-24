@@ -226,18 +226,25 @@ def _container_rollback_marker_blocks_activity(container_dir: str) -> bool:
 
 
 _restore_operation_depth = 0
+_restore_operation_trackers: list[PersonalDevelopmentTracker | None] = []
 
 
 def begin_restore_operation(tracker: PersonalDevelopmentTracker | None = None) -> None:
     global _restore_operation_depth
     _restore_operation_depth += 1
+    _restore_operation_trackers.append(tracker)
     if tracker is not None:
-        tracker.cancel_pending_save()
+        tracker.defer_saves_for_restore()
 
 
 def end_restore_operation() -> None:
     global _restore_operation_depth
+    tracker: PersonalDevelopmentTracker | None = None
+    if _restore_operation_trackers:
+        tracker = _restore_operation_trackers.pop()
     _restore_operation_depth = max(0, _restore_operation_depth - 1)
+    if _restore_operation_depth == 0 and tracker is not None:
+        tracker.flush_deferred_saves_after_restore()
 
 
 def restore_operation_in_progress() -> bool:
@@ -246,8 +253,9 @@ def restore_operation_in_progress() -> bool:
 
 def reset_restore_operation_depth_for_tests() -> None:
     """Reset global restore busy depth (pytest isolation)."""
-    global _restore_operation_depth
+    global _restore_operation_depth, _restore_operation_trackers
     _restore_operation_depth = 0
+    _restore_operation_trackers.clear()
 
 
 def restore_blocked_by_pending_rollback() -> bool:
@@ -972,20 +980,26 @@ def apply_undo_from_safety_backup(
         )
         return
 
-    begin_restore_operation(tracker)
-    indicator = BusyIndicator(
-        tracker.root,
-        label="Working…",
-        theme=tracker.theme,
-        delay_ms=DEFAULT_DELAY_MS,
-    )
-    indicator.start()
+    indicator: BusyIndicator | None = None
+    try:
+        begin_restore_operation(tracker)
+        indicator = BusyIndicator(
+            tracker.root,
+            label="Working…",
+            theme=tracker.theme,
+            delay_ms=DEFAULT_DELAY_MS,
+        )
+        indicator.start()
+    except BaseException:
+        end_restore_operation()
+        raise
 
     def worker() -> None:
         snapshots: RestoreSnapshotBundle | None = None
         undo_safety_path: str | None = None
         replace_ledger: backup.ReplaceAsideLedger | None = None
         ledger_committed = False
+        ui_failure: Callable[[], None] | None = None
         try:
             undo_safety_path = safety_backup.write_pre_restore_safety_backup(
                 tracker=tracker,
@@ -1021,35 +1035,39 @@ def apply_undo_from_safety_backup(
                 ),
             )
         except safety_backup.SafetyBackupError as exc:
-            _schedule_ui_callback(
-                tracker.root,
-                lambda d=exc.user_detail, snap=snapshots: _rollback_undo_restore_ui(
-                    tracker, snap, safety_banner=True, detail=d
-                ),
-            )
+            detail = exc.user_detail
+            snap = snapshots
+
+            def _ui_fail() -> None:
+                _rollback_undo_restore_ui(tracker, snap, safety_banner=True, detail=detail)
+
+            ui_failure = _ui_fail
         except profile_journal_sync.ProfileJournalSyncError:
-            _schedule_ui_callback(
-                tracker.root,
-                lambda snap=snapshots: _rollback_undo_restore_ui(
-                    tracker, snap, error_message=GENERIC_RESTORE_ERROR
-                ),
-            )
+            snap = snapshots
+
+            def _ui_fail() -> None:
+                _rollback_undo_restore_ui(tracker, snap, error_message=GENERIC_RESTORE_ERROR)
+
+            ui_failure = _ui_fail
         except BaseException:
-            _schedule_ui_callback(
-                tracker.root,
-                lambda snap=snapshots: _rollback_undo_restore_ui(
-                    tracker, snap, error_message=GENERIC_RESTORE_ERROR
-                ),
-            )
+            snap = snapshots
+
+            def _ui_fail() -> None:
+                _rollback_undo_restore_ui(tracker, snap, error_message=GENERIC_RESTORE_ERROR)
+
+            ui_failure = _ui_fail
         finally:
             if replace_ledger is not None and not ledger_committed:
                 backup.rollback_replace_aside_ledger(replace_ledger)
 
-            def _finish_undo_busy() -> None:
-                indicator.stop()
+            def _finish_undo_sequence() -> None:
+                if ui_failure is not None:
+                    ui_failure()
+                if indicator is not None:
+                    indicator.stop()
                 end_restore_operation()
 
-            _schedule_ui_callback(tracker.root, _finish_undo_busy)
+            _schedule_ui_callback(tracker.root, _finish_undo_sequence)
 
     threading.Thread(target=worker, daemon=True).start()
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import shutil
 
 import pytest
 
@@ -95,6 +96,8 @@ def test_replace_fails_at_hook_restores_byte_tree(temp_app, tmp_path, monkeypatc
             creative_root=creative_root,
         )
     assert _tree_digest(app_dir) == before
+    backup.sweep_replace_aside_pending_at_startup()
+    assert _tree_digest(app_dir) == before
 
 
 @pytest.mark.parametrize("install_n", (1,))
@@ -113,6 +116,55 @@ def test_replace_fails_on_install_step_restores_byte_tree(
             creative_root=creative_root,
         )
     assert _tree_digest(app_dir) == before
+    backup.sweep_replace_aside_pending_at_startup()
+    assert _tree_digest(app_dir) == before
+
+
+def test_successful_rollback_then_startup_sweep_is_idempotent(temp_app, tmp_path, monkeypatch):
+    app_dir, zip_path, creative_root = _seed_replace_scenario(temp_app, tmp_path, monkeypatch)
+    before = _tree_digest(app_dir)
+    backup._REPLACE_TEST_HOOK = "after-aside-creative"
+    with pytest.raises(OSError, match="replace-test-hook"):
+        backup.import_backup(
+            zip_path,
+            merge_profiles=False,
+            replace_app_state=True,
+            creative_root=creative_root,
+        )
+    aside_parent = os.path.join(app_dir, backup.BACKUP_REPLACE_ASIDE_DIRNAME)
+    if os.path.isdir(aside_parent):
+        for run_name in os.listdir(aside_parent):
+            state = os.path.join(aside_parent, run_name, backup.REPLACE_LEDGER_STATE_FILENAME)
+            assert not os.path.isfile(state), "rollback should clear ledger state"
+    for _ in range(3):
+        backup.sweep_replace_aside_pending_at_startup()
+    assert _tree_digest(app_dir) == before
+
+
+def test_commit_rmtree_failure_then_sweep_keeps_tree(temp_app, tmp_path, monkeypatch):
+    app_dir, zip_path, creative_root = _seed_replace_scenario(temp_app, tmp_path, monkeypatch)
+    manifest = backup.import_backup(
+        zip_path,
+        merge_profiles=False,
+        replace_app_state=True,
+        creative_root=creative_root,
+    )
+    after_import = _tree_digest(app_dir)
+    ledger = manifest[backup.REPLACE_LEDGER_MANIFEST_KEY]
+    real_rmtree = shutil.rmtree
+
+    def rmtree_fail(path, *args, **kwargs):
+        if os.path.normcase(path) == os.path.normcase(ledger.root):
+            raise OSError("locked")
+        real_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(shutil, "rmtree", rmtree_fail)
+    with pytest.raises(OSError, match="locked"):
+        backup.commit_replace_aside_ledger(ledger)
+    state = os.path.join(ledger.root, backup.REPLACE_LEDGER_STATE_FILENAME)
+    assert not os.path.isfile(state)
+    backup.sweep_replace_aside_pending_at_startup()
+    assert _tree_digest(app_dir) == after_import
 
 
 def test_startup_sweep_finishes_pending_replace_recovery(temp_app, tmp_path, monkeypatch):

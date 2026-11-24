@@ -169,6 +169,9 @@ class PersonalDevelopmentTracker:
         self._save_after_id: str | None = None
         self._pending_save_payload: dict | None = None
         self._save_after_callbacks: list[Callable[[bool, BaseException | None], None]] = []
+        self._restore_deferred_saves: list[
+            tuple[dict | None, list[Callable[[bool, BaseException | None], None]]]
+        ] = []
         self._save_write_in_progress = False
         self._save_idle_event = threading.Event()
         self._save_idle_event.set()
@@ -967,6 +970,32 @@ class PersonalDevelopmentTracker:
         self._pending_save_payload = None
         self._save_after_callbacks = []
 
+    def defer_saves_for_restore(self) -> None:
+        """Hold pending saves while a restore is in flight; flush after restore ends."""
+        if self._save_after_id:
+            try:
+                self.root.after_cancel(self._save_after_id)
+            except tk.TclError:
+                pass
+            self._save_after_id = None
+        if self._pending_save_payload is not None or self._save_after_callbacks:
+            self._restore_deferred_saves.append(
+                (self._pending_save_payload, list(self._save_after_callbacks))
+            )
+        self._pending_save_payload = None
+        self._save_after_callbacks = []
+
+    def flush_deferred_saves_after_restore(self) -> None:
+        if not self._restore_deferred_saves:
+            return
+        for payload, callbacks in self._restore_deferred_saves:
+            if payload is not None:
+                self._pending_save_payload = payload
+            self._save_after_callbacks.extend(callbacks)
+        self._restore_deferred_saves.clear()
+        if self._pending_save_payload is not None:
+            self._flush_save(sync=True)
+
     def wait_for_save_idle(self, *, timeout_s: float = 8.0) -> bool:
         """Wait until an in-flight save finishes (does not start a new save)."""
         import time
@@ -996,6 +1025,11 @@ class PersonalDevelopmentTracker:
         from backup_dialog_ui import restore_operation_in_progress
 
         if restore_operation_in_progress():
+            payload = self._payload(recompute_fitness=recompute_fitness)
+            callbacks: list[Callable[[bool, BaseException | None], None]] = []
+            if on_complete is not None:
+                callbacks.append(on_complete)
+            self._restore_deferred_saves.append((payload, callbacks))
             return
         if categories is not None:
             self.categories = categories
@@ -1061,8 +1095,8 @@ class PersonalDevelopmentTracker:
 
         self._save_after_id = None
         if restore_operation_in_progress():
-            self._pending_save_payload = None
-            self._save_after_callbacks = []
+            if payload is not None or callbacks:
+                self._restore_deferred_saves.append((payload, list(callbacks)))
             return
         if self._save_write_in_progress:
             return

@@ -112,6 +112,8 @@ def _reset_global_restore_busy_state() -> Iterator[None]:
     backup._REPLACE_TEST_HOOK = None
     backup._REPLACE_TEST_INSTALL_COUNT = 0
     backup_dialog_ui.reset_restore_operation_depth_for_tests()
+    if getattr(backup_dialog_ui, "_restore_operation_trackers", None):
+        backup_dialog_ui._restore_operation_trackers.clear()
 
 
 @pytest.fixture(autouse=True)
