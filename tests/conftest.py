@@ -100,6 +100,21 @@ def _isolated_user_data_home(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _reset_global_restore_busy_state() -> Iterator[None]:
+    """Prevent restore/undo busy counters from leaking across tests (#271)."""
+    import backup
+    import backup_dialog_ui
+
+    backup._REPLACE_TEST_HOOK = None
+    backup._REPLACE_TEST_INSTALL_COUNT = 0
+    backup_dialog_ui.reset_restore_operation_depth_for_tests()
+    yield
+    backup._REPLACE_TEST_HOOK = None
+    backup._REPLACE_TEST_INSTALL_COUNT = 0
+    backup_dialog_ui.reset_restore_operation_depth_for_tests()
+
+
+@pytest.fixture(autouse=True)
 def _stub_tk_messageboxes(request: pytest.FixtureRequest) -> Iterator[None]:
     """Prevent blocking messagebox modals from hanging headless pytest runs."""
     if request.node.get_closest_marker("allow_tk_messagebox"):

@@ -56,7 +56,11 @@ def test_replace_removes_extra_profile_and_creative_preserves_bak(temp_app, tmp_
     with open(only_live, "w", encoding="utf-8") as handle:
         handle.write("orphan")
 
-    backup.import_backup(zip_path, merge_profiles=False, replace_app_state=True, creative_root=creative_root)
+    manifest = backup.import_backup(
+        zip_path, merge_profiles=False, replace_app_state=True, creative_root=creative_root
+    )
+    backup.commit_replace_aside_ledger(manifest[backup.REPLACE_LEDGER_MANIFEST_KEY])
+    manifest.pop(backup.REPLACE_LEDGER_MANIFEST_KEY, None)
 
     config = profiles.load_config()
     ids = {p["id"] for p in config["profiles"]}
@@ -95,7 +99,12 @@ def test_replace_failure_rolls_back_aside_moves(temp_app, tmp_path, monkeypatch)
     monkeypatch.setattr(backup, "_aside_config_profile_dirs", aside_then_fail)
 
     with pytest.raises(OSError, match="injected"):
-        backup.import_backup(zip_path, merge_profiles=False, replace_app_state=True, creative_root=creative_root)
+        backup.import_backup(
+            zip_path,
+            merge_profiles=False,
+            replace_app_state=True,
+            creative_root=creative_root,
+        )
 
     assert os.path.isfile(extra_data)
     assert open(extra_data, encoding="utf-8").read() == live_text
@@ -124,7 +133,11 @@ def test_replace_leaves_profile_sidecar_files(temp_app, tmp_path, monkeypatch):
         handle.write("aside")
     _write_profile_note("default", "after-export")
 
-    backup.import_backup(zip_path, merge_profiles=False, replace_app_state=True, creative_root=creative_root)
+    manifest = backup.import_backup(
+        zip_path, merge_profiles=False, replace_app_state=True, creative_root=creative_root
+    )
+    backup.commit_replace_aside_ledger(manifest[backup.REPLACE_LEDGER_MANIFEST_KEY])
+    manifest.pop(backup.REPLACE_LEDGER_MANIFEST_KEY, None)
     assert os.path.isfile(aside_file)
     restored = storage.load()
     assert "2099-01-01" not in restored.get("entries", {})

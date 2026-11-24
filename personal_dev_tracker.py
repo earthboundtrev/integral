@@ -248,8 +248,10 @@ class PersonalDevelopmentTracker:
 
         sweep_journal_save_artifacts_at_startup()
 
+        from backup import sweep_replace_aside_pending_at_startup
         from backup_dialog_ui import sweep_pre_restore_journal_snaps_at_startup
 
+        sweep_replace_aside_pending_at_startup()
         sweep_pre_restore_journal_snaps_at_startup()
 
         if encrypted_journal_envelope_path(DATA_FILE) and not prompt_vault_unlock(self):
@@ -681,6 +683,10 @@ class PersonalDevelopmentTracker:
         return self._insights_cache
 
     def _on_close(self) -> None:
+        from backup_dialog_ui import restore_operation_in_progress
+
+        if restore_operation_in_progress():
+            return
         notifications = normalize_notification_settings(self.settings)["notifications"]
         if notifications.get("minimize_on_close"):
             self.root.iconify()
@@ -987,6 +993,10 @@ class PersonalDevelopmentTracker:
         flush: bool = False,
         on_complete: Callable[[bool, BaseException | None], None] | None = None,
     ) -> None:
+        from backup_dialog_ui import restore_operation_in_progress
+
+        if restore_operation_in_progress():
+            return
         if categories is not None:
             self.categories = categories
         if on_complete is not None:
@@ -1047,7 +1057,13 @@ class PersonalDevelopmentTracker:
         self._save_after_id = self.root.after(0, lambda: self._flush_save(sync=False))
 
     def _flush_save(self, sync: bool = False) -> None:
+        from backup_dialog_ui import restore_operation_in_progress
+
         self._save_after_id = None
+        if restore_operation_in_progress():
+            self._pending_save_payload = None
+            self._save_after_callbacks = []
+            return
         if self._save_write_in_progress:
             return
         payload = self._pending_save_payload
