@@ -870,6 +870,8 @@ def apply_undo_from_safety_backup(
     tracker: PersonalDevelopmentTracker,
     safety_path: str,
 ) -> None:
+    if not _guard_restore_against_pending_rollback(tracker):
+        return
     passphrase: str | None = None
     if backup.is_encrypted_backup_file(safety_path):
         passphrase = getattr(tracker, "vault_passphrase", None)
@@ -1737,7 +1739,7 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         tracker.load_data()
         tracker.create_dashboard()
         if safety_path:
-            vault_on = _vault_active(tracker)
+            vault_on = backup.is_encrypted_backup_file(safety_path)
             _show_restore_success_banner(
                 tracker,
                 safety_path,
@@ -1772,6 +1774,24 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
             tracker.ensure_status_banner().show_error(GENERIC_RESTORE_SNAPSHOT_FAILED_MSG)
             cancel_restore_flow()
             return
+        try:
+            tracker.save_data(flush=True)
+            if not tracker.wait_for_save_idle():
+                raise SafetyBackupError("The safety copy couldn't be saved.")
+        except safety_backup.SafetyBackupError as exc:
+            _show_safety_copy_failed_banner(tracker, exc.user_detail)
+            restore_state["snapshots"] = None
+            cancel_restore_flow()
+            return
+        except Exception as exc:  # noqa: BLE001
+            _show_safety_copy_failed_banner(
+                tracker,
+                safety_backup._user_friendly_write_error(exc),
+            )
+            restore_state["snapshots"] = None
+            cancel_restore_flow()
+            return
+
         restore_state["snapshots"] = snapshots
         restore_busy["active"] = True
         set_buttons_enabled(False, False)
@@ -1781,6 +1801,13 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
             restore_busy["active"] = False
             indicator.stop()
             set_buttons_enabled(True, True)
+            snapshots_local = restore_state.get("snapshots")
+            if snapshots_local is not None:
+                _remove_restore_snapshots(
+                    snapshots_local.journal_snap,
+                    snapshots_local.profile_snap,
+                    snapshots_local.fitness_rollbacks,
+                )
             restore_state["snapshots"] = None
             _show_safety_copy_failed_banner(tracker, detail)
 

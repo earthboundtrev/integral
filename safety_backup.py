@@ -133,10 +133,6 @@ def write_pre_restore_safety_backup(
     partial = dest_path + ".partial"
     try:
         try:
-            tracker.save_data(flush=True)
-        except Exception as exc:  # noqa: BLE001
-            raise SafetyBackupError(_user_friendly_write_error(exc)) from exc
-        try:
             profile_journal_sync.sync_tracker_journal_to_active_profile(tracker.data_path)
         except profile_journal_sync.ProfileJournalSyncError as exc:
             raise SafetyBackupError(_user_friendly_write_error(exc)) from exc

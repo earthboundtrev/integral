@@ -45,7 +45,6 @@ def test_write_encrypted_safety_copy(temp_app, monkeypatch):
     profiles.set_active_profile("default")
     storage.save(storage.empty_data())
     tracker = MagicMock()
-    tracker.save_data = MagicMock()
     tracker.data_path = os.path.join(profiles.get_profile_dir(), "data.json")
     tracker.vault_passphrase = "backup-passphrase-12"
     dest = safety_backup.write_pre_restore_safety_backup(
@@ -61,7 +60,6 @@ def test_write_encrypted_safety_copy(temp_app, monkeypatch):
 def test_write_failure_leaves_no_partial_file(temp_app, monkeypatch):
     profiles.set_active_profile("default")
     tracker = MagicMock()
-    tracker.save_data = MagicMock()
     tracker.data_path = os.path.join(profiles.get_profile_dir(), "data.json")
     monkeypatch.setattr(
         backup,

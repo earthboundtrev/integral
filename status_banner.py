@@ -43,6 +43,7 @@ class StatusBanner:
         self._pause_depth = 0
         self._undo_callback: Callable[[], None] | None = None
         self._deferred_success: tuple[str, str | None, Callable[[], None] | None] | None = None
+        self._escape_bind_id: str | None = None
         self._sr_label = tk.Label(self._host, text="", takefocus=0)
         self._sr_label.place(x=-10000, y=-10000, width=1, height=1)
 
@@ -96,6 +97,13 @@ class StatusBanner:
     def dismiss(self) -> None:
         deferred = self._deferred_success if self._kind == _KIND_ERROR else None
         self._deferred_success = None
+        if self._escape_bind_id is not None:
+            top = self._host.winfo_toplevel()
+            try:
+                top.unbind("<Escape>", self._escape_bind_id)
+            except tk.TclError:
+                pass
+            self._escape_bind_id = None
         self._clear_frame()
         self._kind = None
         self._sr_label.config(text="")
@@ -314,7 +322,12 @@ class StatusBanner:
                 self.dismiss()
                 return "break"
 
-            top.bind("<Escape>", on_escape, add="+")
+            if self._escape_bind_id is not None:
+                try:
+                    top.unbind("<Escape>", self._escape_bind_id)
+                except tk.TclError:
+                    pass
+            self._escape_bind_id = top.bind("<Escape>", on_escape, add="+")
 
         if auto_hide_ms > 0 and kind in (_KIND_SUCCESS, _KIND_INFO):
             self._schedule_hide(auto_hide_ms)

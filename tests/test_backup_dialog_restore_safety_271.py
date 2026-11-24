@@ -229,7 +229,6 @@ def test_vault_on_safety_copy_is_encrypted(temp_app, tmp_path):
     profiles.set_active_profile("default")
     storage.save(_payload_with_marker(MARKER_CURRENT))
     tracker = MagicMock()
-    tracker.save_data = MagicMock()
     tracker.data_path = os.path.join(profiles.get_profile_dir(), "data.json")
     tracker.vault_passphrase = passphrase
     path = safety_backup.write_pre_restore_safety_backup(
