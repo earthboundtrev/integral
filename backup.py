@@ -278,6 +278,61 @@ def _clear_ledger_state_file(ledger_root: str) -> None:
             pass
 
 
+def _cleanup_config_import_temp_files() -> None:
+    config_path = profiles.get_config_path()
+    parent = os.path.dirname(config_path) or profiles.get_app_dir()
+    if not os.path.isdir(parent):
+        return
+    prefix = os.path.basename(config_path) + ".import-"
+    for name in os.listdir(parent):
+        if not name.startswith(prefix):
+            continue
+        try:
+            os.remove(os.path.join(parent, name))
+        except OSError:
+            pass
+
+
+def _remove_replace_aside_run_dir(run_dir: str) -> None:
+    if not _staging_path_contained_in_app_dir(run_dir):
+        return
+    parent = os.path.join(profiles.get_app_dir(), BACKUP_REPLACE_ASIDE_DIRNAME)
+    run_real = os.path.normcase(os.path.realpath(run_dir))
+    parent_real = os.path.normcase(os.path.realpath(parent))
+    sep = os.path.normcase(os.sep)
+    if run_real != parent_real and not run_real.startswith(parent_real + sep):
+        return
+    if os.path.isdir(run_dir):
+        shutil.rmtree(run_dir, ignore_errors=True)
+
+
+def _sweep_stale_replace_aside_runs() -> None:
+    parent = os.path.join(profiles.get_app_dir(), BACKUP_REPLACE_ASIDE_DIRNAME)
+    if not os.path.isdir(parent):
+        return
+    for name in os.listdir(parent):
+        run_dir = os.path.join(parent, name)
+        if not os.path.isdir(run_dir):
+            continue
+        if not _staging_path_contained_in_app_dir(run_dir):
+            continue
+        state_path = os.path.join(run_dir, REPLACE_LEDGER_STATE_FILENAME)
+        if not os.path.isfile(state_path):
+            _remove_replace_aside_run_dir(run_dir)
+            continue
+        try:
+            with open(state_path, encoding="utf-8") as handle:
+                payload = json.load(handle)
+            raw_status = payload.get("status")
+            if raw_status in (
+                REPLACE_LEDGER_STATUS_ROLLED_BACK,
+                REPLACE_LEDGER_STATUS_COMMITTED,
+            ):
+                _remove_replace_aside_run_dir(run_dir)
+        except (json.JSONDecodeError, OSError, TypeError):
+            continue
+
+
 def _remove_import_staging_dir(staging: str) -> None:
     if not os.path.isdir(staging):
         return
@@ -573,6 +628,7 @@ class ReplaceAsideLedger:
         if incomplete:
             _write_replace_pending_marker(self.root)
             return False
+        _cleanup_config_import_temp_files()
         self._mark_finished(REPLACE_LEDGER_STATUS_ROLLED_BACK)
         try:
             _clear_replace_pending_marker()
@@ -680,14 +736,13 @@ def sweep_replace_aside_pending_at_startup() -> None:
         if ledger is None or ledger.is_finished():
             continue
         if ledger.rollback():
-            try:
-                shutil.rmtree(aside_root)
-            except OSError:
-                pass
+            _remove_replace_aside_run_dir(aside_root)
             try:
                 _clear_replace_pending_marker()
             except OSError:
                 pass
+    _cleanup_config_import_temp_files()
+    _sweep_stale_replace_aside_runs()
 
 
 def commit_replace_aside_ledger(ledger: ReplaceAsideLedger) -> None:
@@ -871,8 +926,9 @@ def _atomic_replace_config(imported_config: dict, ledger: ReplaceAsideLedger) ->
     if os.path.lexists(config_path):
         aside_path = _aside_path_for_key(ledger, "config-replaced/config.json")
         _move_live_path_to_aside(config_path, aside_path, ledger)
-    os.replace(temp_path, config_path)
+    _replace_test_hook("after-config-aside")
     ledger.record_install(config_path)
+    os.replace(temp_path, config_path)
 
 
 def _apply_replace_app_state(

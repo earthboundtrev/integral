@@ -985,6 +985,12 @@ class PersonalDevelopmentTracker:
         self._pending_save_payload = None
         self._save_after_callbacks = []
 
+    def discard_deferred_saves_after_restore(self) -> None:
+        """Drop saves queued during restore; notify waiters without writing disk."""
+        for _payload, callbacks in self._restore_deferred_saves:
+            self._invoke_save_callbacks(callbacks, False, None)
+        self._restore_deferred_saves.clear()
+
     def flush_deferred_saves_after_restore(self) -> None:
         if not self._restore_deferred_saves:
             return
@@ -1094,18 +1100,25 @@ class PersonalDevelopmentTracker:
         from backup_dialog_ui import restore_operation_in_progress
 
         self._save_after_id = None
+        pending_payload = self._pending_save_payload
+        pending_callbacks = list(self._save_after_callbacks)
+        self._pending_save_payload = None
+        self._save_after_callbacks = []
         if restore_operation_in_progress():
-            if payload is not None or callbacks:
-                self._restore_deferred_saves.append((payload, list(callbacks)))
+            if pending_payload is not None or pending_callbacks:
+                self._restore_deferred_saves.append((pending_payload, pending_callbacks))
             return
         if self._save_write_in_progress:
+            self._pending_save_payload = pending_payload
+            self._save_after_callbacks = pending_callbacks
             return
-        payload = self._pending_save_payload
+        payload = pending_payload
         if payload is None:
+            if pending_callbacks:
+                self._invoke_save_callbacks(pending_callbacks, False, None)
             return
 
-        callbacks = self._save_after_callbacks
-        self._save_after_callbacks = []
+        callbacks = pending_callbacks
 
         encrypted = bool(self.settings.get("encryption_enabled"))
         passphrase = self.vault_passphrase

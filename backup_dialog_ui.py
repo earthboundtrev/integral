@@ -237,14 +237,17 @@ def begin_restore_operation(tracker: PersonalDevelopmentTracker | None = None) -
         tracker.defer_saves_for_restore()
 
 
-def end_restore_operation() -> None:
+def end_restore_operation(*, replay_queued_saves: bool = False) -> None:
     global _restore_operation_depth
     tracker: PersonalDevelopmentTracker | None = None
     if _restore_operation_trackers:
         tracker = _restore_operation_trackers.pop()
     _restore_operation_depth = max(0, _restore_operation_depth - 1)
     if _restore_operation_depth == 0 and tracker is not None:
-        tracker.flush_deferred_saves_after_restore()
+        if replay_queued_saves:
+            tracker.flush_deferred_saves_after_restore()
+        else:
+            tracker.discard_deferred_saves_after_restore()
 
 
 def restore_operation_in_progress() -> bool:
@@ -914,6 +917,7 @@ def _complete_undo_restore_ui(
         snapshots.fitness_rollbacks,
     )
     tracker.cancel_pending_save()
+    tracker.discard_deferred_saves_after_restore()
     tracker.load_data()
     tracker.create_dashboard()
     display_path = safety_backup.middle_ellipsize_path(undo_safety_path)
@@ -1065,7 +1069,7 @@ def apply_undo_from_safety_backup(
                     ui_failure()
                 if indicator is not None:
                     indicator.stop()
-                end_restore_operation()
+                end_restore_operation(replay_queued_saves=ui_failure is not None)
 
             _schedule_ui_callback(tracker.root, _finish_undo_sequence)
 
@@ -1879,6 +1883,7 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
             snapshots.fitness_rollbacks,
         )
         tracker.cancel_pending_save()
+        tracker.discard_deferred_saves_after_restore()
         tracker.load_data()
         tracker.create_dashboard()
         if safety_path:
@@ -1944,7 +1949,7 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         def on_safety_fail(detail: str) -> None:
             restore_busy["active"] = False
             indicator.stop()
-            end_restore_operation()
+            end_restore_operation(replay_queued_saves=True)
             set_buttons_enabled(True, True)
             snapshots_local = restore_state.get("snapshots")
             if snapshots_local is not None:
@@ -1959,7 +1964,7 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         def on_import_fail(exc: BaseException) -> None:
             restore_busy["active"] = False
             indicator.stop()
-            end_restore_operation()
+            end_restore_operation(replay_queued_saves=True)
             set_buttons_enabled(True, True)
             snapshots_local = restore_state.get("snapshots")
             if snapshots_local is not None:
