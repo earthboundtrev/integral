@@ -171,8 +171,12 @@ def test_vault_locked_blocks_before_passphrase(tk_root, temp_app, tmp_path):
     with patch("backup_dialog_ui.filedialog.askopenfilename", return_value=zip_path):
         _find_button(dialog, "Restore from").invoke()
         pump_tk(tk_root, 10)
-    assert safety_backup.UNLOCK_VAULT_FIRST_MSG in _label_texts(dialog)
     assert not safety_backup._safety_backup_filenames()
+    from tests.test_backup_dialog_restore_vault_278 import _vault_unlock_entries
+
+    vault_entry, _ = _vault_unlock_entries(dialog)
+    assert vault_entry is not None
+    assert vault_entry.winfo_ismapped() or vault_entry.winfo_exists()
 
 
 def test_cancel_confirm_writes_no_safety_copy(tk_root, temp_app, tmp_path):

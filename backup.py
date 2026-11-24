@@ -388,6 +388,43 @@ def _install_profile_artifacts(staging_profiles: str, profile_id: str) -> None:
             shutil.copy2(src, os.path.join(dest_dir, filename))
 
 
+def _replace_profile_artifacts(staging_profiles: str, profile_id: str) -> None:
+    safe_id = profiles.require_safe_profile_id(profile_id)
+    dest_dir = profiles.get_profile_dir(safe_id)
+    if os.path.isdir(dest_dir):
+        shutil.rmtree(dest_dir, ignore_errors=True)
+    os.makedirs(dest_dir, exist_ok=True)
+    staged_dir = os.path.join(staging_profiles, safe_id)
+    if not os.path.isdir(staged_dir):
+        return
+    for filename in PROFILE_ARTIFACTS:
+        src = os.path.join(staged_dir, filename)
+        if os.path.isfile(src):
+            shutil.copy2(src, os.path.join(dest_dir, filename))
+
+
+def _remove_profile_dirs_not_in_backup(allowed_ids: set[str]) -> None:
+    root = profiles.get_profiles_root()
+    if not os.path.isdir(root):
+        return
+    for name in os.listdir(root):
+        path = os.path.join(root, name)
+        if not os.path.isdir(path):
+            continue
+        try:
+            pid = profiles.require_safe_profile_id(name)
+        except ValueError:
+            continue
+        if pid not in allowed_ids:
+            shutil.rmtree(path, ignore_errors=True)
+
+
+def _clear_creative_tree(creative_root: str) -> None:
+    if os.path.isdir(creative_root):
+        shutil.rmtree(creative_root, ignore_errors=True)
+    os.makedirs(creative_root, exist_ok=True)
+
+
 def _install_creative_tree(staging_creative: str, creative_root: str) -> int:
     if not os.path.isdir(staging_creative):
         return 0
@@ -478,11 +515,16 @@ def import_backup(
     *,
     creative_root: str | None = None,
     passphrase: str | None = None,
+    replace_app_state: bool = False,
 ) -> dict:
     """Restore profiles and creative documents from a validated backup zip."""
+    if replace_app_state and merge_profiles:
+        raise ValueError("replace_app_state requires merge_profiles=False")
     manifest = validate_backup(zip_path, passphrase=passphrase)
     profiles.ensure_app_structure()
     creative_dest = creative_root if creative_root is not None else paths.creative_projects_dir()
+    backup_profile_ids = _manifest_profile_ids(manifest)
+    allowed_ids = set(backup_profile_ids)
 
     with _backup_zipfile(zip_path, passphrase) as zf:
         budget = zip_import_safety.prepare_zip_import(zf)
@@ -495,7 +537,7 @@ def import_backup(
             staging_creative = os.path.join(staging, CREATIVE_PREFIX.rstrip("/"))
             os.makedirs(staging_profiles, exist_ok=True)
 
-            for pid in _manifest_profile_ids(manifest):
+            for pid in backup_profile_ids:
                 prefix = f"profiles/{pid}/"
                 staged_profile = os.path.join(staging_profiles, pid)
                 os.makedirs(staged_profile, exist_ok=True)
@@ -510,10 +552,17 @@ def import_backup(
                     _assert_path_within_root(target, staged_profile)
                     zip_import_safety.copy_zip_member_to_file(zf, name, target, budget)
 
-            restored_docs = _restore_creative_files(zf, staging_creative, budget)
+            _restore_creative_files(zf, staging_creative, budget)
 
-            for pid in _manifest_profile_ids(manifest):
-                _install_profile_artifacts(staging_profiles, pid)
+            if replace_app_state:
+                _remove_profile_dirs_not_in_backup(allowed_ids)
+                _clear_creative_tree(creative_dest)
+                install_profile = _replace_profile_artifacts
+            else:
+                install_profile = _install_profile_artifacts
+
+            for pid in backup_profile_ids:
+                install_profile(staging_profiles, pid)
             restored_docs = _install_creative_tree(staging_creative, creative_dest)
 
         manifest = {**manifest, "restored_creative_files": restored_docs}

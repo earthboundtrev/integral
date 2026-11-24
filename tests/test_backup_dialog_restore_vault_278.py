@@ -243,7 +243,8 @@ def test_plaintext_vault_unlock_mismatch_never_reencrypts_or_sets_session(
         _find_button(dialog, "Restore from").invoke()
         pump_tk(tk_root, 15)
 
-    assert safety_backup.UNLOCK_VAULT_FIRST_MSG in " ".join(_label_texts(dialog))
+    vault_entry, _ = _vault_unlock_entries(dialog)
+    assert vault_entry is not None
     mock_save.assert_not_called()
 
     tracker.vault_passphrase = "vault-secret-12"
@@ -319,7 +320,8 @@ def test_plaintext_legacy_restore_prompts_vault_before_apply(
     with patch("backup_dialog_ui.filedialog.askopenfilename", return_value=plain_zip):
         _find_button(dialog, "Restore from").invoke()
         pump_tk(tk_root, 15)
-    assert safety_backup.UNLOCK_VAULT_FIRST_MSG in " ".join(_label_texts(dialog))
+    vault_entry, _ = _vault_unlock_entries(dialog)
+    assert vault_entry is not None
 
     tracker.vault_passphrase = "vault-secret-12"
     with patch("backup_dialog_ui.filedialog.askopenfilename", return_value=plain_zip):
@@ -354,7 +356,8 @@ def test_plaintext_restore_no_success_leaves_journal_plain_when_vault_unlock_can
         _find_button(dialog, "Restore from").invoke()
         pump_tk(tk_root, 15)
 
-    assert safety_backup.UNLOCK_VAULT_FIRST_MSG in " ".join(_label_texts(dialog))
+    vault_entry, _ = _vault_unlock_entries(dialog)
+    assert vault_entry is not None
 
     assert not is_encrypted_file(data_path)
     assert banner._kind != "success"

@@ -66,6 +66,7 @@ a = Analysis(
         "progression.session_repeat",
         "backup",
         "backup_dialog_ui",
+        "safety_backup",
         "profile_journal_sync",
         "body_composition_ui",
         "busy_indicator",

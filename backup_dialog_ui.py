@@ -882,6 +882,29 @@ def apply_undo_from_safety_backup(
         tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
         return
     try:
+        tracker.save_data(flush=True)
+        if not tracker.wait_for_save_idle():
+            raise safety_backup.SafetyBackupError("The safety copy couldn't be saved.")
+    except safety_backup.SafetyBackupError as exc:
+        _show_safety_copy_failed_banner(tracker, exc.user_detail)
+        return
+    except Exception as exc:  # noqa: BLE001
+        _show_safety_copy_failed_banner(
+            tracker,
+            safety_backup._user_friendly_write_error(exc),
+        )
+        return
+    try:
+        undo_safety_path = safety_backup.write_pre_restore_safety_backup(
+            tracker=tracker,
+            vault_on=_vault_active(tracker),
+            passphrase=tracker.vault_passphrase if _vault_active(tracker) else None,
+            creative_root=creative_projects_dir(),
+        )
+    except safety_backup.SafetyBackupError as exc:
+        _show_safety_copy_failed_banner(tracker, exc.user_detail)
+        return
+    try:
         snapshots = _restore_snapshots_for_vault(tracker)
     except profile_journal_sync.ProfileJournalSyncError:
         tracker.ensure_status_banner().show_error(GENERIC_RESTORE_ERROR)
@@ -892,7 +915,8 @@ def apply_undo_from_safety_backup(
     try:
         backup.import_backup(
             safety_path,
-            merge_profiles=True,
+            merge_profiles=False,
+            replace_app_state=True,
             creative_root=creative_projects_dir(),
             passphrase=passphrase,
         )
@@ -944,7 +968,16 @@ def apply_undo_from_safety_backup(
     tracker.cancel_pending_save()
     tracker.load_data()
     tracker.create_dashboard()
-    tracker.ensure_status_banner().show_success("Undo complete. Your previous data is back.")
+    display_path = safety_backup.middle_ellipsize_path(undo_safety_path)
+    vault_on = backup.is_encrypted_backup_file(undo_safety_path)
+    tracker.ensure_status_banner().show_success(
+        f"Undo complete. Your previous data is back. Current data saved to {display_path}",
+        subtitle="Protected by your vault passphrase." if vault_on else None,
+        message_tooltip=undo_safety_path,
+        auto_hide_ms=0,
+        closable=True,
+        bind_escape=True,
+    )
 
 
 def _open_containing_folder(path: str) -> None:
@@ -1062,6 +1095,17 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
     def refresh_dialog_scroll() -> None:
         try:
             refresh_scroll_region(scroll_canvas, content)
+        except tk.TclError:
+            pass
+
+    def _show_backup_main_scroll() -> None:
+        if not scroll_outer.winfo_ismapped():
+            scroll_outer.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+        window.after_idle(refresh_dialog_scroll)
+
+    def _hide_backup_main_scroll() -> None:
+        try:
+            scroll_outer.pack_forget()
         except tk.TclError:
             pass
 
@@ -1212,7 +1256,8 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         foreground=tracker.theme.get("muted", "#6B7280"),
     )
     vault_unlock_row = ttk.Frame(restore_panel)
-    ttk.Label(vault_unlock_row, text="Vault passphrase").pack(side=tk.LEFT)
+    vault_unlock_row.columnconfigure(1, weight=1)
+    ttk.Label(vault_unlock_row, text="Vault passphrase").grid(row=0, column=0, sticky="w")
     vault_unlock_entry = ttk.Entry(vault_unlock_row, show="*", width=VAULT_UNLOCK_ENTRY_WIDTH)
     vault_unlock_show = tk.BooleanVar(value=False)
 
@@ -1227,12 +1272,13 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         variable=vault_unlock_show,
         command=toggle_vault_unlock_visibility,
     )
-    vault_unlock_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(8, 8))
-    vault_unlock_show_btn.pack(side=tk.RIGHT, padx=(8, 0))
+    vault_unlock_entry.grid(row=0, column=1, sticky="ew", padx=(8, 8))
+    vault_unlock_show_btn.grid(row=0, column=2, sticky="e", padx=(0, 0))
     vault_confirm_row = ttk.Frame(restore_panel)
-    ttk.Label(vault_confirm_row, text="Confirm vault passphrase").pack(side=tk.LEFT)
+    vault_confirm_row.columnconfigure(1, weight=1)
+    ttk.Label(vault_confirm_row, text="Confirm vault passphrase").grid(row=0, column=0, sticky="w")
     vault_confirm_entry = ttk.Entry(vault_confirm_row, show="*", width=VAULT_UNLOCK_ENTRY_WIDTH)
-    vault_confirm_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(8, 8))
+    vault_confirm_entry.grid(row=0, column=1, sticky="ew", padx=(8, 8))
     vault_unlock_actions = ttk.Frame(restore_panel)
     vault_unlock_cancel_btn = ttk.Button(vault_unlock_actions, text="Back")
     vault_unlock_cancel_btn.pack(side=tk.LEFT, padx=(0, 8))
@@ -1246,19 +1292,15 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
     )
 
     def _layout_vault_unlock_show_toggle() -> None:
-        vault_unlock_show_btn.pack_forget()
-        vault_unlock_entry.pack_forget()
-        vault_unlock_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(8, 8))
         vault_unlock_row.update_idletasks()
-        row_width = vault_unlock_row.winfo_width()
-        entry_req = vault_unlock_entry.winfo_reqwidth()
-        label_req = vault_unlock_row.winfo_children()[0].winfo_reqwidth()
+        row_width = max(vault_unlock_row.winfo_width(), vault_unlock_row.winfo_reqwidth())
+        label_req = vault_unlock_row.grid_slaves(row=0, column=0)[0].winfo_reqwidth()
         show_req = vault_unlock_show_btn.winfo_reqwidth()
-        if row_width >= label_req + entry_req + show_req + 24:
-            vault_unlock_show_btn.pack(side=tk.RIGHT, padx=(8, 0))
-            vault_unlock_row.update_idletasks()
-            if vault_unlock_entry.winfo_width() < entry_req:
-                vault_unlock_show_btn.pack_forget()
+        min_entry = vault_unlock_entry.winfo_reqwidth()
+        if row_width > 0 and row_width < label_req + min_entry + show_req + 24:
+            vault_unlock_show_btn.grid_remove()
+        else:
+            vault_unlock_show_btn.grid(row=0, column=2, sticky="e", padx=(0, 0))
 
     confirm_bar = ttk.Frame(footer)
     confirm_label = ttk.Label(confirm_bar, text="", wraplength=500)
@@ -1533,13 +1575,16 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
     export_plain_btn = ttk.Button(plaintext_buttons, text="Export unencrypted", command=export_unencrypted)
     export_plain_btn.pack(side=tk.LEFT)
 
-    def hide_restore_ui() -> None:
+    def hide_restore_ui(*, restore_main_scroll: bool = True) -> None:
         restore_panel.pack_forget()
         confirm_bar.pack_forget()
+        if restore_main_scroll:
+            _show_backup_main_scroll()
         window.after_idle(refresh_dialog_scroll)
 
     def show_vault_unlock_ui() -> None:
-        hide_restore_ui()
+        hide_restore_ui(restore_main_scroll=False)
+        _hide_backup_main_scroll()
         restore_panel.pack(side=tk.BOTTOM, fill=tk.X, padx=15, pady=(4, 0), before=buttons)
         restore_pass_row.pack_forget()
         restore_vault_note.pack_forget()
@@ -1877,6 +1922,12 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
             return
         if not _guard_restore_against_pending_rollback(tracker):
             return
+        if _vault_active(tracker) and not _vault_unlocked(tracker):
+            _show_vault_locked_restore_block(
+                path,
+                encrypted=bool(restore_state.get("encrypted")),
+            )
+            return
         kind = restore_state.get("kind") or "encrypted"
 
         def do_apply() -> None:
@@ -2000,16 +2051,14 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
     def legacy_restore(path: str) -> None:
         if not _guard_restore_against_pending_rollback(tracker):
             return
-        if _vault_active(tracker) and not _vault_unlocked(tracker):
-            _show_vault_locked_restore_block(path, encrypted=False)
-            return
-        show_legacy_confirm_bar(path)
+
+        def show_confirm() -> None:
+            show_legacy_confirm_bar(path)
+
+        _run_after_vault_unlock(show_confirm)
 
     def profile_zip_restore(path: str) -> None:
         if not _guard_restore_against_pending_rollback(tracker):
-            return
-        if _vault_active(tracker) and not _vault_unlocked(tracker):
-            _show_vault_locked_restore_block(path, encrypted=False)
             return
         try:
             manifest = backup.validate_backup(path)
@@ -2019,7 +2068,11 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         restore_state["path"] = path
         restore_state["kind"] = "profile_zip"
         restore_state["manifest"] = manifest
-        show_confirm_bar(manifest)
+
+        def show_confirm() -> None:
+            show_confirm_bar(manifest)
+
+        _run_after_vault_unlock(show_confirm)
 
     def _show_vault_locked_restore_block(path: str, *, encrypted: bool) -> None:
         hide_restore_ui()
@@ -2058,10 +2111,6 @@ def show_backup_dialog(tracker: PersonalDevelopmentTracker) -> None:
         encrypted = backup.is_encrypted_backup_file(path)
         restore_state["path"] = path
         restore_state["encrypted"] = encrypted
-
-        if _vault_active(tracker) and not _vault_unlocked(tracker):
-            _show_vault_locked_restore_block(path, encrypted=encrypted)
-            return
 
         if encrypted:
             if use_vault_var.get() and _vault_unlocked(tracker):
