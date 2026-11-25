@@ -2,6 +2,7 @@ import json
 import os
 import re
 import shutil
+import sqlite3
 
 import paths
 
@@ -144,10 +145,60 @@ def ensure_app_structure() -> None:
     migrate_legacy_layout_if_needed()
 
 
+def _workout_session_count(db_path: str) -> int:
+    if not os.path.isfile(db_path):
+        return 0
+    try:
+        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+            return int(conn.execute("SELECT COUNT(*) FROM workout_sessions").fetchone()[0])
+    except (sqlite3.Error, TypeError, ValueError):
+        return 0
+
+
+_FITNESS_DB_MERGE_TABLES = (
+    "exercises",
+    "progression_edges",
+    "user_exercise_progress",
+    "workout_sessions",
+    "workout_sets",
+    "body_composition_logs",
+)
+
+
+def _table_column_names(conn: sqlite3.Connection, schema: str, table: str) -> list[str]:
+    rows = conn.execute(f"PRAGMA {schema}.table_info({table})").fetchall()
+    return [row[1] for row in rows]
+
+
+def _merge_legacy_fitness_db_into_profile(legacy_path: str, profile_path: str) -> None:
+    """Copy missing rows from legacy root fitness.db into the profile database."""
+    with sqlite3.connect(profile_path) as conn:
+        conn.execute("PRAGMA foreign_keys = OFF")
+        conn.execute("ATTACH DATABASE ? AS legacy", (legacy_path,))
+        for table in _FITNESS_DB_MERGE_TABLES:
+            try:
+                main_cols = set(_table_column_names(conn, "main", table))
+                legacy_cols = _table_column_names(conn, "legacy", table)
+                shared = [column for column in legacy_cols if column in main_cols]
+                if not shared:
+                    continue
+                columns_sql = ", ".join(shared)
+                conn.execute(
+                    f"INSERT OR IGNORE INTO main.{table} ({columns_sql}) "
+                    f"SELECT {columns_sql} FROM legacy.{table}"
+                )
+            except sqlite3.OperationalError:
+                continue
+        conn.commit()
+        conn.execute("DETACH DATABASE legacy")
+        conn.execute("PRAGMA foreign_keys = ON")
+
+
 def migrate_legacy_layout_if_needed() -> None:
     """Migrate data.json and fitness.db from app root to default profile directory.
     
-    One-time migration using atomic copy.
+    One-time migration using atomic copy. When #329 created an empty profile
+    fitness.db while legacy root still holds sessions, restore or merge.
     """
     from integral_io import atomic_copy_file
     
@@ -165,6 +216,23 @@ def migrate_legacy_layout_if_needed() -> None:
     default_fitness = os.path.join(default_dir, "fitness.db")
     if os.path.exists(legacy_fitness) and not os.path.exists(default_fitness):
         atomic_copy_file(legacy_fitness, default_fitness)
+    elif os.path.exists(legacy_fitness) and os.path.exists(default_fitness):
+        legacy_sessions = _workout_session_count(legacy_fitness)
+        profile_sessions = _workout_session_count(default_fitness)
+        if legacy_sessions > 0:
+            _merge_legacy_fitness_db_into_profile(legacy_fitness, default_fitness)
+        if (
+            profile_sessions == 0
+            and legacy_sessions > 0
+            and _workout_session_count(default_fitness) == 0
+        ):
+            backup = f"{default_fitness}.pre-legacy-restore.bak"
+            atomic_copy_file(default_fitness, backup)
+            for suffix in ("", "-wal", "-shm"):
+                sidecar = f"{default_fitness}{suffix}"
+                if os.path.exists(sidecar):
+                    os.remove(sidecar)
+            atomic_copy_file(legacy_fitness, default_fitness)
 
     if not os.path.exists(get_config_path()):
         save_config(default_config())
