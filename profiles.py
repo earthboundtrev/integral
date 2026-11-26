@@ -3,6 +3,8 @@ import os
 import re
 import shutil
 import sqlite3
+from dataclasses import dataclass
+from enum import Enum
 
 import paths
 
@@ -12,6 +14,89 @@ CONFIG_FILE_NAME = "config.json"
 DEFAULT_PROFILE_ID = "default"
 DEFAULT_PROFILE_NAME = "Default"
 _SAFE_PROFILE_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$")
+
+GENERIC_LEGACY_FITNESS_NOTICE = (
+    "Workout storage could not be read. Try restarting the app."
+)
+
+_legacy_fitness_notices: list[str] = []
+
+
+def consume_legacy_fitness_notices() -> list[str]:
+    """Return and clear user-facing messages from the last legacy fitness pass."""
+    global _legacy_fitness_notices
+    notes = list(_legacy_fitness_notices)
+    _legacy_fitness_notices.clear()
+    return notes
+
+
+def _queue_legacy_fitness_notice() -> None:
+    if GENERIC_LEGACY_FITNESS_NOTICE not in _legacy_fitness_notices:
+        _legacy_fitness_notices.append(GENERIC_LEGACY_FITNESS_NOTICE)
+
+
+class SessionCountOutcome(Enum):
+    MISSING = "missing"
+    OK = "ok"
+    LOCKED = "locked"
+    UNREADABLE = "unreadable"
+
+
+@dataclass(frozen=True)
+class WorkoutSessionCountResult:
+    outcome: SessionCountOutcome
+    count: int = 0
+
+    @property
+    def has_sessions(self) -> bool:
+        return self.outcome == SessionCountOutcome.OK and self.count > 0
+
+    @property
+    def is_genuine_zero(self) -> bool:
+        return self.outcome == SessionCountOutcome.OK and self.count == 0
+
+    @property
+    def is_error(self) -> bool:
+        return self.outcome in (SessionCountOutcome.LOCKED, SessionCountOutcome.UNREADABLE)
+
+
+def _fitness_busy_timeout_ms() -> int:
+    raw = os.environ.get("INTEGRAL_FITNESS_BUSY_TIMEOUT_MS")
+    if raw is not None:
+        try:
+            return max(0, int(raw))
+        except ValueError:
+            pass
+    return 250
+
+
+def _close_sqlite(conn: sqlite3.Connection | None) -> None:
+    if conn is None:
+        return
+    try:
+        conn.close()
+    except sqlite3.Error:
+        pass
+
+
+def _open_fitness_sqlite(db_path: str, *, readonly: bool) -> sqlite3.Connection:
+    busy_ms = _fitness_busy_timeout_ms()
+    timeout_s = busy_ms / 1000.0 if busy_ms else 0.0
+    if readonly:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=timeout_s)
+    else:
+        conn = sqlite3.connect(db_path, timeout=timeout_s)
+    if busy_ms:
+        conn.execute(f"PRAGMA busy_timeout = {int(busy_ms)}")
+    return conn
+
+
+def _classify_sqlite_error(exc: sqlite3.Error) -> SessionCountOutcome:
+    if isinstance(exc, sqlite3.OperationalError):
+        text = str(exc).lower()
+        if "locked" in text or "busy" in text:
+            return SessionCountOutcome.LOCKED
+    return SessionCountOutcome.UNREADABLE
 
 
 def require_safe_profile_id(profile_id: object) -> str:
@@ -145,14 +230,29 @@ def ensure_app_structure() -> None:
     migrate_legacy_layout_if_needed()
 
 
-def _workout_session_count(db_path: str) -> int:
+def _workout_session_count_result(db_path: str) -> WorkoutSessionCountResult:
     if not os.path.isfile(db_path):
-        return 0
+        return WorkoutSessionCountResult(SessionCountOutcome.MISSING, 0)
+    if os.path.getsize(db_path) == 0:
+        return WorkoutSessionCountResult(SessionCountOutcome.OK, 0)
+    conn = None
     try:
-        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
-            return int(conn.execute("SELECT COUNT(*) FROM workout_sessions").fetchone()[0])
-    except (sqlite3.Error, TypeError, ValueError):
-        return 0
+        conn = _open_fitness_sqlite(db_path, readonly=True)
+        count = int(conn.execute("SELECT COUNT(*) FROM workout_sessions").fetchone()[0])
+        return WorkoutSessionCountResult(SessionCountOutcome.OK, count)
+    except (sqlite3.Error, TypeError, ValueError) as exc:
+        if isinstance(exc, sqlite3.Error):
+            return WorkoutSessionCountResult(_classify_sqlite_error(exc), 0)
+        return WorkoutSessionCountResult(SessionCountOutcome.UNREADABLE, 0)
+    finally:
+        _close_sqlite(conn)
+
+
+def _workout_session_count(db_path: str) -> int:
+    result = _workout_session_count_result(db_path)
+    if result.outcome in (SessionCountOutcome.OK, SessionCountOutcome.MISSING):
+        return result.count
+    return 0
 
 
 _FITNESS_DB_MERGE_TABLES = (
@@ -170,9 +270,11 @@ def _table_column_names(conn: sqlite3.Connection, schema: str, table: str) -> li
     return [row[1] for row in rows]
 
 
-def _merge_legacy_fitness_db_into_profile(legacy_path: str, profile_path: str) -> None:
+def _merge_legacy_fitness_db_into_profile(legacy_path: str, profile_path: str) -> bool:
     """Copy missing rows from legacy root fitness.db into the profile database."""
-    with sqlite3.connect(profile_path) as conn:
+    conn = None
+    try:
+        conn = _open_fitness_sqlite(profile_path, readonly=False)
         conn.execute("PRAGMA foreign_keys = OFF")
         conn.execute("ATTACH DATABASE ? AS legacy", (legacy_path,))
         for table in _FITNESS_DB_MERGE_TABLES:
@@ -190,18 +292,28 @@ def _merge_legacy_fitness_db_into_profile(legacy_path: str, profile_path: str) -
             except sqlite3.OperationalError:
                 continue
         conn.commit()
-        conn.execute("DETACH DATABASE legacy")
+        try:
+            conn.execute("DETACH DATABASE legacy")
+        except sqlite3.Error:
+            pass
         conn.execute("PRAGMA foreign_keys = ON")
+        return True
+    except sqlite3.OperationalError:
+        return False
+    except sqlite3.DatabaseError:
+        return False
+    finally:
+        _close_sqlite(conn)
 
 
 def migrate_legacy_layout_if_needed() -> None:
     """Migrate data.json and fitness.db from app root to default profile directory.
-    
+
     One-time migration using atomic copy. When #329 created an empty profile
     fitness.db while legacy root still holds sessions, restore or merge.
     """
     from integral_io import atomic_copy_file
-    
+
     app_dir = get_app_dir()
     legacy_data = os.path.join(app_dir, "data.json")
     default_dir = get_profile_dir(DEFAULT_PROFILE_ID)
@@ -215,24 +327,42 @@ def migrate_legacy_layout_if_needed() -> None:
     legacy_fitness = os.path.join(app_dir, "fitness.db")
     default_fitness = os.path.join(default_dir, "fitness.db")
     if os.path.exists(legacy_fitness) and not os.path.exists(default_fitness):
-        atomic_copy_file(legacy_fitness, default_fitness)
-    elif os.path.exists(legacy_fitness) and os.path.exists(default_fitness):
-        legacy_sessions = _workout_session_count(legacy_fitness)
-        profile_sessions = _workout_session_count(default_fitness)
-        if legacy_sessions > 0:
-            _merge_legacy_fitness_db_into_profile(legacy_fitness, default_fitness)
-        if (
-            profile_sessions == 0
-            and legacy_sessions > 0
-            and _workout_session_count(default_fitness) == 0
-        ):
-            backup = f"{default_fitness}.pre-legacy-restore.bak"
-            atomic_copy_file(default_fitness, backup)
-            for suffix in ("", "-wal", "-shm"):
-                sidecar = f"{default_fitness}{suffix}"
-                if os.path.exists(sidecar):
-                    os.remove(sidecar)
+        try:
             atomic_copy_file(legacy_fitness, default_fitness)
+        except OSError:
+            pass
+    elif os.path.exists(legacy_fitness) and os.path.exists(default_fitness):
+        profile_count = _workout_session_count_result(default_fitness)
+        if profile_count.outcome == SessionCountOutcome.UNREADABLE:
+            _queue_legacy_fitness_notice()
+        elif profile_count.outcome == SessionCountOutcome.LOCKED:
+            pass
+        else:
+            legacy_count = _workout_session_count_result(legacy_fitness)
+            if legacy_count.outcome == SessionCountOutcome.UNREADABLE:
+                pass
+            elif legacy_count.outcome == SessionCountOutcome.LOCKED:
+                pass
+            else:
+                if legacy_count.has_sessions:
+                    _merge_legacy_fitness_db_into_profile(legacy_fitness, default_fitness)
+                if profile_count.is_genuine_zero and legacy_count.has_sessions:
+                    recount = _workout_session_count_result(default_fitness)
+                    if recount.outcome == SessionCountOutcome.UNREADABLE:
+                        _queue_legacy_fitness_notice()
+                    elif recount.outcome == SessionCountOutcome.LOCKED:
+                        pass
+                    elif recount.is_genuine_zero:
+                        backup = f"{default_fitness}.pre-legacy-restore.bak"
+                        try:
+                            atomic_copy_file(default_fitness, backup)
+                            for suffix in ("", "-wal", "-shm"):
+                                sidecar = f"{default_fitness}{suffix}"
+                                if os.path.exists(sidecar):
+                                    os.remove(sidecar)
+                            atomic_copy_file(legacy_fitness, default_fitness)
+                        except OSError:
+                            pass
 
     if not os.path.exists(get_config_path()):
         save_config(default_config())

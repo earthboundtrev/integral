@@ -270,6 +270,10 @@ class PersonalDevelopmentTracker:
 
         for notice in user_data_migration.consume_user_notices():
             self.ensure_status_banner().show_info(notice)
+        import profiles as profiles_module
+
+        for notice in profiles_module.consume_legacy_fitness_notices():
+            self.ensure_status_banner().show_error(notice)
         self._show_unreadable_reps_banner_if_needed()
         self._start_day_watch()
         self._start_reminder_scheduler()
