@@ -279,8 +279,74 @@ def apply_theme(root: tk.Misc, theme: dict) -> None:
         bordercolor=theme["success"],
     )
 
-    style.configure("TCheckbutton", background=bg, foreground=fg)
-    style.configure("TRadiobutton", background=bg, foreground=fg)
+    _chk_cfg = {
+        "background": bg,
+        "foreground": fg,
+        "indicatorbackground": surface,
+        "indicatorforeground": theme["button_border"],
+        "focuscolor": theme["accent"],
+        "upperbordercolor": theme["button_border"],
+        "lowerbordercolor": theme["button_border"],
+    }
+    _chk_label_bg = [
+        ("active", bg),
+        ("pressed", bg),
+        ("focus", bg),
+        ("selected", bg),
+        ("active", "selected", bg),
+        ("pressed", "selected", bg),
+        ("focus", "selected", bg),
+        ("disabled", bg),
+        ("disabled", "selected", bg),
+    ]
+    _chk_label_fg = [
+        ("active", "!disabled", fg),
+        ("pressed", "!disabled", fg),
+        ("focus", "!disabled", fg),
+        ("selected", "!disabled", fg),
+        ("active", "selected", "!disabled", fg),
+        ("pressed", "selected", "!disabled", fg),
+        ("focus", "selected", "!disabled", fg),
+        ("disabled", theme["disabled"]),
+        ("disabled", "selected", theme["disabled"]),
+    ]
+    _accent_outline = [
+        ("active", "!disabled", theme["accent"]),
+        ("pressed", "!disabled", theme["accent"]),
+        ("focus", "!disabled", theme["accent"]),
+        ("active", "selected", "!disabled", theme["accent"]),
+    ]
+    _disabled_outline = [
+        ("disabled", theme["disabled"]),
+        ("disabled", "selected", theme["disabled"]),
+    ]
+    _chk_map = {
+        "background": _chk_label_bg,
+        "foreground": _chk_label_fg,
+        "indicatorbackground": [
+            ("selected", "!disabled", theme["accent"]),
+            ("pressed", "!disabled", theme["surface_alt"]),
+            ("active", "!disabled", surface),
+            ("disabled", theme["surface_alt"]),
+            ("disabled", "selected", theme["surface_alt"]),
+            ("active", "selected", "!disabled", theme["accent"]),
+            ("pressed", "selected", "!disabled", theme["accent"]),
+            ("focus", "selected", "!disabled", theme["accent"]),
+        ],
+        "indicatorforeground": [
+            ("selected", "!disabled", theme["on_accent"]),
+            ("active", "!disabled", theme["accent"]),
+            ("pressed", "!disabled", theme["accent"]),
+            ("disabled", theme["disabled"]),
+            ("disabled", "selected", theme["disabled"]),
+        ],
+        "upperbordercolor": _accent_outline + _disabled_outline,
+        "lowerbordercolor": _accent_outline + _disabled_outline,
+        "focuscolor": [("focus", theme["accent"])],
+    }
+    for _style in ("TCheckbutton", "TRadiobutton"):
+        style.configure(_style, **_chk_cfg)
+        style.map(_style, **_chk_map)
     style.configure("TNotebook", background=bg, borderwidth=0)
     style.configure("TNotebook.Tab", background=bg, foreground=fg, padding=(14, 8), font=FONTS["body"])
     style.map("TNotebook.Tab", background=[("selected", surface)])
