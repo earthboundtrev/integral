@@ -21,6 +21,8 @@ GENERIC_LEGACY_FITNESS_NOTICE = (
 
 _legacy_fitness_notices: list[str] = []
 
+_FITNESS_DB_WRITABLE_SIDECARS = ("-wal", "-shm", "-journal")
+
 
 def consume_legacy_fitness_notices() -> list[str]:
     """Return and clear user-facing messages from the last legacy fitness pass."""
@@ -227,7 +229,10 @@ def ensure_app_structure() -> None:
 
     user_data_migration.run_at_startup()
     os.makedirs(get_profiles_root(), exist_ok=True)
-    migrate_legacy_layout_if_needed()
+    try:
+        migrate_legacy_layout_if_needed()
+    except (OSError, sqlite3.Error):
+        pass
 
 
 def _workout_session_count_result(db_path: str) -> WorkoutSessionCountResult:
@@ -255,6 +260,78 @@ def _workout_session_count(db_path: str) -> int:
     return 0
 
 
+def _next_nonexistent_path(base_path: str) -> str:
+    if not os.path.exists(base_path):
+        return base_path
+    n = 1
+    while True:
+        candidate = f"{base_path}.{n}"
+        if not os.path.exists(candidate):
+            return candidate
+        n += 1
+
+
+def _prepare_pre_legacy_restore_bak(live_db_path: str) -> str:
+    """Rotate an existing fixed-name bak aside, then allocate that name for a new backup."""
+    fixed_bak = f"{live_db_path}.pre-legacy-restore.bak"
+    if os.path.isfile(fixed_bak):
+        os.replace(fixed_bak, _next_nonexistent_path(fixed_bak))
+    return _next_nonexistent_path(fixed_bak)
+
+
+def _copy_fitness_db_with_sidecars(src_base: str, dest_base: str) -> None:
+    from integral_io import atomic_copy_file
+
+    atomic_copy_file(src_base, dest_base)
+    for suffix in _FITNESS_DB_WRITABLE_SIDECARS:
+        src_side = f"{src_base}{suffix}"
+        if os.path.isfile(src_side):
+            atomic_copy_file(src_side, f"{dest_base}{suffix}")
+
+
+def _remove_writable_fitness_sidecars(db_path: str) -> None:
+    """Remove stale WAL/SHM/journal files only — never the live database file."""
+    for suffix in _FITNESS_DB_WRITABLE_SIDECARS:
+        sidecar = f"{db_path}{suffix}"
+        if os.path.exists(sidecar):
+            os.remove(sidecar)
+
+
+def _fitness_paths_are_safe(profile_path: str, staged_path: str) -> bool:
+    if os.path.islink(profile_path):
+        return False
+    parent = os.path.dirname(profile_path) or "."
+    if os.path.islink(parent):
+        return False
+    if os.path.islink(staged_path):
+        return False
+    return True
+
+
+def _replace_empty_profile_fitness_from_legacy(profile_path: str, legacy_path: str) -> bool:
+    """Copy legacy root fitness.db over an empty profile db with bak-first safety."""
+    from integral_io import atomic_copy_file
+
+    staged = f"{profile_path}.legacy-restore-incoming.tmp"
+    if not _fitness_paths_are_safe(profile_path, staged):
+        return False
+
+    try:
+        backup_path = _prepare_pre_legacy_restore_bak(profile_path)
+        _copy_fitness_db_with_sidecars(profile_path, backup_path)
+        atomic_copy_file(legacy_path, staged)
+        _remove_writable_fitness_sidecars(profile_path)
+        os.replace(staged, profile_path)
+        return True
+    except OSError:
+        if os.path.isfile(staged):
+            try:
+                os.remove(staged)
+            except OSError:
+                pass
+        return False
+
+
 _FITNESS_DB_MERGE_TABLES = (
     "exercises",
     "progression_edges",
@@ -277,6 +354,7 @@ def _merge_legacy_fitness_db_into_profile(legacy_path: str, profile_path: str) -
         conn = _open_fitness_sqlite(profile_path, readonly=False)
         conn.execute("PRAGMA foreign_keys = OFF")
         conn.execute("ATTACH DATABASE ? AS legacy", (legacy_path,))
+        merge_failed = False
         for table in _FITNESS_DB_MERGE_TABLES:
             try:
                 main_cols = set(_table_column_names(conn, "main", table))
@@ -290,7 +368,11 @@ def _merge_legacy_fitness_db_into_profile(legacy_path: str, profile_path: str) -
                     f"SELECT {columns_sql} FROM legacy.{table}"
                 )
             except sqlite3.OperationalError:
-                continue
+                merge_failed = True
+                break
+        if merge_failed:
+            conn.rollback()
+            return False
         conn.commit()
         try:
             conn.execute("DETACH DATABASE legacy")
@@ -304,6 +386,22 @@ def _merge_legacy_fitness_db_into_profile(legacy_path: str, profile_path: str) -
         return False
     finally:
         _close_sqlite(conn)
+
+
+def _maybe_replace_empty_profile_fitness(
+    default_fitness: str, legacy_fitness: str, *, merge_succeeded: bool
+) -> None:
+    if not merge_succeeded:
+        return
+    recount = _workout_session_count_result(default_fitness)
+    if recount.outcome == SessionCountOutcome.UNREADABLE:
+        _queue_legacy_fitness_notice()
+        return
+    if recount.outcome == SessionCountOutcome.LOCKED:
+        return
+    if not recount.is_genuine_zero:
+        return
+    _replace_empty_profile_fitness_from_legacy(default_fitness, legacy_fitness)
 
 
 def migrate_legacy_layout_if_needed() -> None:
@@ -321,48 +419,41 @@ def migrate_legacy_layout_if_needed() -> None:
 
     os.makedirs(default_dir, exist_ok=True)
 
-    if os.path.exists(legacy_data) and not os.path.exists(default_data):
-        atomic_copy_file(legacy_data, default_data)
+    try:
+        if os.path.exists(legacy_data) and not os.path.exists(default_data):
+            atomic_copy_file(legacy_data, default_data)
 
-    legacy_fitness = os.path.join(app_dir, "fitness.db")
-    default_fitness = os.path.join(default_dir, "fitness.db")
-    if os.path.exists(legacy_fitness) and not os.path.exists(default_fitness):
-        try:
-            atomic_copy_file(legacy_fitness, default_fitness)
-        except OSError:
-            pass
-    elif os.path.exists(legacy_fitness) and os.path.exists(default_fitness):
-        profile_count = _workout_session_count_result(default_fitness)
-        if profile_count.outcome == SessionCountOutcome.UNREADABLE:
-            _queue_legacy_fitness_notice()
-        elif profile_count.outcome == SessionCountOutcome.LOCKED:
-            pass
-        else:
-            legacy_count = _workout_session_count_result(legacy_fitness)
-            if legacy_count.outcome == SessionCountOutcome.UNREADABLE:
+        legacy_fitness = os.path.join(app_dir, "fitness.db")
+        default_fitness = os.path.join(default_dir, "fitness.db")
+        if os.path.exists(legacy_fitness) and not os.path.exists(default_fitness):
+            try:
+                atomic_copy_file(legacy_fitness, default_fitness)
+            except OSError:
                 pass
-            elif legacy_count.outcome == SessionCountOutcome.LOCKED:
+        elif os.path.exists(legacy_fitness) and os.path.exists(default_fitness):
+            profile_count = _workout_session_count_result(default_fitness)
+            if profile_count.outcome == SessionCountOutcome.UNREADABLE:
+                _queue_legacy_fitness_notice()
+            elif profile_count.outcome == SessionCountOutcome.LOCKED:
                 pass
             else:
-                if legacy_count.has_sessions:
-                    _merge_legacy_fitness_db_into_profile(legacy_fitness, default_fitness)
-                if profile_count.is_genuine_zero and legacy_count.has_sessions:
-                    recount = _workout_session_count_result(default_fitness)
-                    if recount.outcome == SessionCountOutcome.UNREADABLE:
-                        _queue_legacy_fitness_notice()
-                    elif recount.outcome == SessionCountOutcome.LOCKED:
-                        pass
-                    elif recount.is_genuine_zero:
-                        backup = f"{default_fitness}.pre-legacy-restore.bak"
-                        try:
-                            atomic_copy_file(default_fitness, backup)
-                            for suffix in ("", "-wal", "-shm"):
-                                sidecar = f"{default_fitness}{suffix}"
-                                if os.path.exists(sidecar):
-                                    os.remove(sidecar)
-                            atomic_copy_file(legacy_fitness, default_fitness)
-                        except OSError:
-                            pass
+                legacy_count = _workout_session_count_result(legacy_fitness)
+                if legacy_count.outcome == SessionCountOutcome.UNREADABLE:
+                    pass
+                elif legacy_count.outcome == SessionCountOutcome.LOCKED:
+                    pass
+                elif legacy_count.has_sessions and profile_count.outcome == SessionCountOutcome.OK:
+                    merge_succeeded = _merge_legacy_fitness_db_into_profile(
+                        legacy_fitness, default_fitness
+                    )
+                    if profile_count.is_genuine_zero:
+                        _maybe_replace_empty_profile_fitness(
+                            default_fitness,
+                            legacy_fitness,
+                            merge_succeeded=merge_succeeded,
+                        )
+    except (OSError, sqlite3.Error):
+        pass
 
     if not os.path.exists(get_config_path()):
         save_config(default_config())
