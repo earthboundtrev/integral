@@ -5,6 +5,14 @@ def _parse_date(date_str):
     return datetime.strptime(date_str, "%Y-%m-%d").date()
 
 
+def numeric_rating(entry):
+    """Return the entry's rating as a float, or None when it is missing or not numeric."""
+    value = entry.get("rating")
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value)
+
+
 def _ratings_for_dates(entries, start_date):
     ratings = []
     active_days = 0
@@ -13,7 +21,9 @@ def _ratings_for_dates(entries, start_date):
             if day_entries:
                 active_days += 1
             for entry in day_entries.values():
-                ratings.append(entry.get("rating", 0))
+                rating = numeric_rating(entry)
+                if rating is not None:
+                    ratings.append(rating)
     return ratings, active_days
 
 
@@ -37,9 +47,10 @@ def build_summary_text(entries):
     lines = ["=== TODAY ==="]
     today_entries = entries.get(today_str, {})
     if today_entries:
-        ratings = [e.get("rating", 0) for e in today_entries.values()]
-        avg = sum(ratings) / len(ratings)
-        lines.append(f"Average rating: {avg:.1f}/10")
+        ratings = [r for r in (numeric_rating(e) for e in today_entries.values()) if r is not None]
+        if ratings:
+            avg = sum(ratings) / len(ratings)
+            lines.append(f"Average rating: {avg:.1f}/10")
         lines.append(f"Categories logged: {len(today_entries)}")
         lines.append(f"Overall streak: see dashboard")
     else:
