@@ -1,3 +1,4 @@
+import ai_insights
 from datetime import datetime, timedelta
 
 from ai_insights import (
@@ -7,7 +8,59 @@ from ai_insights import (
     build_chat_messages,
     collect_recent_context,
     ollama_installed,
+    run_insight_async,
 )
+
+
+class _DeferredRoot:
+    """Queues root.after callbacks, like Tk, and runs them after the worker returns."""
+
+    def __init__(self):
+        self.pending = []
+
+    def after(self, _ms, fn):
+        self.pending.append(fn)
+
+    def run_pending(self):
+        for fn in self.pending:
+            fn()
+
+
+def test_run_insight_async_error_callback_receives_message(monkeypatch):
+    def failing_fetch(*_args, **_kwargs):
+        raise ValueError("ollama unreachable")
+
+    class _SyncThread:
+        def __init__(self, target, daemon=None):
+            self._target = target
+
+        def start(self):
+            self._target()
+
+    monkeypatch.setattr(ai_insights, "fetch_insight", failing_fetch)
+    monkeypatch.setattr(ai_insights.threading, "Thread", _SyncThread)
+
+    today = datetime.now().date().strftime("%Y-%m-%d")
+    entries = {today: {"Body & Presence": {"rating": 7, "checklist": {}, "metrics": {}, "notes": "x"}}}
+    categories = {"Body & Presence": {"checklist": [], "metrics": []}}
+    errors = []
+
+    root = _DeferredRoot()
+    run_insight_async(
+        root,
+        entries=entries,
+        categories=categories,
+        journal_data=None,
+        fitness_settings=None,
+        days=1,
+        kind="day_scanner",
+        model=DEFAULT_MODEL,
+        on_success=lambda _r: errors.append("unexpected success"),
+        on_error=errors.append,
+    )
+    root.run_pending()
+
+    assert errors == ["ollama unreachable"]
 
 
 def test_collect_recent_context_compact():
