@@ -211,6 +211,65 @@ def test_merge_failure_skips_overwrite(temp_app, short_busy_timeout, monkeypatch
     assert profiles._workout_session_count(profile_path) == 0
 
 
+def test_zero_byte_profile_is_genuine_zero_and_rotates_mutable_bak(
+    temp_app, short_busy_timeout, monkeypatch
+):
+    app_dir = temp_app["app_dir"]
+    default_dir = temp_app["default_dir"]
+    legacy_path = os.path.join(app_dir, FITNESS_DB_NAME)
+    profile_path = os.path.join(default_dir, FITNESS_DB_NAME)
+    fixed_bak = f"{profile_path}.pre-legacy-restore.bak"
+
+    _seed_session(legacy_path, "2026-10-01")
+    with open(profile_path, "wb"):
+        pass
+    result = profiles._workout_session_count_result(profile_path)
+    assert result.outcome == profiles.SessionCountOutcome.OK
+    assert result.is_genuine_zero
+
+    with open(fixed_bak, "wb") as handle:
+        handle.write(b"previous-backup-payload")
+
+    monkeypatch.setattr(
+        profiles, "_merge_legacy_fitness_db_into_profile", lambda *_a, **_k: True
+    )
+
+    profiles.migrate_legacy_layout_if_needed()
+
+    assert profiles._workout_session_count(profile_path) == 1
+    rotated = f"{fixed_bak}.1"
+    assert os.path.isfile(rotated)
+    with open(rotated, "rb") as handle:
+        assert handle.read() == b"previous-backup-payload"
+    assert os.path.isfile(fixed_bak)
+    assert os.path.getsize(fixed_bak) == 0
+
+
+def test_empty_live_does_not_rotate_session_bak(temp_app, short_busy_timeout, monkeypatch):
+    app_dir = temp_app["app_dir"]
+    default_dir = temp_app["default_dir"]
+    legacy_path = os.path.join(app_dir, FITNESS_DB_NAME)
+    profile_path = os.path.join(default_dir, FITNESS_DB_NAME)
+    fixed_bak = f"{profile_path}.pre-legacy-restore.bak"
+
+    _seed_session(legacy_path, "2026-10-01")
+    _seed_session(fixed_bak, "2026-09-15")
+    bak_digest = open(fixed_bak, "rb").read()
+
+    with open(profile_path, "wb"):
+        pass
+
+    monkeypatch.setattr(
+        profiles, "_merge_legacy_fitness_db_into_profile", lambda *_a, **_k: True
+    )
+
+    profiles.migrate_legacy_layout_if_needed()
+
+    assert open(fixed_bak, "rb").read() == bak_digest
+    assert profiles._workout_session_count(fixed_bak) == 1
+    assert profiles._workout_session_count(profile_path) == 1
+
+
 def test_earlier_pre_legacy_bak_rotated_to_unique_name(temp_app, short_busy_timeout, monkeypatch):
     app_dir = temp_app["app_dir"]
     default_dir = temp_app["default_dir"]

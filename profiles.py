@@ -270,9 +270,31 @@ def _next_nonexistent_path(base_path: str) -> str:
         n += 1
 
 
+def _live_fitness_db_is_truly_empty(live_db_path: str) -> bool:
+    if not os.path.isfile(live_db_path):
+        return True
+    if os.path.getsize(live_db_path) == 0:
+        return True
+    return _workout_session_count_result(live_db_path).is_genuine_zero
+
+
+def _fitness_backup_has_sessions(bak_path: str) -> bool:
+    """True when the backup file holds readable workout session rows."""
+    if not os.path.isfile(bak_path) or os.path.getsize(bak_path) == 0:
+        return False
+    return _workout_session_count_result(bak_path).has_sessions
+
+
 def _prepare_pre_legacy_restore_bak(live_db_path: str) -> str:
     """Rotate an existing fixed-name bak aside, then allocate that name for a new backup."""
     fixed_bak = f"{live_db_path}.pre-legacy-restore.bak"
+    live_empty = _live_fitness_db_is_truly_empty(live_db_path)
+    if (
+        live_empty
+        and os.path.isfile(fixed_bak)
+        and _fitness_backup_has_sessions(fixed_bak)
+    ):
+        return _next_nonexistent_path(fixed_bak)
     if os.path.isfile(fixed_bak):
         os.replace(fixed_bak, _next_nonexistent_path(fixed_bak))
     return _next_nonexistent_path(fixed_bak)
