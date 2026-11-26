@@ -311,10 +311,14 @@ def apply_theme(root: tk.Misc, theme: dict) -> None:
         ("disabled", "selected", theme["disabled"]),
     ]
     _accent_outline = [
-        ("active", theme["accent"]),
-        ("pressed", theme["accent"]),
-        ("focus", theme["accent"]),
-        ("active", "selected", theme["accent"]),
+        ("active", "!disabled", theme["accent"]),
+        ("pressed", "!disabled", theme["accent"]),
+        ("focus", "!disabled", theme["accent"]),
+        ("active", "selected", "!disabled", theme["accent"]),
+    ]
+    _disabled_outline = [
+        ("disabled", theme["disabled"]),
+        ("disabled", "selected", theme["disabled"]),
     ]
     _chk_map = {
         "background": _chk_label_bg,
@@ -336,8 +340,8 @@ def apply_theme(root: tk.Misc, theme: dict) -> None:
             ("disabled", theme["disabled"]),
             ("disabled", "selected", theme["disabled"]),
         ],
-        "upperbordercolor": _accent_outline,
-        "lowerbordercolor": _accent_outline,
+        "upperbordercolor": _accent_outline + _disabled_outline,
+        "lowerbordercolor": _accent_outline + _disabled_outline,
         "focuscolor": [("focus", theme["accent"])],
     }
     for _style in ("TCheckbutton", "TRadiobutton"):

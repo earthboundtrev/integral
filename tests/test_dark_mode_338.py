@@ -111,6 +111,9 @@ def test_disabled_label_uses_disabled_fg(tk_root, dark: bool, widget_style: str)
     for state in _DISABLED_LABEL_STATES:
         assert style.lookup(widget_style, "background", state) == theme["bg"]
         assert style.lookup(widget_style, "foreground", state) == theme["disabled"]
+        assert style.lookup(widget_style, "indicatorbackground", state) == theme["surface_alt"]
+        assert style.lookup(widget_style, "indicatorforeground", state) == theme["disabled"]
+        assert style.lookup(widget_style, "upperbordercolor", state) == theme["disabled"]
 
 
 @pytest.mark.parametrize("dark", [False, True], ids=["light", "dark"])
@@ -157,8 +160,6 @@ def test_indicator_map_not_clam_defaults(tk_root, dark: bool, widget_style: str)
         assert color.lower() != "#5895bc", (widget_style, color)
     assert style.lookup(widget_style, "indicatorbackground", ()) == theme["surface"]
 
-    active_outline = _map_values_for_state(
-        _style_map_entries(tk_root, widget_style, "upperbordercolor"),
-        ("active",),
-    )
-    assert theme["accent"] in active_outline
+    assert style.lookup(widget_style, "upperbordercolor", ("active",)) == theme["accent"]
+    assert style.lookup(widget_style, "indicatorbackground", ("pressed",)) == theme["surface_alt"]
+    assert style.lookup(widget_style, "indicatorforeground", ("selected",)) == theme["on_accent"]
