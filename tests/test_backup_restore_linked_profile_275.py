@@ -99,11 +99,26 @@ def _unlink_profile_dir(profile_dir: str) -> None:
         os.unlink(profile_dir)
 
 
-def _outside_unchanged(sentinel) -> None:
+_FITNESS_STARTUP_SIDEcars = frozenset(
+    {
+        "fitness.db",
+        "fitness.db-wal",
+        "fitness.db-shm",
+        "fitness.db-journal",
+    }
+)
+
+
+def _outside_unchanged(sentinel, *, allow_fitness_startup: bool = False) -> None:
     assert sentinel.read_text(encoding="utf-8") == "untouched"
     parent = sentinel.parent
-    names = sorted(p.name for p in parent.iterdir())
-    assert names == ["SENTINEL"]
+    names = {p.name for p in parent.iterdir()}
+    if allow_fitness_startup:
+        allowed = {"SENTINEL"} | _FITNESS_STARTUP_SIDEcars
+        assert names <= allowed, f"unexpected outside entries: {sorted(names - allowed)}"
+        assert "SENTINEL" in names
+    else:
+        assert names == {"SENTINEL"}
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Unix symlink variant")
@@ -203,6 +218,6 @@ def test_ui_restore_aborts_linked_profile_before_import(temp_app, tmp_path, tk_r
 
         assert GENERIC_RESTORE_ERROR in banner._message_var.get()
         assert not import_called
-        _outside_unchanged(sentinel)
+        _outside_unchanged(sentinel, allow_fitness_startup=True)
     finally:
         _unlink_profile_dir(profile_dir)
